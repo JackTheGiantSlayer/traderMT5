@@ -343,7 +343,7 @@ const TradingApp = () => {
             const updatedPrices = { ...prices };
             
             for (const item of watchlist) {
-                const res = await fetch(`/api/mt5/candles?symbol=${item.symbol}&timeframe=M1&count=2`);
+                const res = await fetch(`/api/mt5/candles?symbol=${item.symbol}&timeframe=D1&count=2`);
                 if (res.ok) {
                     const data = await res.json();
                     if (data && data.length > 0) {
