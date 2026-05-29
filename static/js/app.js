@@ -361,7 +361,7 @@ const TradingApp = () => {
                         
                         updatedPrices[item.symbol] = {
                             bid: lastCandle.close,
-                            ask: lastCandle.close + (item.symbol === "XAUUSD" ? 0.45 : item.symbol === "EURUSD" ? 0.00015 : 0.15),
+                            ask: lastCandle.close + (item.symbol === "XAUUSD" ? 0.45 : item.symbol === "EURUSD" ? 0.00015 : item.symbol === "BTCUSD" ? 25.0 : 0.15),
                             change: changePct.toFixed(2)
                         };
                     }
@@ -1234,7 +1234,7 @@ const TradingApp = () => {
                             </div>
                             
                             <div className="timeframe-selector">
-                                {["M1", "M5", "M15", "H1", "D1"].map((tf) => (
+                                {["M1", "M5", "M15", "M30", "H1", "D1"].map((tf) => (
                                     <button 
                                         key={tf} 
                                         className={`timeframe-btn ${timeframe === tf ? 'active' : ''}`}
@@ -1989,6 +1989,7 @@ const TradingApp = () => {
                                     >
                                         <option value="XAUUSD">XAUUSD (Gold)</option>
                                         <option value="EURUSD">EURUSD (Euro)</option>
+                                        <option value="BTCUSD">BTCUSD (Bitcoin)</option>
                                         <option value="AAPL">AAPL (Apple)</option>
                                         <option value="TSLA">TSLA (Tesla)</option>
                                         <option value="US500">US500 (S&P 500)</option>
@@ -2006,6 +2007,7 @@ const TradingApp = () => {
                                         <option value="M1">M1 (1 Minute)</option>
                                         <option value="M5">M5 (5 Minutes)</option>
                                         <option value="M15">M15 (15 Minutes)</option>
+                                        <option value="M30">M30 (30 Minutes)</option>
                                         <option value="H1">H1 (1 Hour)</option>
                                         <option value="D1">D1 (1 Day)</option>
                                     </select>

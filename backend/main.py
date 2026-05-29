@@ -56,10 +56,20 @@ try:
             WatchlistItem(symbol="AAPL", name="Apple Inc.", asset_type="stock"),
             WatchlistItem(symbol="TSLA", name="Tesla Inc.", asset_type="stock"),
             WatchlistItem(symbol="US500", name="S&P 500 Index", asset_type="index"),
-            WatchlistItem(symbol="EURUSD", name="Euro / US Dollar", asset_type="forex")
+            WatchlistItem(symbol="EURUSD", name="Euro / US Dollar", asset_type="forex"),
+            WatchlistItem(symbol="BTCUSD", name="Bitcoin / US Dollar", asset_type="crypto")
         ]
         db.add_all(defaults)
         db.commit()
+        print("Database Seed: Successfully seeded initial watchlist.")
+    else:
+        # Proactively verify and add BTCUSD if it's missing in already-existing DB watchlist
+        btc_exists = db.query(WatchlistItem).filter(WatchlistItem.symbol == "BTCUSD").first()
+        if not btc_exists:
+            btc_item = WatchlistItem(symbol="BTCUSD", name="Bitcoin / US Dollar", asset_type="crypto")
+            db.add(btc_item)
+            db.commit()
+            print("Database Seed: Proactively added BTCUSD to existing watchlist.")
 finally:
     db.close()
 
@@ -182,7 +192,7 @@ def get_account():
 @app.get("/api/mt5/candles")
 def get_candles(
     symbol: str = Query(..., description="Asset symbol like XAUUSD"),
-    timeframe: str = Query("H1", description="Timeframe M1, M5, M15, H1, D1"),
+    timeframe: str = Query("H1", description="Timeframe M1, M5, M15, M30, H1, D1"),
     count: int = Query(150, description="Number of candles")
 ):
     """Retrieve historical candle rates for charts."""
@@ -195,7 +205,7 @@ def get_candles(
 @app.get("/api/mt5/patterns")
 def get_patterns(
     symbol: str = Query(..., description="Asset symbol like XAUUSD"),
-    timeframe: str = Query("H1", description="Timeframe M1, M5, M15, H1, D1"),
+    timeframe: str = Query("H1", description="Timeframe M1, M5, M15, M30, H1, D1"),
     count: int = Query(150, description="Number of candles")
 ):
     """Retrieve detected patterns and swing points for charting."""

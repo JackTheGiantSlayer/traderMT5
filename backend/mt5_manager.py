@@ -45,7 +45,8 @@ class MT5Manager:
             "AAPL": {"bid": 185.20, "ask": 185.35},
             "TSLA": {"bid": 178.50, "ask": 178.70},
             "US500": {"bid": 5230.10, "ask": 5230.80},
-            "EURUSD": {"bid": 1.0820, "ask": 1.0822}
+            "EURUSD": {"bid": 1.0820, "ask": 1.0822},
+            "BTCUSD": {"bid": 67500.00, "ask": 67520.00}
         }
         # Historic mock data caches (to prevent jumping lines on chart redraws)
         self.sim_candles_cache = {}
@@ -176,6 +177,7 @@ class MT5Manager:
                 "M1": mt5.TIMEFRAME_M1,
                 "M5": mt5.TIMEFRAME_M5,
                 "M15": mt5.TIMEFRAME_M15,
+                "M30": mt5.TIMEFRAME_M30,
                 "H1": mt5.TIMEFRAME_H1,
                 "D1": mt5.TIMEFRAME_D1
             }
@@ -207,7 +209,7 @@ class MT5Manager:
         cache_key = f"{symbol}_{timeframe_str}"
         
         # Timeframe spacing in seconds
-        spacing_map = {"M1": 60, "M5": 300, "M15": 900, "H1": 3600, "D1": 86400}
+        spacing_map = {"M1": 60, "M5": 300, "M15": 900, "M30": 1800, "H1": 3600, "D1": 86400}
         seconds_per_candle = spacing_map.get(timeframe_str, 3600)
         
         current_time = int(time.time())
@@ -324,7 +326,7 @@ class MT5Manager:
             
             # Simple pip profit calculation
             # For gold/forex/stocks, let's treat 1.0 unit change as contract multiplier * lot size
-            multiplier = 100.0 if "XAU" in pos["symbol"] else 10.0
+            multiplier = 100.0 if "XAU" in pos["symbol"] else 1.0 if "BTC" in pos["symbol"] else 10.0
             
             if pos["type"] == "buy":
                 pnl = (current_price - pos["open_price"]) * pos["volume"] * multiplier
@@ -545,7 +547,7 @@ class MT5Manager:
             price_dict = self.sim_prices.get(target_pos["symbol"], {"bid": target_pos["open_price"], "ask": target_pos["open_price"]})
             close_price = price_dict["bid"] if target_pos["type"] == "buy" else price_dict["ask"]
             
-            multiplier = 100.0 if "XAU" in target_pos["symbol"] else 10.0
+            multiplier = 100.0 if "XAU" in target_pos["symbol"] else 1.0 if "BTC" in target_pos["symbol"] else 10.0
             if target_pos["type"] == "buy":
                 profit = (close_price - target_pos["open_price"]) * target_pos["volume"] * multiplier
             else:
