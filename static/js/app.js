@@ -288,6 +288,12 @@ const TradingApp = () => {
     const candlestickSeriesRef = useRef(null);
     const swingSeriesRef = useRef(null);
     const chatbotEndRef = useRef(null);
+    const watchlistRef = useRef([]);
+
+    // Keep watchlistRef in sync with watchlist state
+    useEffect(() => {
+        watchlistRef.current = watchlist;
+    }, [watchlist]);
 
     // Chatbot Auto scroll effect
     useEffect(() => {
@@ -339,10 +345,11 @@ const TradingApp = () => {
     const fetchPrices = async () => {
         try {
             // Get symbol prices
-            if (watchlist.length === 0) return;
-            const updatedPrices = { ...prices };
+            const currentWatchlist = watchlistRef.current;
+            if (currentWatchlist.length === 0) return;
+            const updatedPrices = {};
             
-            for (const item of watchlist) {
+            for (const item of currentWatchlist) {
                 const res = await fetch(`/api/mt5/candles?symbol=${item.symbol}&timeframe=D1&count=2`);
                 if (res.ok) {
                     const data = await res.json();
@@ -360,7 +367,10 @@ const TradingApp = () => {
                     }
                 }
             }
-            setPrices(updatedPrices);
+            setPrices(prevPrices => ({
+                ...prevPrices,
+                ...updatedPrices
+            }));
         } catch (err) {
             console.error("Error fetching prices:", err);
         }
