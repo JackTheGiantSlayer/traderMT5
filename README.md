@@ -66,7 +66,7 @@
 
 1.  **โคลนโปรเจกต์และเข้าโฟลเดอร์หลัก**:
     ```bash
-    cd c:\Users\warawut\traderMT5\traderMT5
+    cd c:\Users\<<User>>\traderMT5\traderMT5
     ```
 
 2.  **ติดตั้งแพ็คเกจที่จำเป็น**:
