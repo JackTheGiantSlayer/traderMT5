@@ -66,7 +66,7 @@
 
 1.  **โคลนโปรเจกต์และเข้าโฟลเดอร์หลัก**:
     ```bash
-    cd c:\Users\warawut\traderMT5\traderMT5
+    cd c:\Users\<<User>>\traderMT5\traderMT5
     ```
 
 2.  **ติดตั้งแพ็คเกจที่จำเป็น**:
@@ -79,9 +79,9 @@
     ```env
     HOST=127.0.0.1
     PORT=8000
-    MT5_LOGIN=433690453
+    MT5_LOGIN= account สำหรับเทรด
     MT5_PASSWORD=รหัสผ่านเทรดของคุณ
-    MT5_SERVER=Exness-MT5Trial7
+    MT5_SERVER= server สำหรับเทรด
     ```
     *หมายเหตุ: หากเว้นรหัสผ่านหรือล็อกอิน ระบบของบอทจะสลับเข้าสู่โหมดจำลองตลาด (Simulation Mode) ให้อัตโนมัติ เพื่อความปลอดภัยในการทดลองระบบ*
 
