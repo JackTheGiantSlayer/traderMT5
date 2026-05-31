@@ -15,6 +15,8 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 MT5_LOGIN = os.getenv("MT5_LOGIN", "")
 MT5_PASSWORD = os.getenv("MT5_PASSWORD", "")
 MT5_SERVER = os.getenv("MT5_SERVER", "")
+DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "")
+
 
 # Directory settings
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

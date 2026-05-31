@@ -294,6 +294,105 @@ def calculate_atr(candles, period=14):
         
     return atr_vals
 
+def calculate_stoch_rsi(prices, rsi_period=14, stoch_period=14, k_period=3, d_period=3):
+    """
+    Calculates Stochastic RSI (%K and %D lines).
+    Returns list of %K and %D values (0 to 100).
+    """
+    # 1. Calculate RSI
+    rsi_vals = calculate_rsi(prices, rsi_period)
+    
+    # 2. Calculate StochRSI
+    stoch_rsi_vals = []
+    for i in range(len(rsi_vals)):
+        if i < rsi_period + stoch_period - 1:
+            stoch_rsi_vals.append(None)
+            continue
+            
+        sub_rsi = rsi_vals[i - stoch_period + 1 : i + 1]
+        if any(x is None for x in sub_rsi):
+            stoch_rsi_vals.append(None)
+            continue
+            
+        min_rsi = min(sub_rsi)
+        max_rsi = max(sub_rsi)
+        
+        if max_rsi == min_rsi:
+            stoch_rsi_vals.append(100.0)
+        else:
+            stoch_rsi_vals.append(((rsi_vals[i] - min_rsi) / (max_rsi - min_rsi)) * 100.0)
+            
+    # 3. Calculate %K (SMA of StochRSI)
+    k_vals = [None] * len(stoch_rsi_vals)
+    first_valid_k_idx = rsi_period + stoch_period - 1
+    
+    for i in range(first_valid_k_idx + k_period - 1, len(stoch_rsi_vals)):
+        sub_stoch = stoch_rsi_vals[i - k_period + 1 : i + 1]
+        if any(x is None for x in sub_stoch):
+            continue
+        k_vals[i] = sum(sub_stoch) / k_period
+        
+    # 4. Calculate %D (SMA of %K)
+    d_vals = [None] * len(k_vals)
+    first_valid_d_idx = first_valid_k_idx + k_period - 1
+    
+    for i in range(first_valid_d_idx + d_period - 1, len(k_vals)):
+        sub_k = k_vals[i - d_period + 1 : i + 1]
+        if any(x is None for x in sub_k):
+            continue
+        d_vals[i] = sum(sub_k) / d_period
+        
+    return k_vals, d_vals
+
+def calculate_ema(prices, period):
+    """Calculates Exponential Moving Average."""
+    if len(prices) < period:
+        return [None] * len(prices)
+    ema_vals = [None] * (period - 1)
+    # Start with SMA
+    sma = sum(prices[:period]) / period
+    ema_vals.append(sma)
+    
+    multiplier = 2 / (period + 1)
+    current_ema = sma
+    for i in range(period, len(prices)):
+        current_ema = (prices[i] - current_ema) * multiplier + current_ema
+        ema_vals.append(current_ema)
+    return ema_vals
+
+def calculate_macd_4c(prices, fast_period=12, slow_period=26, signal_period=9):
+    """
+    Calculates 4 Color MACD (MACD 4C) values and their corresponding colors.
+    Returns: lists of (macd_vals, colors)
+    """
+    if len(prices) < slow_period:
+        return [None] * len(prices), [None] * len(prices)
+        
+    fast_ema = calculate_ema(prices, fast_period)
+    slow_ema = calculate_ema(prices, slow_period)
+    
+    macd_vals = []
+    for f, s in zip(fast_ema, slow_ema):
+        if f is None or s is None:
+            macd_vals.append(None)
+        else:
+            macd_vals.append(f - s)
+            
+    colors = [None] * len(macd_vals)
+    for i in range(1, len(macd_vals)):
+        curr = macd_vals[i]
+        prev = macd_vals[i - 1]
+        
+        if curr is None or prev is None:
+            continue
+            
+        if curr > 0:
+            colors[i] = "lime" if curr > prev else "green"
+        else:
+            colors[i] = "maroon" if curr < prev else "red"
+            
+    return macd_vals, colors
+
 def detect_rsi_divergence(candles, rsi_period=14):
     """
     Detects Bullish and Bearish RSI Divergence based on swing highs/lows.
@@ -471,6 +570,81 @@ def detect_market_structure(candles, window=4):
             return {"type": "choch", "direction": "bearish", "price": last_low}
             
     return {"type": "none", "direction": "none", "price": 0.0}
+
+def detect_all_market_structures(candles, window=4):
+    """
+    Detects all historical BOS (Break of Structure) and CHoCH (Change of Character) levels in the candle sequence.
+    Returns a list of dicts with {"type": "bos"|"choch", "direction": "bullish"|"bearish", "price": float, "time": int}
+    """
+    swings = detect_swings(candles, window=window)
+    if len(swings) < 4:
+        return []
+        
+    structures = []
+    current_trend = None # "bullish" or "bearish"
+    
+    active_high = None
+    active_low = None
+    
+    swing_map = {s["index"]: s for s in swings}
+    
+    for i in range(len(candles)):
+        if i in swing_map:
+            s = swing_map[i]
+            if s["type"] == "high":
+                active_high = s
+            elif s["type"] == "low":
+                active_low = s
+                
+        if active_high and i > active_high["index"]:
+            if candles[i]["close"] > active_high["price"]:
+                if current_trend == "bearish":
+                    struct_type = "choch"
+                    current_trend = "bullish"
+                elif current_trend == "bullish":
+                    struct_type = "bos"
+                    current_trend = "bullish"
+                else:
+                    struct_type = "choch"
+                    current_trend = "bullish"
+                    
+                middle_idx = (active_high["index"] + i) // 2
+                structures.append({
+                    "type": struct_type,
+                    "direction": "bullish",
+                    "price": active_high["price"],
+                    "time": candles[i]["time"],
+                    "start_time": active_high["time"],
+                    "end_time": candles[i]["time"],
+                    "middle_time": candles[middle_idx]["time"]
+                })
+                active_high = None
+                
+        if active_low and i > active_low["index"]:
+            if candles[i]["close"] < active_low["price"]:
+                if current_trend == "bullish":
+                    struct_type = "choch"
+                    current_trend = "bearish"
+                elif current_trend == "bearish":
+                    struct_type = "bos"
+                    current_trend = "bearish"
+                else:
+                    struct_type = "choch"
+                    current_trend = "bearish"
+                    
+                middle_idx = (active_low["index"] + i) // 2
+                structures.append({
+                    "type": struct_type,
+                    "direction": "bearish",
+                    "price": active_low["price"],
+                    "time": candles[i]["time"],
+                    "start_time": active_low["time"],
+                    "end_time": candles[i]["time"],
+                    "middle_time": candles[middle_idx]["time"]
+                })
+                active_low = None
+                
+    return structures
 
 def detect_order_blocks(candles, lookback=40):
     """

@@ -9,11 +9,15 @@ from datetime import datetime, timedelta
 
 from backend.config import HOST, PORT, STATIC_DIR, MT5_LOGIN, MT5_PASSWORD, MT5_SERVER
 from backend.database import engine, Base, get_db
-from backend.models import AccountSettings, TradeHistoryRecord, WatchlistItem, BotSettings, BotLog
+from backend.models import AccountSettings, TradeHistoryRecord, WatchlistItem, BotSettings, BotLog, NewsRecord
 from backend.mt5_manager import MT5Manager
 from backend.trading_bot import BotManager
 from backend.chatbot import ChatbotAssistant
 from sqlalchemy import inspect, text
+import threading
+import time
+import logging
+
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
@@ -35,6 +39,10 @@ try:
         if "use_atr_sizing" not in columns:
             conn.execute(text("ALTER TABLE bot_settings ADD COLUMN use_atr_sizing BOOLEAN DEFAULT 0"))
             print("Database Migration: Successfully added 'use_atr_sizing' column.")
+
+        if "use_news_filter" not in columns:
+            conn.execute(text("ALTER TABLE bot_settings ADD COLUMN use_news_filter BOOLEAN DEFAULT 0"))
+            print("Database Migration: Successfully added 'use_news_filter' column.")
             
         if "risk_percent" not in columns:
             conn.execute(text("ALTER TABLE bot_settings ADD COLUMN risk_percent FLOAT DEFAULT 1.0"))
@@ -43,6 +51,16 @@ try:
         if "allowed_sessions" not in columns:
             conn.execute(text("ALTER TABLE bot_settings ADD COLUMN allowed_sessions VARCHAR(50) DEFAULT 'all'"))
             print("Database Migration: Successfully added 'allowed_sessions' column.")
+            
+    # NewsRecord self-healing migration
+    news_columns = [col['name'] for col in inspector.get_columns('news_records')]
+    with engine.begin() as conn:
+        if "title_th" not in news_columns:
+            conn.execute(text("ALTER TABLE news_records ADD COLUMN title_th VARCHAR(300) NULL"))
+            print("Database Migration: Successfully added 'title_th' column to 'news_records' table.")
+        if "summary_th" not in news_columns:
+            conn.execute(text("ALTER TABLE news_records ADD COLUMN summary_th VARCHAR(1500) NULL"))
+            print("Database Migration: Successfully added 'summary_th' column to 'news_records' table.")
 except Exception as e:
     print(f"Database Migration Warning: {e}")
 
@@ -135,6 +153,7 @@ class BotCreateRequest(BaseModel):
     signal_mode: str = "or"
     use_trend_filter: bool = False
     use_atr_sizing: bool = False
+    use_news_filter: bool = False
     risk_percent: float = 1.0
     allowed_sessions: str = "all"
 
@@ -206,7 +225,19 @@ def get_candles(
 def get_patterns(
     symbol: str = Query(..., description="Asset symbol like XAUUSD"),
     timeframe: str = Query("H1", description="Timeframe M1, M5, M15, M30, H1, D1"),
-    count: int = Query(150, description="Number of candles")
+    count: int = Query(150, description="Number of candles"),
+    # Stoch RSI inputs
+    stoch_k: int = Query(3, description="Stochastic RSI %K smoothing period"),
+    stoch_d: int = Query(3, description="Stochastic RSI %D signal period"),
+    rsi_len: int = Query(13, description="Stochastic RSI RSI period"),
+    stoch_len: int = Query(13, description="Stochastic RSI Stochastic period"),
+    rsi_source: str = Query("close", description="Price source: open, high, low, close"),
+    stoch_tf: str = Query("Chart", description="Stochastic RSI calculation timeframe"),
+    wait_close: bool = Query(True, description="Wait for timeframe closes (use index -2)"),
+    # MACD 4C inputs
+    macd_fast: int = Query(12, description="MACD fast period"),
+    macd_slow: int = Query(26, description="MACD slow period"),
+    macd_signal: int = Query(9, description="MACD signal period")
 ):
     """Retrieve detected patterns and swing points for charting."""
     try:
@@ -215,19 +246,89 @@ def get_patterns(
             return {
                 "swings": [],
                 "harmonic": None,
-                "elliott": None
+                "elliott": None,
+                "structures": []
             }
             
-        from backend.pattern_detector import detect_swings, detect_harmonic_patterns, detect_elliott_waves
+        from backend.pattern_detector import detect_swings, detect_harmonic_patterns, detect_elliott_waves, detect_all_market_structures, calculate_rsi, calculate_stoch_rsi, calculate_macd_4c
         
         swings = detect_swings(candles)
         harmonic = detect_harmonic_patterns(candles)
         elliott = detect_elliott_waves(candles)
+        structures = detect_all_market_structures(candles)
+        
+        # Get candles for Stoch RSI if a different timeframe is specified
+        stoch_tf_actual = stoch_tf if stoch_tf != "Chart" else timeframe
+        if stoch_tf_actual != timeframe:
+            try:
+                stoch_candles = mt5_manager.get_historical_candles(symbol, stoch_tf_actual, count)
+            except Exception as e:
+                print(f"Failed to fetch separate candles for Stoch RSI: {e}")
+                stoch_candles = candles
+        else:
+            stoch_candles = candles
+
+        # Extract correct price array based on rsi_source
+        def get_source_prices(candles_list, source):
+            if not candles_list:
+                return []
+            src = source.lower()
+            if src == "open":
+                return [c["open"] for c in candles_list]
+            elif src == "high":
+                return [c["high"] for c in candles_list]
+            elif src == "low":
+                return [c["low"] for c in candles_list]
+            else:
+                return [c["close"] for c in candles_list]
+
+        # Calculate Stochastic RSI
+        stoch_prices = get_source_prices(stoch_candles, rsi_source)
+        stoch_rsi_k_vals, stoch_rsi_d_vals = calculate_stoch_rsi(stoch_prices, rsi_len, stoch_len, stoch_k, stoch_d)
+        stoch_rsi_vals = calculate_rsi(stoch_prices, rsi_len)
+        
+        # Determine the target index based on wait_close
+        stoch_idx = -1
+        if wait_close and len(stoch_rsi_k_vals) >= 2:
+            stoch_idx = -2
+            
+        latest_rsi = stoch_rsi_vals[stoch_idx] if stoch_rsi_vals and len(stoch_rsi_vals) > abs(stoch_idx) and stoch_rsi_vals[stoch_idx] is not None else None
+        latest_k = stoch_rsi_k_vals[stoch_idx] if stoch_rsi_k_vals and len(stoch_rsi_k_vals) > abs(stoch_idx) and stoch_rsi_k_vals[stoch_idx] is not None else None
+        latest_d = stoch_rsi_d_vals[stoch_idx] if stoch_rsi_d_vals and len(stoch_rsi_d_vals) > abs(stoch_idx) and stoch_rsi_d_vals[stoch_idx] is not None else None
+        
+        # Calculate MACD 4C
+        close_prices = [c["close"] for c in candles]
+        macd_vals, macd_colors = calculate_macd_4c(close_prices, macd_fast, macd_slow, macd_signal)
+        
+        latest_macd = macd_vals[-1] if macd_vals and macd_vals[-1] is not None else None
+        latest_macd_color = macd_colors[-1] if macd_colors and macd_colors[-1] is not None else None
+        
+        # Historical MACD 4C data (last 12 bars) to feed frontend chart
+        macd_history = []
+        if macd_vals and macd_colors:
+            start_idx = max(0, len(macd_vals) - 12)
+            for idx in range(start_idx, len(macd_vals)):
+                if macd_vals[idx] is not None and macd_colors[idx] is not None:
+                    macd_history.append({
+                        "value": macd_vals[idx],
+                        "color": macd_colors[idx]
+                    })
         
         return {
             "swings": swings,
             "harmonic": harmonic,
-            "elliott": elliott
+            "elliott": elliott,
+            "structures": structures,
+            "indicators": {
+                "rsi": latest_rsi,
+                "stoch_rsi_k": latest_k,
+                "stoch_rsi_d": latest_d,
+                "macd_4c": {
+                    "value": latest_macd,
+                    "color": latest_macd_color,
+                    "history": macd_history
+                }
+            }
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -470,16 +571,118 @@ def remove_from_watchlist(symbol: str, db: Session = Depends(get_db)):
     db.commit()
     return {"success": True, "message": f"Symbol {symbol} removed from watchlist."}
 
+
+# --- AI News Agent Endpoints ---
+
+@app.get("/api/news")
+def get_news(db: Session = Depends(get_db)):
+    """Fetch analyzed economic & war news, with calculated overall market sentiment summary."""
+    news_items = db.query(NewsRecord).order_by(NewsRecord.published_at.desc()).limit(30).all()
+    
+    # Calculate summary metrics of latest news
+    bullish_count = 0
+    bearish_count = 0
+    neutral_count = 0
+    has_high_geopolitical_threat = False
+    has_medium_threat = False
+    
+    # Check latest 10 items for a localized mood/threat gauge
+    sample_items = news_items[:10]
+    for item in sample_items:
+        if item.sentiment == "bullish":
+            bullish_count += 1
+        elif item.sentiment == "bearish":
+            bearish_count += 1
+        else:
+            neutral_count += 1
+            
+        if item.impact_level == "high" and item.category == "geopolitical":
+            has_high_geopolitical_threat = True
+        elif item.impact_level in ["high", "medium"]:
+            has_medium_threat = True
+            
+    sentiment_summary = "neutral"
+    if bullish_count > bearish_count and bullish_count > neutral_count:
+        sentiment_summary = "bullish"
+    elif bearish_count > bullish_count and bearish_count > neutral_count:
+        sentiment_summary = "bearish"
+        
+    risk_level = "low"
+    if has_high_geopolitical_threat:
+        risk_level = "high"
+    elif has_medium_threat:
+        risk_level = "medium"
+        
+    return {
+        "sentiment_summary": sentiment_summary,
+        "risk_level": risk_level,
+        "news": [{
+            "id": n.id,
+            "title": n.title,
+            "title_th": n.title_th,
+            "summary": n.summary,
+            "summary_th": n.summary_th,
+            "source": n.source,
+            "url": n.url,
+            "published_at": n.published_at.isoformat() if n.published_at else None,
+            "sentiment": n.sentiment,
+            "impact_level": n.impact_level,
+            "category": n.category,
+            "analysis": n.analysis
+        } for n in news_items]
+    }
+
+
+@app.post("/api/news/refresh")
+def force_refresh_news():
+    """Manually triggers the News Agent to fetch and analyze news instantly."""
+    from backend.news_agent import refresh_news_intelligence
+    try:
+        added_count = refresh_news_intelligence()
+        return {"success": True, "added_count": added_count}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- News Agent Background Worker ---
+
+def news_agent_loop():
+    logger = logging.getLogger("NewsAgentWorker")
+    logger.info("News Agent background worker thread successfully started.")
+    
+    # Run once immediately on startup to seed news database
+    try:
+        from backend.news_agent import refresh_news_intelligence
+        refresh_news_intelligence()
+    except Exception as e:
+        logger.error(f"Error doing initial news seed on startup: {e}")
+        
+    while True:
+        # Sleep for 20 minutes
+        time.sleep(1200)
+        try:
+            refresh_news_intelligence()
+        except Exception as e:
+            logger.error(f"Error in periodic background news refresh cycle: {e}")
+
+
+def start_news_agent_worker():
+    t = threading.Thread(target=news_agent_loop, daemon=True)
+    t.start()
+
+
 # Initialize and manage bot thread
 bot_manager = BotManager()
 
 @app.on_event("startup")
 def startup_event():
     bot_manager.start()
+    start_news_agent_worker()
 
 @app.on_event("shutdown")
 def shutdown_event():
     bot_manager.stop()
+
 
 # --- Trading Bot Endpoints ---
 
@@ -503,6 +706,7 @@ def serialize_bot(bot: BotSettings):
         "is_running": bot.is_running,
         "use_trend_filter": bot.use_trend_filter,
         "use_atr_sizing": bot.use_atr_sizing,
+        "use_news_filter": getattr(bot, "use_news_filter", False),
         "risk_percent": bot.risk_percent,
         "allowed_sessions": bot.allowed_sessions,
         "created_at": bot.created_at.isoformat() if bot.created_at else None
@@ -522,6 +726,7 @@ def create_bot(req: BotCreateRequest, db: Session = Depends(get_db)):
         tp_points=req.tp_points,
         use_trend_filter=req.use_trend_filter,
         use_atr_sizing=req.use_atr_sizing,
+        use_news_filter=req.use_news_filter,
         risk_percent=req.risk_percent,
         allowed_sessions=req.allowed_sessions,
         is_running=False
@@ -560,6 +765,7 @@ def update_bot(bot_id: int, req: BotCreateRequest, db: Session = Depends(get_db)
     if bot.tp_points != req.tp_points: changes.append(f"TP: {bot.tp_points} -> {req.tp_points}")
     if bot.use_trend_filter != req.use_trend_filter: changes.append(f"Trend Filter: {bot.use_trend_filter} -> {req.use_trend_filter}")
     if bot.use_atr_sizing != req.use_atr_sizing: changes.append(f"ATR Sizing: {bot.use_atr_sizing} -> {req.use_atr_sizing}")
+    if getattr(bot, "use_news_filter", False) != req.use_news_filter: changes.append(f"AI News Filter: {getattr(bot, 'use_news_filter', False)} -> {req.use_news_filter}")
     if bot.risk_percent != req.risk_percent: changes.append(f"Risk %: {bot.risk_percent} -> {req.risk_percent}")
     if bot.allowed_sessions != req.allowed_sessions: changes.append(f"Sessions: {bot.allowed_sessions} -> {req.allowed_sessions}")
 
@@ -573,6 +779,7 @@ def update_bot(bot_id: int, req: BotCreateRequest, db: Session = Depends(get_db)
     bot.tp_points = req.tp_points
     bot.use_trend_filter = req.use_trend_filter
     bot.use_atr_sizing = req.use_atr_sizing
+    bot.use_news_filter = req.use_news_filter
     bot.risk_percent = req.risk_percent
     bot.allowed_sessions = req.allowed_sessions
     
@@ -639,10 +846,217 @@ def get_bot_logs(bot_id: int, db: Session = Depends(get_db)):
     return [{
         "id": l.id,
         "bot_id": l.bot_id,
-        "timestamp": l.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+        "timestamp": (l.timestamp + timedelta(hours=7)).strftime("%Y-%m-%d %H:%M:%S"),
         "message": l.message,
         "log_type": l.log_type
     } for l in logs]
+
+
+# --- Backtesting Engine ---
+
+class BacktestRequest(BaseModel):
+    symbol: str
+    timeframe: str
+    count: int = 500
+    algorithm: str
+    signal_mode: str = "or"
+    lot_size: float = 0.1
+    sl_points: float = 0.0
+    tp_points: float = 0.0
+    initial_balance: float = 10000.0
+
+
+def get_point_multiplier(symbol: str) -> float:
+    symbol_upper = symbol.upper()
+    if "XAU" in symbol_upper or "GOLD" in symbol_upper:
+        return 100.0
+    elif "USD" in symbol_upper or symbol_upper in ["EURUSD", "GBPUSD", "AUDUSD", "NZDUSD", "USDCAD", "USDCHF"]:
+        return 100000.0
+    elif "JPY" in symbol_upper:
+        return 1000.0
+    else:
+        return 1.0
+
+
+@app.post("/api/backtest")
+def run_backtest(req: BacktestRequest):
+    """
+    Simulates a high-fidelity step-by-step historical backtest.
+    Respects previous candle bounds strictly to prevent look-ahead bias.
+    """
+    try:
+        # Fetch candles using the mapped timeframe constants (supports M1, M5, M15, M30, H1, H4, D1)
+        candles = mt5_manager.get_historical_candles(req.symbol, req.timeframe, req.count)
+        if not candles or len(candles) < 40:
+            raise HTTPException(status_code=400, detail="ข้อมูลดิบแท่งเทียนมีไม่เพียงพอสำหรับการทดสอบย้อนหลัง (ต้องการอย่างน้อย 40 แท่ง)")
+            
+        from backend.trading_bot import evaluate_multi_signals
+        
+        balance = req.initial_balance
+        equity_curve = [{"time": candles[0]["time"], "value": balance}]
+        
+        active_trade = None
+        trades_history = []
+        ticket_counter = 100000
+        
+        algorithms_list = [a.strip() for a in req.algorithm.split(",") if a.strip()]
+        multiplier = get_point_multiplier(req.symbol)
+        
+        # Start at index 35 so indicators like EMA/RSI have enough initialization data
+        for i in range(35, len(candles)):
+            current_candle = candles[i]
+            current_price = current_candle["close"]
+            current_time = current_candle["time"]
+            
+            # Slice candle histories up to current loop step to simulate zero-bias environment
+            candles_slice = candles[:i+1]
+            close_prices_slice = [c["close"] for c in candles_slice]
+            
+            # 1. Manage active trade
+            if active_trade:
+                t_type = active_trade["type"]
+                open_p = active_trade["open_price"]
+                sl = active_trade["sl"]
+                tp = active_trade["tp"]
+                
+                # Check for TP / SL hits inside the current candle boundaries
+                hit_tp = False
+                hit_sl = False
+                
+                high_p = current_candle["high"]
+                low_p = current_candle["low"]
+                
+                if t_type == "buy":
+                    if tp > 0 and high_p >= tp:
+                        hit_tp = True
+                    elif sl > 0 and low_p <= sl:
+                        hit_sl = True
+                else: # sell
+                    if tp > 0 and low_p <= tp:
+                        hit_tp = True
+                    elif sl > 0 and high_p >= sl:
+                        hit_sl = True
+                        
+                # Check for opposite exit signals
+                opp_signal = False
+                sig = evaluate_multi_signals(close_prices_slice, algorithms_list, req.signal_mode, candles=candles_slice)
+                if t_type == "buy" and sig == "sell":
+                    opp_signal = True
+                elif t_type == "sell" and sig == "buy":
+                    opp_signal = True
+                    
+                if hit_tp or hit_sl or opp_signal:
+                    # Close trade
+                    close_p = current_price
+                    close_reason = "Opposite Signal"
+                    if hit_tp:
+                        close_p = tp
+                        close_reason = "Take Profit"
+                    elif hit_sl:
+                        close_p = sl
+                        close_reason = "Stop Loss"
+                        
+                    # Compute simulated gain/loss
+                    if t_type == "buy":
+                        pnl = (close_p - open_p) * req.lot_size * multiplier
+                    else:
+                        pnl = (open_p - close_p) * req.lot_size * multiplier
+                        
+                    balance += pnl
+                    
+                    trades_history.append({
+                        "ticket": active_trade["ticket"],
+                        "type": t_type,
+                        "open_time": active_trade["open_time"],
+                        "close_time": datetime.fromtimestamp(current_time).strftime("%Y-%m-%d %H:%M:%S"),
+                        "open_price": open_p,
+                        "close_price": close_p,
+                        "profit": round(pnl, 2),
+                        "result": "win" if pnl >= 0 else "loss",
+                        "reason": close_reason
+                    })
+                    
+                    equity_curve.append({
+                        "time": current_time,
+                        "value": round(balance, 2)
+                    })
+                    
+                    active_trade = None
+                    
+            # 2. Look for new trades if none active
+            if not active_trade:
+                sig = evaluate_multi_signals(close_prices_slice, algorithms_list, req.signal_mode, candles=candles_slice)
+                if sig in ["buy", "sell"]:
+                    sl_p = 0.0
+                    tp_p = 0.0
+                    
+                    if sig == "buy":
+                        if req.sl_points > 0: sl_p = current_price - req.sl_points
+                        if req.tp_points > 0: tp_p = current_price + req.tp_points
+                    else: # sell
+                        if req.sl_points > 0: sl_p = current_price + req.sl_points
+                        if req.tp_points > 0: tp_p = current_price - req.tp_points
+                        
+                    active_trade = {
+                        "ticket": ticket_counter,
+                        "type": sig,
+                        "open_price": current_price,
+                        "open_time": datetime.fromtimestamp(current_time).strftime("%Y-%m-%d %H:%M:%S"),
+                        "sl": sl_p,
+                        "tp": tp_p
+                    }
+                    ticket_counter += 1
+                    
+        # Force close remaining open trade at final candle close
+        if active_trade:
+            t_type = active_trade["type"]
+            open_p = active_trade["open_price"]
+            close_p = candles[-1]["close"]
+            
+            if t_type == "buy":
+                pnl = (close_p - open_p) * req.lot_size * multiplier
+            else:
+                pnl = (open_p - close_p) * req.lot_size * multiplier
+                
+            balance += pnl
+            
+            trades_history.append({
+                "ticket": active_trade["ticket"],
+                "type": t_type,
+                "open_time": active_trade["open_time"],
+                "close_time": datetime.fromtimestamp(candles[-1]["time"]).strftime("%Y-%m-%d %H:%M:%S"),
+                "open_price": open_p,
+                "close_price": close_p,
+                "profit": round(pnl, 2),
+                "result": "win" if pnl >= 0 else "loss",
+                "reason": "End of Data"
+            })
+            
+            equity_curve.append({
+                "time": candles[-1]["time"],
+                "value": round(balance, 2)
+            })
+            
+        wins = [t for t in trades_history if t["profit"] >= 0]
+        losses = [t for t in trades_history if t["profit"] < 0]
+        win_rate = (len(wins) / len(trades_history) * 100) if trades_history else 0.0
+        
+        return {
+            "symbol": req.symbol,
+            "timeframe": req.timeframe,
+            "algorithm": req.algorithm,
+            "initial_balance": req.initial_balance,
+            "final_balance": round(balance, 2),
+            "net_profit": round(balance - req.initial_balance, 2),
+            "total_trades": len(trades_history),
+            "win_rate": round(win_rate, 1),
+            "wins_count": len(wins),
+            "losses_count": len(losses),
+            "trades": trades_history,  # ordered chronologically
+            "equity_curve": equity_curve
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # --- Serve Static React Frontend ---
 

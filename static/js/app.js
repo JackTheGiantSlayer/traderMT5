@@ -3,6 +3,13 @@ const { useState, useEffect, useRef } = React;
 // --- Built-in SVG Icon Component (Zero External Loaders Needed!) ---
 const Icon = ({ name, className = "react-svg-icon", size = 18 }) => {
     const icons = {
+        "external-link": (
+            <svg viewBox="0 0 24 24" width={size} height={size}>
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                <polyline points="15 3 21 3 21 9" />
+                <line x1="10" y1="14" x2="21" y2="3" />
+            </svg>
+        ),
         settings: (
             <svg viewBox="0 0 24 24" width={size} height={size}>
                 <circle cx="12" cy="12" r="3" />
@@ -124,6 +131,18 @@ const Icon = ({ name, className = "react-svg-icon", size = 18 }) => {
                 <line x1="22" y1="2" x2="11" y2="13" />
                 <polygon points="22 2 15 22 11 13 2 9 22 2" />
             </svg>
+        ),
+        pencil: (
+            <svg viewBox="0 0 24 24" width={size} height={size}>
+                <path d="M12 20h9" />
+                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+            </svg>
+        ),
+        eraser: (
+            <svg viewBox="0 0 24 24" width={size} height={size}>
+                <path d="M20 20H7L3 16c-1-1-1-2 0-3l9-9c1-1 2-1 3 0l5 5c1 1 1 2 0 3l-5 5" />
+                <line x1="22" y1="20" x2="9" y2="20" />
+            </svg>
         )
     };
 
@@ -132,8 +151,239 @@ const Icon = ({ name, className = "react-svg-icon", size = 18 }) => {
 
 // --- App Main Component ---
 const TradingApp = () => {
+    // Check if running in standalone popout mode
+    const isPopout = new URLSearchParams(window.location.search).get('popout') === 'backtest';
+    const isChatbotPopout = new URLSearchParams(window.location.search).get('popout') === 'chatbot';
+    const isNewsPopout = new URLSearchParams(window.location.search).get('popout') === 'news';
+    const isAnalyticsPopout = new URLSearchParams(window.location.search).get('popout') === 'analytics';
+
     // Assets & Selection
     const [watchlist, setWatchlist] = useState([]);
+    
+    // Live Stochastic RSI and general indicators state
+    const [stochRsiData, setStochRsiData] = useState({ 
+        rsi: null, k: null, d: null, 
+        macd_val: null, macd_color: null, macd_history: [],
+        status: 'loading' 
+    });
+
+    // Configurable indicator settings state
+    const [stochRsiSettings, setStochRsiSettings] = useState({
+        k: 3,
+        d: 3,
+        rsiLength: 13,
+        stochasticLength: 13,
+        rsiSource: "Close",
+        timeframe: "Chart",
+        waitClose: true
+    });
+    
+    const [macdSettings, setMacdSettings] = useState({
+        fastPeriod: 12,
+        slowPeriod: 26,
+        signalPeriod: 9
+    });
+
+    const [stochRsiSettingsOpen, setStochRsiSettingsOpen] = useState(false);
+    const [macdSettingsOpen, setMacdSettingsOpen] = useState(false);
+    
+    // Modal Form States for temporary editing
+    const [stochRsiForm, setStochRsiForm] = useState({
+        k: 3,
+        d: 3,
+        rsiLength: 13,
+        stochasticLength: 13,
+        rsiSource: "Close",
+        timeframe: "Chart",
+        waitClose: true
+    });
+    
+    const [macdForm, setMacdForm] = useState({
+        fastPeriod: 12,
+        slowPeriod: 26
+    });
+
+    const openStochRsiSettings = () => {
+        setStochRsiForm({ ...stochRsiSettings });
+        setStochRsiSettingsOpen(true);
+    };
+
+    const openMacdSettings = () => {
+        setMacdForm({ ...macdSettings });
+        setMacdSettingsOpen(true);
+    };
+    
+    // Multi-Timeframe Chart configurations
+    const [chartLayout, setChartLayout] = useState("single"); // 'single' | 'dual' | 'quad'
+    const [activePaneId, setActivePaneId] = useState(0);
+    const [paneTimeframes, setPaneTimeframes] = useState({
+        0: 'H1',
+        1: 'M15',
+        2: 'M5',
+        3: 'D1'
+    });
+
+    // Sidebar panels collapsible states
+    const [isWatchlistCollapsed, setIsWatchlistCollapsed] = useState(false);
+    const [isExecutionCollapsed, setIsExecutionCollapsed] = useState(false);
+
+    // Dynamic chart resizing to match sidebar collapse/expand animations
+    useEffect(() => {
+        const resizeCharts = () => {
+            const activePaneIds = chartLayout === 'single' ? [0] : chartLayout === 'dual' ? [0, 1] : [0, 1, 2, 3];
+            activePaneIds.forEach(paneId => {
+                const chart = chartsRef.current[paneId];
+                const container = containersRef.current[paneId];
+                if (chart && container) {
+                    chart.applyOptions({
+                        width: container.clientWidth,
+                        height: container.clientHeight
+                    });
+                }
+            });
+        };
+        
+        // Multiple checks matching standard CSS transition timing
+        const intervals = [50, 100, 150, 200, 250, 300, 350];
+        const timers = intervals.map(ms => setTimeout(resizeCharts, ms));
+        
+        return () => timers.forEach(clearTimeout);
+    }, [isWatchlistCollapsed, isExecutionCollapsed, chartLayout, isTerminalExpanded]);
+
+    // Interactive Graph Drawing states & refs
+    const [drawingTool, setDrawingToolState] = useState(null); // null | 'trendline' | 'horizontal'
+    const [drawingStartPoint, setDrawingStartPointState] = useState(null); // null | { time, price }
+    
+    const drawingToolRef = useRef(null);
+    const drawingStartPointRef = useRef(null);
+    const drawnLinesRef = useRef([]); // persistent list: { id, type, symbol, price, points, instances }
+
+    const setDrawingTool = (tool) => {
+        drawingToolRef.current = tool;
+        setDrawingToolState(tool);
+        drawingStartPointRef.current = null;
+        setDrawingStartPointState(null);
+    };
+
+    const setDrawingStartPoint = (pt) => {
+        drawingStartPointRef.current = pt;
+        setDrawingStartPointState(pt);
+    };
+
+    const clearDrawings = () => {
+        drawnLinesRef.current.forEach(line => {
+            if (line.symbol === activeSymbol && line.instances) {
+                if (line.type === 'horizontal') {
+                    // Also attempt deleting mapping entries by key
+                    Object.entries(candlestickSeriesesRef.current).forEach(([pId, series]) => {
+                        if (series && line.instances[pId]) {
+                            try {
+                                series.removePriceLine(line.instances[pId]);
+                            } catch (e) {}
+                        }
+                    });
+                } else if (line.type === 'trendline' || line.type === 'bos' || line.type === 'choch') {
+                    Object.entries(chartsRef.current).forEach(([pId, chart]) => {
+                        if (chart && line.instances[pId]) {
+                            try {
+                                chart.removeSeries(line.instances[pId]);
+                            } catch (e) {
+                                console.error(`Error removing series of type ${line.type}:`, e);
+                            }
+                        }
+                    });
+                }
+            }
+        });
+        drawnLinesRef.current = drawnLinesRef.current.filter(line => line.symbol !== activeSymbol);
+        setDrawingTool(null);
+    };
+
+    const autoDrawSMC = async () => {
+        try {
+            const paneTf = paneTimeframes[activePaneId] || 'H1';
+            const res = await fetch(`/api/mt5/patterns?symbol=${activeSymbol}&timeframe=${paneTf}&count=200`);
+            if (!res.ok) {
+                alert("ไม่สามารถดึงข้อมูลแนวรับ-แนวต้านของโครงสร้างตลาดได้");
+                return;
+            }
+            const data = await res.json();
+            if (!data.structures || data.structures.length === 0) {
+                alert("ไม่พบโครงสร้าง Market Structure (BOS/CHoCH) ในประวัติราคาปัจจุบัน");
+                return;
+            }
+            
+            clearDrawings();
+            
+            const newLines = [];
+            data.structures.forEach(struct => {
+                const lineId = Date.now() + Math.random();
+                const lineInstances = {};
+                const color = struct.type === 'bos' ? '#00b4d8' : '#ff477e';
+                const title = struct.type === 'bos' ? 'BOS' : 'CHoCH';
+                
+                Object.entries(chartsRef.current).forEach(([pId, chart]) => {
+                    if (chart) {
+                        try {
+                            const lineSeries = chart.addLineSeries({
+                                color: color,
+                                lineWidth: 2,
+                                crosshairMarkerVisible: false,
+                                priceLineVisible: false,
+                                lastValueVisible: false
+                            });
+                            
+                            const points = [{ time: struct.start_time, value: struct.price }];
+                            const midTime = Math.round((struct.start_time + struct.end_time) / 2);
+                            if (midTime > struct.start_time && midTime < struct.end_time) {
+                                points.push({ time: midTime, value: struct.price });
+                            }
+                            points.push({ time: struct.end_time, value: struct.price });
+                            
+                            lineSeries.setData(points);
+                            
+                            if (title) {
+                                const markerTime = (midTime > struct.start_time && midTime < struct.end_time) ? midTime : struct.end_time;
+                                lineSeries.setMarkers([
+                                    {
+                                        time: markerTime,
+                                        position: 'aboveBar',
+                                        color: color,
+                                        shape: 'circle',
+                                        size: 0.1,
+                                        text: title
+                                    }
+                                ]);
+                            }
+                            
+                            lineInstances[pId] = lineSeries;
+                        } catch (e) {
+                            console.error(`Error drawing auto SMC line on pane ${pId}:`, e);
+                        }
+                    }
+                });
+                
+                newLines.push({
+                    id: lineId,
+                    type: struct.type,
+                    price: struct.price,
+                    symbol: activeSymbol,
+                    points: [
+                        { time: struct.start_time, price: struct.price },
+                        { time: struct.end_time, price: struct.price }
+                    ],
+                    instances: lineInstances
+                });
+            });
+            
+            drawnLinesRef.current = newLines;
+            setDrawingTool(null);
+        } catch (err) {
+            console.error("Error auto drawing SMC lines:", err);
+            alert("เกิดข้อผิดพลาดในการตีเส้น BOS/CHoCH อัตโนมัติ: " + err.message);
+        }
+    };
+
     const [activeSymbol, setActiveSymbol] = useState("XAUUSD");
     const [activeAsset, setActiveAsset] = useState({ symbol: "XAUUSD", name: "Gold Spot", asset_type: "gold" });
     const [timeframe, setTimeframe] = useState("H1");
@@ -166,20 +416,49 @@ const TradingApp = () => {
     });
 
     // Terminal Tabs
-    const [activeTab, setActiveTab] = useState("positions"); // 'positions' | 'history' | 'analytics' | 'bots'
+    const [activeTab, setActiveTab] = useState(isPopout ? "backtest" : "positions"); // 'positions' | 'history' | 'analytics' | 'bots' | 'backtest'
+    const [isTerminalExpanded, setIsTerminalExpanded] = useState(false);
     const [openPositions, setOpenPositions] = useState([]);
     const [tradeHistory, setTradeHistory] = useState([]);
+
+    // Market Intelligence News States
+    const [newsData, setNewsData] = useState({
+        sentiment_summary: 'neutral',
+        risk_level: 'low',
+        news: []
+    });
+    const [newsRefreshing, setNewsRefreshing] = useState(false);
+    const [expandedNewsId, setExpandedNewsId] = useState(null);
 
     // Trading Bots State
     const [bots, setBots] = useState([]);
     const [activeBot, setActiveBot] = useState(null);
     const [botLogs, setBotLogs] = useState([]);
     const [botFormOpen, setBotFormOpen] = useState(false);
-    const [botForm, setBotForm] = useState({ name: "บอทเทรดทองคำ RSI", symbol: "XAUUSD", timeframe: "M1", algorithm: "rsi_oscillator", lot_size: 0.01, sl_points: 5.0, tp_points: 10.0, use_trend_filter: false, use_atr_sizing: false, risk_percent: 1.0, allowed_sessions: "all" });
+    const [botForm, setBotForm] = useState({ name: "บอทเทรดทองคำ RSI", symbol: "XAUUSD", timeframe: "M1", algorithm: "rsi_oscillator", lot_size: 0.01, sl_points: 5.0, tp_points: 10.0, use_trend_filter: false, use_atr_sizing: false, risk_percent: 1.0, allowed_sessions: "all", use_news_filter: false });
     const [selectedAlgos, setSelectedAlgos] = useState(["rsi_oscillator"]);
     const [signalMode, setSignalMode] = useState("or");
     const [activeRunningBotsCount, setActiveRunningBotsCount] = useState(0);
     const [editingBotId, setEditingBotId] = useState(null);
+
+    // --- Backtesting States ---
+    const [backtestForm, setBacktestForm] = useState({
+        symbol: "XAUUSD",
+        timeframe: "H1",
+        count: 200,
+        lot_size: 0.1,
+        sl_points: 5.0,
+        tp_points: 10.0,
+        initial_balance: 10000.0,
+        signal_mode: "or"
+    });
+    const [backtestSelectedAlgos, setBacktestSelectedAlgos] = useState(["rsi_oscillator"]);
+    const [backtestResult, setBacktestResult] = useState(null);
+    const [backtestLoading, setBacktestLoading] = useState(false);
+
+    const backtestChartContainerRef = useRef(null);
+    const backtestChartRef = useRef(null);
+    const backtestAreaSeriesRef = useRef(null);
 
     // Modal Control
     const [settingsOpen, setSettingsOpen] = useState(false);
@@ -283,10 +562,10 @@ const TradingApp = () => {
     };
 
     // Chart Ref & Objects
-    const chartContainerRef = useRef(null);
-    const chartRef = useRef(null);
-    const candlestickSeriesRef = useRef(null);
-    const swingSeriesRef = useRef(null);
+    const containersRef = useRef({});
+    const chartsRef = useRef({});
+    const candlestickSeriesesRef = useRef({});
+    const swingSeriesesRef = useRef({});
     const chatbotEndRef = useRef(null);
     const watchlistRef = useRef([]);
 
@@ -310,6 +589,7 @@ const TradingApp = () => {
         fetchPositions();
         fetchHistory();
         fetchBots();
+        fetchNews();
 
         // 1-second interval for prices & dynamic ticks
         const priceInterval = setInterval(() => {
@@ -318,10 +598,12 @@ const TradingApp = () => {
 
         // 5-second interval for account metrics, open positions, trade history, and bots
         const accountInterval = setInterval(() => {
+            fetchStatus();
             fetchAccount();
             fetchPositions();
             fetchHistory();
             fetchBots();
+            fetchNews();
         }, 5000);
 
         return () => {
@@ -376,18 +658,508 @@ const TradingApp = () => {
         }
     };
 
-    // Build/Init TradingView Chart
-    useEffect(() => {
-        if (!chartContainerRef.current) return;
+    // Helper to load historical candles for a specific chart pane
+    const loadChartDataForPane = async (paneId, symbol, tf) => {
+        try {
+            const res = await fetch(`/api/mt5/candles?symbol=${symbol}&timeframe=${tf}&count=200`);
+            if (res.ok) {
+                const data = await res.json();
+                const series = candlestickSeriesesRef.current[paneId];
+                const chart = chartsRef.current[paneId];
+                if (data && data.length > 0 && series && chart) {
+                    series.setData(data);
+                    chart.timeScale().fitContent();
+                }
+            }
+        } catch (err) {
+            console.error(`Failed to load chart data for pane ${paneId}:`, err);
+        }
+    };
 
-        // Clean up older chart if exists
-        if (chartRef.current) {
-            chartRef.current.remove();
-            chartRef.current = null;
+    // Helper to load patterns and swing ZigZag lines for a specific chart pane
+    const loadPatternsForPane = async (paneId, symbol, tf) => {
+        try {
+            const stochParams = `&stoch_k=${stochRsiSettings.k}&stoch_d=${stochRsiSettings.d}&rsi_len=${stochRsiSettings.rsiLength}&stoch_len=${stochRsiSettings.stochasticLength}&rsi_source=${stochRsiSettings.rsiSource.toLowerCase()}&stoch_tf=${stochRsiSettings.timeframe}&wait_close=${stochRsiSettings.waitClose}`;
+            const macdParams = `&macd_fast=${macdSettings.fastPeriod}&macd_slow=${macdSettings.slowPeriod}`;
+            const res = await fetch(`/api/mt5/patterns?symbol=${symbol}&timeframe=${tf}&count=200${stochParams}${macdParams}`);
+            if (res.ok) {
+                const data = await res.json();
+                
+                // Capture indicators (RSI, StochRSI, MACD 4C) if this is the active pane
+                if (paneId === activePaneId) {
+                    if (data.indicators) {
+                        setStochRsiData({
+                            rsi: data.indicators.rsi,
+                            k: data.indicators.stoch_rsi_k,
+                            d: data.indicators.stoch_rsi_d,
+                            macd_val: data.indicators.macd_4c ? data.indicators.macd_4c.value : null,
+                            macd_color: data.indicators.macd_4c ? data.indicators.macd_4c.color : null,
+                            macd_history: data.indicators.macd_4c ? data.indicators.macd_4c.history : [],
+                            status: 'success'
+                        });
+                    } else {
+                        setStochRsiData({ 
+                            rsi: null, k: null, d: null, 
+                            macd_val: null, macd_color: null, macd_history: [], 
+                            status: 'no_data' 
+                        });
+                    }
+                }
+
+                const swingSeries = swingSeriesesRef.current[paneId];
+                const series = candlestickSeriesesRef.current[paneId];
+                
+                // 1. Draw ZigZag Line if we have swings
+                if (data.swings && data.swings.length > 0 && swingSeries) {
+                    const lineData = data.swings.map(s => ({
+                        time: s.time,
+                        value: s.price
+                    }));
+                    lineData.sort((a, b) => a.time - b.time);
+                    swingSeries.setData(lineData);
+                } else if (swingSeries) {
+                    swingSeries.setData([]);
+                }
+                
+                // 2. Add Markers for Elliott Wave, Harmonic, and Swings
+                if (series) {
+                    const markers = [];
+                    
+                    if (data.swings) {
+                        data.swings.forEach(s => {
+                            markers.push({
+                                time: s.time,
+                                position: s.type === 'high' ? 'aboveBar' : 'belowBar',
+                                color: s.type === 'high' ? '#e74c3c' : '#2ecc71',
+                                shape: 'circle',
+                                size: 0.5,
+                                text: ''
+                            });
+                        });
+                    }
+                    
+                    if (data.harmonic && data.harmonic.points) {
+                        const pts = data.harmonic.points;
+                        const labels = ['X', 'A', 'B', 'C', 'D'];
+                        pts.forEach((pt, idx) => {
+                            markers.push({
+                                time: pt.time,
+                                position: pt.type === 'high' ? 'aboveBar' : 'belowBar',
+                                color: '#ffb703',
+                                shape: idx === 4 ? 'pin' : 'square',
+                                text: labels[idx]
+                            });
+                        });
+                        
+                        const D = pts[4];
+                        markers.push({
+                            time: D.time,
+                            position: D.type === 'high' ? 'aboveBar' : 'belowBar',
+                            color: data.harmonic.signal === 'buy' ? '#2ecc71' : '#e74c3c',
+                            shape: data.harmonic.signal === 'buy' ? 'arrowUp' : 'arrowDown',
+                            text: `🎯 ${data.harmonic.pattern} (${data.harmonic.signal.toUpperCase()})`
+                        });
+                    }
+                    
+                    if (data.elliott && data.elliott.points) {
+                        const pts = data.elliott.points;
+                        pts.forEach((pt, idx) => {
+                            markers.push({
+                                time: pt.time,
+                                position: pt.type === 'high' ? 'aboveBar' : 'belowBar',
+                                color: '#00b4d8',
+                                shape: 'circle',
+                                text: `${idx}`
+                            });
+                        });
+                        
+                        const lastPt = pts[pts.length - 1];
+                        markers.push({
+                            time: lastPt.time,
+                            position: lastPt.type === 'high' ? 'aboveBar' : 'belowBar',
+                            color: data.elliott.signal === 'buy' ? '#2ecc71' : '#e74c3c',
+                            shape: data.elliott.signal === 'buy' ? 'arrowUp' : 'arrowDown',
+                            text: `🌊 ${data.elliott.pattern} (${data.elliott.signal.toUpperCase()})`
+                        });
+                    }
+                    
+                    markers.sort((a, b) => a.time - b.time);
+                    series.setMarkers(markers);
+                }
+            }
+        } catch (err) {
+            console.error(`Failed to load pattern data for pane ${paneId}:`, err);
+        }
+    };
+
+    // Consolidated Multi-Timeframe Chart Initializer
+    useEffect(() => {
+        const activePaneIds = chartLayout === 'single' ? [0] : chartLayout === 'dual' ? [0, 1] : [0, 1, 2, 3];
+        
+        // Destroy old charts to prevent duplicate canvases and memory leaks
+        Object.entries(chartsRef.current).forEach(([pId, chart]) => {
+            if (chart) {
+                try {
+                    chart.remove();
+                } catch (e) {
+                    console.error(`Error destroying chart ${pId}:`, e);
+                }
+            }
+        });
+        
+        chartsRef.current = {};
+        candlestickSeriesesRef.current = {};
+        swingSeriesesRef.current = {};
+
+        // Initialize active chart panes
+        activePaneIds.forEach((paneId) => {
+            const container = containersRef.current[paneId];
+            if (!container) return;
+
+            const chart = LightweightCharts.createChart(container, {
+                layout: {
+                    background: { type: LightweightCharts.ColorType.Solid, color: '#0c1220' },
+                    textColor: '#94a3b8',
+                    fontSize: 11,
+                    fontFamily: 'Inter',
+                },
+                grid: {
+                    vertLines: { color: 'rgba(38, 50, 80, 0.2)' },
+                    horzLines: { color: 'rgba(38, 50, 80, 0.2)' },
+                },
+                crosshair: {
+                    mode: LightweightCharts.CrosshairMode.Normal,
+                    vertLine: {
+                        color: '#ffb703',
+                        width: 1,
+                        style: 2,
+                    },
+                    horzLine: {
+                        color: '#ffb703',
+                        width: 1,
+                        style: 2,
+                    }
+                },
+                rightPriceScale: {
+                    borderColor: 'rgba(38, 50, 80, 0.4)',
+                    textColor: '#94a3b8',
+                },
+                timeScale: {
+                    borderColor: 'rgba(38, 50, 80, 0.4)',
+                    timeVisible: true,
+                    secondsVisible: false,
+                },
+                localization: {
+                    locale: 'th-TH',
+                }
+            });
+
+            const candlestickSeries = chart.addCandlestickSeries({
+                upColor: '#2ecc71',
+                downColor: '#e74c3c',
+                borderUpColor: '#2ecc71',
+                borderDownColor: '#e74c3c',
+                wickUpColor: '#2ecc71',
+                wickDownColor: '#e74c3c',
+            });
+
+            const swingSeries = chart.addLineSeries({
+                color: 'rgba(255, 183, 3, 0.45)',
+                lineWidth: 2,
+                lineType: 0,
+                lineStyle: 2,
+            });
+
+            chartsRef.current[paneId] = chart;
+            candlestickSeriesesRef.current[paneId] = candlestickSeries;
+            swingSeriesesRef.current[paneId] = swingSeries;
+
+            // Render existing drawings on this pane
+            drawnLinesRef.current.forEach(line => {
+                if (line.symbol !== activeSymbol) return;
+                if (!line.instances) line.instances = {};
+
+                if (line.type === 'horizontal') {
+                    line.instances[paneId] = candlestickSeries.createPriceLine({
+                        price: line.price,
+                        color: '#ff4d4d',
+                        lineWidth: 2,
+                        lineStyle: 2,
+                        axisLabelVisible: true,
+                        title: 'Horizontal'
+                    });
+                } else if (line.type === 'bos' || line.type === 'choch' || line.type === 'trendline') {
+                    const color = line.type === 'bos' ? '#00b4d8' : line.type === 'choch' ? '#ff477e' : '#ffb703';
+                    const title = line.type === 'bos' ? 'BOS' : line.type === 'choch' ? 'CHoCH' : '';
+                    const lineSeries = chart.addLineSeries({
+                        color: color,
+                        lineWidth: 2,
+                        crosshairMarkerVisible: false,
+                        priceLineVisible: false,
+                        lastValueVisible: false
+                    });
+                    
+                    const tA = line.points[0].time;
+                    const tB = line.points[1].time;
+                    const pA = line.points[0].price;
+                    const pB = line.points[1].price;
+                    
+                    const points = [{ time: tA, value: pA }];
+                    const midTime = Math.round((tA + tB) / 2);
+                    if (midTime > tA && midTime < tB) {
+                        const midPrice = (pA + pB) / 2;
+                        points.push({ time: midTime, value: midPrice });
+                    }
+                    points.push({ time: tB, value: pB });
+                    
+                    lineSeries.setData(points);
+                    
+                    if (title) {
+                        const markerTime = (midTime > tA && midTime < tB) ? midTime : tB;
+                        lineSeries.setMarkers([
+                            {
+                                time: markerTime,
+                                position: 'aboveBar',
+                                color: color,
+                                shape: 'circle',
+                                size: 0.1,
+                                text: title
+                            }
+                        ]);
+                    }
+                    
+                    line.instances[paneId] = lineSeries;
+                }
+            });
+
+            // Subcribe chart pane clicks for synchronized drawings
+            chart.subscribeClick((param) => {
+                if (!param || !param.point || !param.time) return;
+                const time = param.time;
+                const price = candlestickSeries.coordinateToPrice(param.point.y);
+                if (price === null) return;
+
+                const tool = drawingToolRef.current;
+                if (!tool) return;
+
+                if (tool === 'horizontal') {
+                    const lineId = Date.now();
+                    const lineInstances = {};
+                    const color = '#ff4d4d';
+                    const title = 'Horizontal';
+
+                    // Create price line on all active candlestick series synchronously
+                    Object.entries(candlestickSeriesesRef.current).forEach(([pId, series]) => {
+                        if (series) {
+                            try {
+                                const priceLine = series.createPriceLine({
+                                    price: price,
+                                    color: color,
+                                    lineWidth: 2,
+                                    lineStyle: 2,
+                                    axisLabelVisible: true,
+                                    title: title
+                                });
+                                lineInstances[pId] = priceLine;
+                            } catch (e) {
+                                console.error(`Error drawing price line on pane ${pId}:`, e);
+                            }
+                        }
+                    });
+
+                    drawnLinesRef.current.push({
+                        id: lineId,
+                        type: 'horizontal',
+                        price: price,
+                        symbol: activeSymbol,
+                        instances: lineInstances
+                    });
+                } else if (tool === 'trendline' || tool === 'bos' || tool === 'choch') {
+                    if (!drawingStartPointRef.current) {
+                        setDrawingStartPoint({ time, price });
+                    } else {
+                        const pA = drawingStartPointRef.current;
+                        // Snap price to first point's price if drawing BOS/CHoCH to make it perfectly horizontal
+                        const finalPrice = (tool === 'bos' || tool === 'choch') ? pA.price : price;
+                        const pB = { time, price: finalPrice };
+                        const lineId = Date.now();
+                        const lineInstances = {};
+                        
+                        const color = tool === 'bos' ? '#00b4d8' : tool === 'choch' ? '#ff477e' : '#ffb703';
+                        const title = tool === 'bos' ? 'BOS' : tool === 'choch' ? 'CHoCH' : '';
+
+                        // Create line series on all active charts synchronously
+                        Object.entries(chartsRef.current).forEach(([pId, c]) => {
+                            if (c) {
+                                try {
+                                    const lineSeries = c.addLineSeries({
+                                        color: color,
+                                        lineWidth: 2,
+                                        crosshairMarkerVisible: false,
+                                        priceLineVisible: false,
+                                        lastValueVisible: false
+                                    });
+                                    
+                                    const points = [{ time: pA.time, value: pA.price }];
+                                    const midTime = Math.round((pA.time + pB.time) / 2);
+                                    if (midTime > pA.time && midTime < pB.time) {
+                                        points.push({ time: midTime, value: finalPrice });
+                                    }
+                                    points.push({ time: pB.time, value: finalPrice });
+                                    
+                                    lineSeries.setData(points);
+                                    
+                                    if (title) {
+                                        const markerTime = (midTime > pA.time && midTime < pB.time) ? midTime : pB.time;
+                                        lineSeries.setMarkers([
+                                            {
+                                                time: markerTime,
+                                                position: 'aboveBar',
+                                                color: color,
+                                                shape: 'circle',
+                                                size: 0.1,
+                                                text: title
+                                            }
+                                        ]);
+                                    }
+                                    
+                                    lineInstances[pId] = lineSeries;
+                                } catch (e) {
+                                    console.error(`Error drawing line series on pane ${pId}:`, e);
+                                }
+                            }
+                        });
+
+                        drawnLinesRef.current.push({
+                            id: lineId,
+                            type: tool,
+                            points: [pA, pB],
+                            symbol: activeSymbol,
+                            instances: lineInstances
+                        });
+
+                        setDrawingStartPoint(null);
+                    }
+                }
+            });
+
+            // Trigger initial chart pane candle/pattern data loads
+            const paneTf = paneTimeframes[paneId] || 'H1';
+            loadChartDataForPane(paneId, activeSymbol, paneTf);
+            loadPatternsForPane(paneId, activeSymbol, paneTf);
+        });
+
+        // Dynamic multi-pane resize handler
+        const handleResize = () => {
+            activePaneIds.forEach(paneId => {
+                const chart = chartsRef.current[paneId];
+                const container = containersRef.current[paneId];
+                if (chart && container) {
+                    chart.applyOptions({
+                        width: container.clientWidth,
+                        height: container.clientHeight
+                    });
+                }
+            });
+        };
+
+        window.addEventListener('resize', handleResize);
+        
+        // Fire resize handler slightly after mount to fit to layout changes perfectly
+        const resizeTimeout = setTimeout(handleResize, 150);
+
+        return () => {
+            window.removeEventListener('resize', handleResize);
+            clearTimeout(resizeTimeout);
+            
+            // Clean up charts on unmount or dependency trigger
+            Object.values(chartsRef.current).forEach(chart => {
+                if (chart) {
+                    try {
+                        chart.remove();
+                    } catch (e) {}
+                }
+            });
+        };
+    }, [activeSymbol, chartLayout, JSON.stringify(paneTimeframes)]);
+
+    // Multi-Timeframe live ticks updater
+    useEffect(() => {
+        const updateLastCandles = async () => {
+            const activePaneIds = chartLayout === 'single' ? [0] : chartLayout === 'dual' ? [0, 1] : [0, 1, 2, 3];
+            
+            for (const pId of activePaneIds) {
+                const series = candlestickSeriesesRef.current[pId];
+                if (!series) continue;
+
+                const paneTf = paneTimeframes[pId] || 'H1';
+                try {
+                    const res = await fetch(`/api/mt5/candles?symbol=${activeSymbol}&timeframe=${paneTf}&count=1`);
+                    if (res.ok) {
+                        const candles = await res.json();
+                        if (candles && candles.length > 0) {
+                            const candle = candles[0];
+                            series.update({
+                                time: candle.time,
+                                open: candle.open,
+                                high: candle.high,
+                                low: candle.low,
+                                close: candle.close
+                            });
+                        }
+                    }
+                } catch (err) {
+                    console.error(`Error updating live candle for pane ${pId}:`, err);
+                }
+            }
+        };
+
+        const liveUpdateInterval = setInterval(updateLastCandles, 1000);
+        return () => clearInterval(liveUpdateInterval);
+    }, [activeSymbol, chartLayout, JSON.stringify(paneTimeframes)]);
+
+    // Multi-Timeframe live patterns & ZigZag swing updater
+    useEffect(() => {
+        const activePaneIds = chartLayout === 'single' ? [0] : chartLayout === 'dual' ? [0, 1] : [0, 1, 2, 3];
+        
+        const updateAllPatterns = () => {
+            activePaneIds.forEach(pId => {
+                const paneTf = paneTimeframes[pId] || 'H1';
+                loadPatternsForPane(pId, activeSymbol, paneTf);
+            });
+        };
+
+        updateAllPatterns();
+        const patternsInterval = setInterval(updateAllPatterns, 5000);
+        return () => clearInterval(patternsInterval);
+    }, [activeSymbol, chartLayout, JSON.stringify(paneTimeframes), activePaneId, JSON.stringify(stochRsiSettings), JSON.stringify(macdSettings)]);
+
+    // --- Backtesting Equity Curve Chart Initializer ---
+    useEffect(() => {
+        if (activeTab !== 'backtest' || !backtestResult || !backtestResult.equity_curve || backtestLoading) {
+            if (backtestChartRef.current) {
+                try {
+                    backtestChartRef.current.remove();
+                } catch (e) {}
+                backtestChartRef.current = null;
+                backtestAreaSeriesRef.current = null;
+            }
+            return;
         }
 
-        // Initialize Lightweight Chart
-        const chart = LightweightCharts.createChart(chartContainerRef.current, {
+        const container = backtestChartContainerRef.current;
+        if (!container) return;
+
+        // Destroy any existing backtest chart first to avoid duplicates
+        if (backtestChartRef.current) {
+            try {
+                backtestChartRef.current.remove();
+            } catch (e) {}
+            backtestChartRef.current = null;
+            backtestAreaSeriesRef.current = null;
+        }
+
+        const chart = LightweightCharts.createChart(container, {
             layout: {
                 background: { type: LightweightCharts.ColorType.Solid, color: '#0c1220' },
                 textColor: '#94a3b8',
@@ -403,7 +1175,7 @@ const TradingApp = () => {
                 vertLine: {
                     color: '#ffb703',
                     width: 1,
-                    style: 2, // dashed
+                    style: 2,
                 },
                 horzLine: {
                     color: '#ffb703',
@@ -425,206 +1197,143 @@ const TradingApp = () => {
             }
         });
 
-        // Create candlestick series
-        const candlestickSeries = chart.addCandlestickSeries({
-            upColor: '#2ecc71',
-            downColor: '#e74c3c',
-            borderUpColor: '#2ecc71',
-            borderDownColor: '#e74c3c',
-            wickUpColor: '#2ecc71',
-            wickDownColor: '#e74c3c',
-        });
-
-        // Create ZigZag swing line series
-        const swingSeries = chart.addLineSeries({
-            color: 'rgba(255, 183, 3, 0.45)', // beautiful glowing translucent gold
+        const areaSeries = chart.addAreaSeries({
+            topColor: 'rgba(255, 183, 3, 0.4)',
+            bottomColor: 'rgba(255, 183, 3, 0.0)',
+            lineColor: '#ffb703',
             lineWidth: 2,
-            lineType: 0,
-            lineStyle: 2, // dashed line
         });
 
-        chartRef.current = chart;
-        candlestickSeriesRef.current = candlestickSeries;
-        swingSeriesRef.current = swingSeries;
+        // Format equity curve data
+        const chartData = backtestResult.equity_curve.map(item => ({
+            time: item.time,
+            value: item.value
+        }));
+        
+        // Sort chronologically just in case
+        chartData.sort((a, b) => a.time - b.time);
+        areaSeries.setData(chartData);
+        chart.timeScale().fitContent();
 
-        // Fetch candle history for active symbol & timeframe
-        loadChartData(activeSymbol, timeframe);
-        loadPatterns(activeSymbol, timeframe);
+        backtestChartRef.current = chart;
+        backtestAreaSeriesRef.current = areaSeries;
 
-        // Responsive resize
         const handleResize = () => {
-            if (chartRef.current && chartContainerRef.current) {
-                chartRef.current.applyOptions({
-                    width: chartContainerRef.current.clientWidth,
-                    height: chartContainerRef.current.clientHeight
+            if (chart && container) {
+                chart.applyOptions({
+                    width: container.clientWidth,
+                    height: container.clientHeight
                 });
             }
         };
+
         window.addEventListener('resize', handleResize);
+        
+        // Fire resize slightly after mount to fit properly
+        const resizeTimeout = setTimeout(handleResize, 150);
 
         return () => {
             window.removeEventListener('resize', handleResize);
-            if (chartRef.current) {
-                chartRef.current.remove();
-                chartRef.current = null;
+            clearTimeout(resizeTimeout);
+            if (chart) {
+                try {
+                    chart.remove();
+                } catch (e) {}
+            }
+            backtestChartRef.current = null;
+            backtestAreaSeriesRef.current = null;
+        };
+    }, [activeTab, backtestResult, backtestLoading]);
+
+    // Resizing trigger for backtest chart on sidebars animation toggles
+    useEffect(() => {
+        const resizeBacktestChart = () => {
+            const chart = backtestChartRef.current;
+            const container = backtestChartContainerRef.current;
+            if (chart && container) {
+                chart.applyOptions({
+                    width: container.clientWidth,
+                    height: container.clientHeight
+                });
             }
         };
-    }, [activeSymbol, timeframe]);
-
-    // Live Candle update pooling
-    useEffect(() => {
-        const updateLastCandle = async () => {
-            if (!candlestickSeriesRef.current) return;
-            try {
-                // Fetch the latest candle for the active chart asset
-                const res = await fetch(`/api/mt5/candles?symbol=${activeSymbol}&timeframe=${timeframe}&count=1`);
-                if (res.ok) {
-                    const candles = await res.json();
-                    if (candles && candles.length > 0) {
-                        const candle = candles[0];
-                        candlestickSeriesRef.current.update({
-                            time: candle.time,
-                            open: candle.open,
-                            high: candle.high,
-                            low: candle.low,
-                            close: candle.close
-                        });
-                    }
-                }
-            } catch (err) {
-                console.error("Error updating live candle:", err);
-            }
-        };
-
-        const liveUpdateInterval = setInterval(updateLastCandle, 1000);
-        return () => clearInterval(liveUpdateInterval);
-    }, [activeSymbol, timeframe]);
-
-    // Live patterns and ZigZag line update pooling
-    useEffect(() => {
-        loadPatterns(activeSymbol, timeframe);
-        const patternsInterval = setInterval(() => {
-            loadPatterns(activeSymbol, timeframe);
-        }, 5000);
-        return () => clearInterval(patternsInterval);
-    }, [activeSymbol, timeframe]);
-
-    // Load historical candles
-    const loadChartData = async (symbol, tf) => {
-        try {
-            const res = await fetch(`/api/mt5/candles?symbol=${symbol}&timeframe=${tf}&count=200`);
-            if (res.ok) {
-                const data = await res.json();
-                if (data && data.length > 0 && candlestickSeriesRef.current) {
-                    candlestickSeriesRef.current.setData(data);
-                    chartRef.current.timeScale().fitContent();
-                }
-            }
-        } catch (err) {
-            console.error("Failed to load chart data:", err);
-        }
-    };
-
-    // Load patterns and swing ZigZag lines
-    const loadPatterns = async (symbol, tf) => {
-        try {
-            const res = await fetch(`/api/mt5/patterns?symbol=${symbol}&timeframe=${tf}&count=200`);
-            if (res.ok) {
-                const data = await res.json();
-                
-                // 1. Draw ZigZag Line if we have swings
-                if (data.swings && data.swings.length > 0 && swingSeriesRef.current) {
-                    const lineData = data.swings.map(s => ({
-                        time: s.time,
-                        value: s.price
-                    }));
-                    // Sort line data by time to avoid Lightweight Charts draw error
-                    lineData.sort((a, b) => a.time - b.time);
-                    swingSeriesRef.current.setData(lineData);
-                } else if (swingSeriesRef.current) {
-                    swingSeriesRef.current.setData([]);
-                }
-                
-                // 2. Add Markers for Elliott Wave, Harmonic, and Swings
-                if (candlestickSeriesRef.current) {
-                    const markers = [];
-                    
-                    // Add standard swing peaks and troughs markers (subtle pins/circles)
-                    if (data.swings) {
-                        data.swings.forEach(s => {
-                            markers.push({
-                                time: s.time,
-                                position: s.type === 'high' ? 'aboveBar' : 'belowBar',
-                                color: s.type === 'high' ? '#e74c3c' : '#2ecc71',
-                                shape: 'circle',
-                                size: 0.5,
-                                text: '' // Just draw small circles at swing points
-                            });
-                        });
-                    }
-                    
-                    // Add Harmonic Pattern coordinates and big reversal marker
-                    if (data.harmonic && data.harmonic.points) {
-                        const pts = data.harmonic.points;
-                        const labels = ['X', 'A', 'B', 'C', 'D'];
-                        pts.forEach((pt, idx) => {
-                            markers.push({
-                                time: pt.time,
-                                position: pt.type === 'high' ? 'aboveBar' : 'belowBar',
-                                color: '#ffb703', // vibrant gold
-                                shape: idx === 4 ? 'pin' : 'square',
-                                text: labels[idx]
-                            });
-                        });
-                        
-                        // Big action indicator at point D
-                        const D = pts[4];
-                        markers.push({
-                            time: D.time,
-                            position: D.type === 'high' ? 'aboveBar' : 'belowBar',
-                            color: data.harmonic.signal === 'buy' ? '#2ecc71' : '#e74c3c',
-                            shape: data.harmonic.signal === 'buy' ? 'arrowUp' : 'arrowDown',
-                            text: `🎯 ${data.harmonic.pattern} (${data.harmonic.signal.toUpperCase()})`
-                        });
-                    }
-                    
-                    // Add Elliott Wave counts and signal markers
-                    if (data.elliott && data.elliott.points) {
-                        const pts = data.elliott.points;
-                        pts.forEach((pt, idx) => {
-                            markers.push({
-                                time: pt.time,
-                                position: pt.type === 'high' ? 'aboveBar' : 'belowBar',
-                                color: '#00b4d8', // bright wave blue
-                                shape: 'circle',
-                                text: `${idx}`
-                            });
-                        });
-                        
-                        // Big wave action indicator at completion point
-                        const lastPt = pts[pts.length - 1];
-                        markers.push({
-                            time: lastPt.time,
-                            position: lastPt.type === 'high' ? 'aboveBar' : 'belowBar',
-                            color: data.elliott.signal === 'buy' ? '#2ecc71' : '#e74c3c',
-                            shape: data.elliott.signal === 'buy' ? 'arrowUp' : 'arrowDown',
-                            text: `🌊 ${data.elliott.pattern} (${data.elliott.signal.toUpperCase()})`
-                        });
-                    }
-                    
-                    // Sort markers by time to avoid render errors
-                    markers.sort((a, b) => a.time - b.time);
-                    
-                    // Set markers on the candlestick series
-                    candlestickSeriesRef.current.setMarkers(markers);
-                }
-            }
-        } catch (err) {
-            console.error("Failed to load pattern data:", err);
-        }
-    };
+        
+        const intervals = [50, 100, 150, 200, 250, 300, 350];
+        const timers = intervals.map(ms => setTimeout(resizeBacktestChart, ms));
+        
+        return () => timers.forEach(clearTimeout);
+    }, [isWatchlistCollapsed, isExecutionCollapsed, activeTab, isTerminalExpanded]);
 
     // --- API Interactions ---
+
+    // --- Backtesting API Interaction ---
+    const handleRunBacktest = async (e) => {
+        if (e) e.preventDefault();
+        if (backtestSelectedAlgos.length === 0) {
+            alert("กรุณาเลือกกลยุทธ์อย่างน้อย 1 กลยุทธ์เพื่อทำการทดสอบย้อนหลัง");
+            return;
+        }
+
+        setBacktestLoading(true);
+        setBacktestResult(null);
+
+        try {
+            const res = await fetch("/api/backtest", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    symbol: backtestForm.symbol,
+                    timeframe: backtestForm.timeframe,
+                    count: parseInt(backtestForm.count) || 200,
+                    algorithm: backtestSelectedAlgos.join(","),
+                    signal_mode: backtestForm.signal_mode,
+                    lot_size: parseFloat(backtestForm.lot_size) || 0.1,
+                    sl_points: parseFloat(backtestForm.sl_points) || 0.0,
+                    tp_points: parseFloat(backtestForm.tp_points) || 0.0,
+                    initial_balance: parseFloat(backtestForm.initial_balance) || 10000.0
+                })
+            });
+
+            const data = await res.json();
+            if (res.ok) {
+                setBacktestResult(data);
+            } else {
+                alert(`ล้มเหลวในการรัน backtest: ${data.detail || "Unknown error"}`);
+            }
+        } catch (err) {
+            alert(`เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์: ${err.message}`);
+        } finally {
+            setBacktestLoading(false);
+        }
+    };
+
+    const fetchNews = async () => {
+        try {
+            const res = await fetch("/api/news");
+            if (res.ok) {
+                const data = await res.json();
+                setNewsData(data);
+            }
+        } catch (err) {
+            console.error("Error fetching news:", err);
+        }
+    };
+
+    const handleRefreshNews = async () => {
+        setNewsRefreshing(true);
+        try {
+            const res = await fetch("/api/news/refresh", { method: "POST" });
+            if (res.ok) {
+                await fetchNews();
+            } else {
+                alert("เกิดข้อผิดพลาดในการอัปเดตข่าวสาร");
+            }
+        } catch (err) {
+            alert("ไม่สามารถติดต่อหลังบ้านเพื่อดึงข่าวได้: " + err.message);
+        } finally {
+            setNewsRefreshing(false);
+        }
+    };
 
     const fetchWatchlist = async () => {
         try {
@@ -745,7 +1454,8 @@ const TradingApp = () => {
             use_trend_filter: bot.use_trend_filter || false,
             use_atr_sizing: bot.use_atr_sizing || false,
             risk_percent: bot.risk_percent || 1.0,
-            allowed_sessions: bot.allowed_sessions || "all"
+            allowed_sessions: bot.allowed_sessions || "all",
+            use_news_filter: bot.use_news_filter || false
         });
         setSelectedAlgos((bot.algorithms || bot.algorithm || "").split(",").map(a => a.trim()).filter(Boolean));
         setSignalMode(bot.signal_mode || "or");
@@ -772,7 +1482,8 @@ const TradingApp = () => {
                     use_trend_filter: botForm.use_trend_filter || false,
                     use_atr_sizing: botForm.use_atr_sizing || false,
                     risk_percent: parseFloat(botForm.risk_percent) || 1.0,
-                    allowed_sessions: botForm.allowed_sessions || "all"
+                    allowed_sessions: botForm.allowed_sessions || "all",
+                    use_news_filter: botForm.use_news_filter || false
                 })
             });
             if (res.ok) {
@@ -1127,6 +1838,736 @@ const TradingApp = () => {
     const analytics = calculateAnalytics();
     const currentPriceInfo = prices[activeSymbol] || { bid: 0.0, ask: 0.0, change: "0.00" };
 
+    if (isNewsPopout) {
+        return (
+            <div className="app-container" style={{ height: '100vh', background: 'var(--bg-main)', overflow: 'hidden', padding: '16px' }}>
+                <div className="news-tab-container" style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: '20px', padding: '8px', height: 'calc(100vh - 32px)' }}>
+                    {/* Left Panel: Market Mood & AI Sentiment */}
+                    <div className="news-left-panel" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                        {/* Market Sentiment Gauge */}
+                        <div className="sidebar-panel-card" style={{ padding: '16px', position: 'relative', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.06)' }}>
+                            <h3 style={{ margin: '0 0 14px 0', borderLeft: '3px solid var(--accent-gold)', paddingLeft: '8px', fontSize: '14px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                ดัชนีอารมณ์ตลาด (Market Mood)
+                            </h3>
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '12px 0', gap: '8px' }}>
+                                {newsData.sentiment_summary === 'bullish' ? (
+                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                        <span style={{ fontSize: '42px', filter: 'drop-shadow(0 0 10px rgba(46, 204, 113, 0.6))' }}>📈</span>
+                                        <strong style={{ fontSize: '18px', color: 'var(--bull-green)', marginTop: '8px', textTransform: 'uppercase' }}>BULLISH (กระทิง)</strong>
+                                    </div>
+                                ) : newsData.sentiment_summary === 'bearish' ? (
+                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                        <span style={{ fontSize: '42px', filter: 'drop-shadow(0 0 10px rgba(231, 76, 60, 0.6))' }}>📉</span>
+                                        <strong style={{ fontSize: '18px', color: 'var(--bear-red)', marginTop: '8px', textTransform: 'uppercase' }}>BEARISH (หมี)</strong>
+                                    </div>
+                                ) : (
+                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                        <span style={{ fontSize: '42px', filter: 'drop-shadow(0 0 8px rgba(255,255,255,0.4))' }}>⚪</span>
+                                        <strong style={{ fontSize: '18px', color: 'var(--text-secondary)', marginTop: '8px', textTransform: 'uppercase' }}>NEUTRAL (คงตัว)</strong>
+                                    </div>
+                                )}
+                                <span style={{ fontSize: '10.5px', color: 'var(--text-muted)', textAlign: 'center', marginTop: '4px', lineHeight: '1.4' }}>
+                                    * คำนวณสรุปแบบถ่วงน้ำหนักโดย AI อิงจากข่าวเศรษฐกิจและภูมิรัฐศาสตร์ 10 รายการล่าสุด
+                                </span>
+                            </div>
+                        </div>
+
+                        {/* Geopolitical Risk Scale */}
+                        <div className="sidebar-panel-card" style={{ padding: '16px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                            <h3 style={{ margin: '0 0 12px 0', borderLeft: '3px solid var(--bear-red)', paddingLeft: '8px', fontSize: '14px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                ระดับภัยคุกคามตลาด
+                            </h3>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>ระดับความตึงเครียด:</span>
+                                    <span style={{ 
+                                        fontSize: '11px', 
+                                        fontWeight: 800, 
+                                        color: newsData.risk_level === 'high' ? 'var(--bear-red)' : newsData.risk_level === 'medium' ? 'var(--accent-gold)' : 'var(--bull-green)',
+                                        background: newsData.risk_level === 'high' ? 'rgba(231, 76, 60, 0.15)' : newsData.risk_level === 'medium' ? 'rgba(255, 183, 3, 0.15)' : 'rgba(46, 204, 113, 0.15)',
+                                        padding: '2px 8px',
+                                        borderRadius: '4px'
+                                    }}>
+                                        {newsData.risk_level.toUpperCase()}
+                                    </span>
+                                </div>
+                                <div style={{ height: '8px', background: 'rgba(0,0,0,0.3)', borderRadius: '4px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.05)' }}>
+                                    <div style={{ 
+                                        width: newsData.risk_level === 'high' ? '100%' : newsData.risk_level === 'medium' ? '60%' : '20%', 
+                                        height: '100%', 
+                                        background: newsData.risk_level === 'high' ? 'var(--bear-red)' : newsData.risk_level === 'medium' ? 'var(--accent-gold)' : 'var(--bull-green)',
+                                        boxShadow: newsData.risk_level === 'high' ? '0 0 8px var(--bear-red)' : newsData.risk_level === 'medium' ? '0 0 8px var(--accent-gold)' : 'none',
+                                        transition: 'width 0.5s ease-in-out'
+                                    }}></div>
+                                </div>
+                                <p style={{ fontSize: '10px', color: 'var(--text-secondary)', lineHeight: '1.4', margin: '4px 0 0 0', fontStyle: 'italic' }}>
+                                    {newsData.risk_level === 'high' 
+                                        ? '⚠️ ความตึงเครียดทางสงครามหรือภูมิรัฐศาสตร์รุนแรงขึ้น! แนะนำเน้นถือไม้ซื้อทองคำ (BUY Gold) รันเทรนตามระบบและระวังความผันผวนสูง'
+                                        : newsData.risk_level === 'medium'
+                                        ? '⚡ มีประเด็นสงครามการค้า/อัตราดอกเบี้ยและเงินเฟ้อระดับปานกลาง ตลาดค่อนข้างผันผวน แนะนำเพิ่มความรัดกุมในการตั้งจุด Stop Loss'
+                                        : '🟢 ปัจจัยภายนอกยังคงอยู่ในเกณฑ์ปลอดภัย บอทระบบสัมผัสเทคนิคคอลทั่วไปทำงานได้อย่างปกติ'}
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* On-demand manual Refresher controls */}
+                        <button 
+                            className={`btn-trade-execute buy ${newsRefreshing ? 'active' : ''}`}
+                            onClick={handleRefreshNews}
+                            disabled={newsRefreshing}
+                            style={{ 
+                                width: '100%', 
+                                height: '42px', 
+                                padding: '10px', 
+                                fontSize: '12px', 
+                                fontWeight: 'bold', 
+                                borderRadius: '6px', 
+                                border: '1px solid var(--accent-gold)',
+                                background: 'rgba(255, 183, 3, 0.08)',
+                                color: 'var(--accent-gold)',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '8px',
+                                marginTop: 'auto'
+                            }}
+                        >
+                            <div className={newsRefreshing ? "loader-spinner" : ""} style={{ width: '14px', height: '14px', borderTopColor: 'var(--accent-gold)', animationDuration: '0.8s' }}>
+                                {!newsRefreshing && <Icon name="refresh" size={14} />}
+                            </div>
+                            <span>{newsRefreshing ? 'กำลังดึงและวิเคราะห์ข่าวด้วย AI...' : 'ดึงและอัปเดตข่าวเรียลไทม์'}</span>
+                        </button>
+                    </div>
+
+                    {/* Right Panel: Analyzed News Feed */}
+                    <div className="news-right-panel" style={{ display: 'flex', flexDirection: 'column', gap: '12px', overflowY: 'auto', maxHeight: 'calc(100vh - 60px)', paddingRight: '4px', flex: 1 }}>
+                        {newsData.news.length === 0 ? (
+                            <div className="empty-terminal-state" style={{ height: '300px' }}>
+                                <Icon name="info" size={32} />
+                                <p>ยังไม่มีรายงานข่าวสารวิเคราะห์ในระบบ กดปุ่มดึงข่าวสารด้านซ้ายเพื่อรับอัปเดต</p>
+                            </div>
+                        ) : (
+                            newsData.news.map((item) => {
+                                const isExpanded = expandedNewsId === item.id;
+                                const pubDate = item.published_at ? new Date(item.published_at).toLocaleString('th-TH', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: 'short' }) : 'N/A';
+                                
+                                const impactColor = item.impact_level === 'high' ? 'rgba(231, 76, 60, 0.12)' : item.impact_level === 'medium' ? 'rgba(255, 183, 3, 0.12)' : 'rgba(0, 180, 216, 0.12)';
+                                const impactTextColor = item.impact_level === 'high' ? 'var(--bear-red)' : item.impact_level === 'medium' ? 'var(--accent-gold)' : '#00b4d8';
+                                const impactBorderColor = item.impact_level === 'high' ? 'rgba(231, 76, 60, 0.25)' : item.impact_level === 'medium' ? 'rgba(255, 183, 3, 0.25)' : 'rgba(0, 180, 216, 0.25)';
+                                
+                                const sentimentEmoji = item.sentiment === 'bullish' ? '📈 BUY' : item.sentiment === 'bearish' ? '📉 SELL' : '⚪ NEUTRAL';
+                                const sentimentTextColor = item.sentiment === 'bullish' ? 'var(--bull-green)' : item.sentiment === 'bearish' ? 'var(--bear-red)' : 'var(--text-muted)';
+                                
+                                return (
+                                    <div 
+                                        key={item.id} 
+                                        className="sidebar-panel-card"
+                                        style={{ 
+                                            padding: '14px 16px', 
+                                            border: '1px solid ' + (isExpanded ? 'var(--accent-gold)' : 'rgba(255, 255, 255, 0.05)'),
+                                            background: isExpanded ? 'rgba(255, 183, 3, 0.02)' : 'rgba(255,255,255,0.01)',
+                                            cursor: 'pointer',
+                                            borderRadius: '8px',
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            gap: '8px',
+                                            transition: 'all 0.2s ease',
+                                            boxShadow: isExpanded ? '0 0 10px rgba(255, 183, 3, 0.06)' : 'none'
+                                        }}
+                                        onClick={() => setExpandedNewsId(isExpanded ? null : item.id)}
+                                    >
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
+                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center' }}>
+                                                <span style={{ fontSize: '9px', background: 'rgba(255,255,255,0.06)', color: 'var(--text-secondary)', padding: '2px 6px', borderRadius: '4px', textTransform: 'uppercase', fontWeight: 'bold' }}>
+                                                    {item.category === 'geopolitical' ? 'สงคราม/ภูมิรัฐศาสตร์ 🛡️' : 'เศรษฐกิจมหภาค 📊'}
+                                                </span>
+                                                <span style={{ fontSize: '9px', background: impactColor, color: impactTextColor, border: '1px solid ' + impactBorderColor, padding: '1px 6px', borderRadius: '4px', fontWeight: 'bold' }}>
+                                                    IMPACT: {item.impact_level.toUpperCase()}
+                                                </span>
+                                                <span style={{ fontSize: '9.5px', color: sentimentTextColor, fontWeight: 'bold', marginLeft: '6px' }}>
+                                                    {sentimentEmoji}
+                                                </span>
+                                            </div>
+                                            <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+                                                {pubDate}
+                                            </span>
+                                        </div>
+
+                                        <h4 style={{ margin: 0, fontSize: '13px', fontWeight: 600, color: isExpanded ? 'var(--accent-gold)' : 'var(--text-primary)', lineHeight: '1.45', transition: 'color 0.2s' }}>
+                                            {item.title}
+                                        </h4>
+
+                                        {isExpanded && (
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px', borderTop: '1px solid rgba(255,255,255,0.04)', paddingTop: '10px', animation: 'fadeIn 0.2s ease' }}>
+                                                <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+                                                    <strong>สรุปข่าวดิบ:</strong> {item.summary || 'ไม่มีบทสรุปของข่าวสารในฐานข้อมูล'}
+                                                </p>
+                                                <div style={{ background: 'rgba(255, 183, 3, 0.03)', border: '1px dashed rgba(255, 183, 3, 0.2)', padding: '10px 12px', borderRadius: '6px', marginTop: '4px' }}>
+                                                    <span style={{ fontSize: '10.5px', color: 'var(--accent-gold)', fontWeight: 'bold', display: 'block', marginBottom: '4px', textTransform: 'uppercase' }}>🛡️ ผลวิเคราะห์ผลกระทบโดย AI (Thai Language):</span>
+                                                    <p style={{ margin: 0, fontSize: '12px', color: '#e2e8f0', lineHeight: '1.5', fontWeight: 500 }}>
+                                                        {item.analysis}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })
+                        )}
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    if (isAnalyticsPopout) {
+        return (
+            <div className="app-container" style={{ height: '100vh', background: 'var(--bg-main)', overflowY: 'auto', padding: '16px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', padding: '8px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                        <h2 style={{ fontSize: '18px', fontWeight: 'bold', margin: 0, color: 'var(--accent-gold)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <Icon name="trend-up" size={18} />
+                            <span>การวิเคราะห์ประสิทธิภาพเชิงลึกพอร์ตการลงทุน (Deep Analytics)</span>
+                        </h2>
+                    </div>
+                    {/* Top Summary Cards */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
+                        <div className="sidebar-panel-card" style={{ padding: '16px', textAlign: 'center' }}>
+                            <span className="metric-label" style={{ fontSize: '10px' }}>ยอดกำไรรวมสะสม</span>
+                            <h4 className={parseFloat(analytics.totalProfit) >= 0 ? 'price-up' : 'price-down'} style={{ fontSize: '24px', marginTop: '6px', fontFamily: 'monospace' }}>
+                                {parseFloat(analytics.totalProfit) >= 0 ? '+' : ''}${analytics.totalProfit}
+                            </h4>
+                        </div>
+                        
+                        <div className="sidebar-panel-card" style={{ padding: '16px', textAlign: 'center' }}>
+                            <span className="metric-label" style={{ fontSize: '10px' }}>อัตราการชนะ (Win Rate)</span>
+                            <h4 style={{ fontSize: '24px', marginTop: '6px', color: 'var(--accent-gold)', fontFamily: 'monospace' }}>
+                                {analytics.winRate}%
+                            </h4>
+                            <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', marginTop: '4px' }}>
+                                ชนะ {analytics.winCount} | แพ้ {analytics.loseCount} จากทั้งหมด {analytics.totalTrades} ออเดอร์
+                            </span>
+                        </div>
+
+                        <div className="sidebar-panel-card" style={{ padding: '16px', textAlign: 'center' }}>
+                            <span className="metric-label" style={{ fontSize: '10px' }}>กำไรต่อออเดอร์สูงสุด</span>
+                            <h4 className="price-up" style={{ fontSize: '22px', marginTop: '6px', fontFamily: 'monospace' }}>
+                                +${analytics.best}
+                            </h4>
+                        </div>
+
+                        <div className="sidebar-panel-card" style={{ padding: '16px', textAlign: 'center' }}>
+                            <span className="metric-label" style={{ fontSize: '10px' }}>ขาดทุนต่อออเดอร์สูงสุด</span>
+                            <h4 className="price-down" style={{ fontSize: '22px', marginTop: '6px', fontFamily: 'monospace' }}>
+                                ${analytics.worst}
+                            </h4>
+                        </div>
+                    </div>
+
+                    {/* Bot breakdown metrics */}
+                    <div className="sidebar-panel-card" style={{ padding: '20px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                            <h3 style={{ fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0, color: 'var(--text-secondary)' }}>
+                                วิเคราะห์ประสิทธิภาพรายบอทเทรด (Bot Win Rate & Profit Analytics)
+                            </h3>
+                        </div>
+                        
+                        {analytics.botStats.length === 0 ? (
+                            <div style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted)' }}>
+                                ไม่มีข้อมูลสถิติของบอทในขณะนี้
+                            </div>
+                        ) : (
+                            <table className="trading-table">
+                                <thead>
+                                    <tr>
+                                        <th>ที่มา / ชื่อบอท (Trading Source)</th>
+                                        <th style={{ textAlign: 'center' }}>จำนวนออเดอร์ (Trades)</th>
+                                        <th style={{ textAlign: 'center' }}>ชนะ (Wins)</th>
+                                        <th style={{ textAlign: 'center' }}>แพ้ (Losses)</th>
+                                        <th style={{ textAlign: 'center' }}>อัตราการชนะ (Win Rate)</th>
+                                        <th style={{ textAlign: 'right' }}>กำไรรวม (Net Profit)</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {analytics.botStats.map((bot, index) => {
+                                        const isBotManual = bot.name === 'เทรดเอง (Manual)';
+                                        const winRateVal = parseFloat(bot.winRate);
+                                        
+                                        let winRateColor = 'var(--text-muted)';
+                                        if (winRateVal >= 60) winRateColor = 'var(--bull-green)';
+                                        else if (winRateVal >= 45) winRateColor = 'var(--accent-gold)';
+                                        else if (winRateVal > 0) winRateColor = 'var(--bear-red)';
+
+                                        return (
+                                            <tr key={index}>
+                                                <td style={{ 
+                                                    fontWeight: 600, 
+                                                    color: isBotManual ? 'var(--text-muted)' : 'var(--accent-gold)'
+                                                }}>
+                                                    {bot.name}
+                                                </td>
+                                                <td style={{ textAlign: 'center', fontFamily: 'monospace' }}>{bot.count}</td>
+                                                <td style={{ textAlign: 'center', fontFamily: 'monospace', color: 'var(--bull-green)' }}>{bot.wins}</td>
+                                                <td style={{ textAlign: 'center', fontFamily: 'monospace', color: 'var(--bear-red)' }}>{bot.losses}</td>
+                                                <td style={{ textAlign: 'center', fontFamily: 'monospace', fontWeight: 'bold', color: winRateColor }}>
+                                                    {bot.winRate}%
+                                                </td>
+                                                <td className={parseFloat(bot.profit) >= 0 ? 'price-up' : 'price-down'} style={{ textAlign: 'right', fontWeight: 700, fontFamily: 'monospace' }}>
+                                                    {parseFloat(bot.profit) >= 0 ? '+' : ''}${bot.profit}
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        )}
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    if (isChatbotPopout) {
+        return (
+            <div className="app-container" style={{ height: '100vh', background: 'var(--bg-main)', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                <div 
+                    className="chatbot-window" 
+                    style={{ 
+                        position: 'relative',
+                        bottom: 'auto',
+                        right: 'auto',
+                        width: '100%', 
+                        maxWidth: '800px', 
+                        height: '100vh', 
+                        maxHeight: '100%', 
+                        display: 'flex', 
+                        flexDirection: 'column', 
+                        borderRadius: '0px',
+                        border: 'none',
+                        background: 'rgba(10, 15, 30, 0.75)',
+                        backdropFilter: 'blur(20px)',
+                        boxShadow: 'none',
+                        transition: 'none'
+                    }}
+                >
+                    {/* Header */}
+                    <div className="chatbot-header" style={{ cursor: 'default', padding: '16px 24px' }}>
+                        <div className="chatbot-title-area">
+                            <div className="chatbot-avatar-glow" style={{ width: '38px', height: '38px' }}>
+                                <Icon name="message" size={18} />
+                            </div>
+                            <div className="chatbot-header-text">
+                                <h4 style={{ fontSize: '15px' }}>Giant Slayer AI Assistant</h4>
+                                <div className="chatbot-status">
+                                    <div className="chatbot-status-dot"></div>
+                                    <span>เชื่อมต่อสดกับพอร์ตการลงทุน</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="chatbot-header-actions">
+                            <button 
+                                className="chatbot-action-btn"
+                                onClick={clearChat}
+                                title="ล้างการสนทนา"
+                                style={{ padding: '8px' }}
+                            >
+                                <Icon name="trash" size={16} />
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Messages Container */}
+                    <div className="chatbot-messages" style={{ flex: 1, padding: '24px', overflowY: 'auto' }}>
+                        {messages.map(msg => (
+                            <div key={msg.id} className={`chatbot-msg-wrapper ${msg.sender}`} style={{ maxWidth: '85%' }}>
+                                <div className="chatbot-msg-bubble" style={{ fontSize: '13.5px', padding: '14px 20px' }}>
+                                    {renderMessageContent(msg.text)}
+                                </div>
+                                <span className="chatbot-msg-time" style={{ fontSize: '10px' }}>{msg.timestamp}</span>
+                            </div>
+                        ))}
+                        
+                        {botIsTyping && (
+                            <div className="chatbot-msg-wrapper bot">
+                                <div className="chatbot-msg-bubble" style={{ padding: '12px 18px' }}>
+                                    <div className="typing-indicator">
+                                        <div className="typing-dot"></div>
+                                        <div className="typing-dot"></div>
+                                        <div className="typing-dot"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                        <div ref={chatbotEndRef} />
+                    </div>
+
+                    {/* Quick Reply Suggestion Chips */}
+                    <div className="chatbot-suggestions" style={{ padding: '12px 24px', flexWrap: 'wrap', gap: '10px', height: 'auto', background: 'rgba(10, 15, 30, 0.2)' }}>
+                        {[
+                            { label: "📊 ยอดเงินและพอร์ต", query: "ขอดูยอดเงินในพอร์ตและกำไรรวมปัจจุบัน" },
+                            { label: "💼 ไม้ที่เปิดค้างไว้", query: "มีออเดอร์โพสิชันอะไรเปิดอยู่บ้างขณะนี้" },
+                            { label: "📜 ประวัติการเทรด", query: "ขอดูประวัติบันทึกการเทรดล่าสุด" },
+                            { label: "📈 วิเคราะห์ราคาทอง", query: "แนวโน้มราคาสินทรัพย์ทองคำ XAUUSD ในปัจจุบันเป็นอย่างไร" },
+                            { label: "🤖 ขอคำแนะนำบอท", query: "แนะนำการตั้งค่ากลยุทธ์บอทเทรดของ Giant Slayer หน่อย" }
+                        ].map((chip, idx) => (
+                            <button
+                                key={idx}
+                                className="chatbot-chip"
+                                onClick={() => handleSendMessage(chip.query)}
+                                style={{ fontSize: '12px', padding: '8px 14px' }}
+                            >
+                                {chip.label}
+                            </button>
+                        ))}
+                    </div>
+
+                    {/* Message Input Area */}
+                    <form 
+                        className="chatbot-input-area"
+                        onSubmit={(e) => {
+                            e.preventDefault();
+                            handleSendMessage();
+                        }}
+                        style={{ padding: '16px 24px' }}
+                    >
+                        <div className="chatbot-input-wrapper">
+                            <input 
+                                type="text"
+                                className="chatbot-input"
+                                placeholder="พิมพ์ข้อความสอบถามการเทรดที่นี่..."
+                                value={inputMessage}
+                                onChange={(e) => setInputMessage(e.target.value)}
+                                disabled={botIsTyping}
+                                style={{ padding: '12px 20px', fontSize: '13px' }}
+                            />
+                        </div>
+                        <button 
+                            type="submit"
+                            className="chatbot-send-btn"
+                            disabled={!inputMessage.trim() || botIsTyping}
+                            style={{ width: '40px', height: '40px' }}
+                        >
+                            <Icon name="send" size={18} />
+                        </button>
+                    </form>
+                </div>
+            </div>
+        );
+    }
+
+    if (isPopout) {
+        return (
+            <div className="app-container" style={{ height: '100vh', background: 'var(--bg-main)', overflow: 'hidden' }}>
+                <div className="terminal-content" style={{ flex: 1, padding: '16px', height: '100%', overflowY: 'auto' }}>
+                    <div className="backtest-layout popout-view" style={{ height: 'calc(100vh - 32px)', minHeight: '600px' }}>
+                        {/* Left Panel: Form Settings */}
+                        <div className="backtest-sidebar-panel" style={{ height: '100%' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                <h4 style={{ fontSize: '13px', textTransform: 'uppercase', color: 'var(--text-secondary)', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <Icon name="settings" size={14} style={{ color: 'var(--accent-gold)' }} />
+                                    <span>ตั้งค่าการทดสอบ (Setup)</span>
+                                </h4>
+                            </div>
+                            
+                            <form onSubmit={handleRunBacktest} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                <div className="input-group" style={{ margin: 0 }}>
+                                    <label>สินทรัพย์ที่ต้องการทดสอบ (Symbol)</label>
+                                    <select 
+                                        className="numeric-input"
+                                        value={backtestForm.symbol}
+                                        onChange={(e) => setBacktestForm({ ...backtestForm, symbol: e.target.value })}
+                                        style={{ appearance: 'auto', fontSize: '12px', padding: '8px 10px' }}
+                                    >
+                                        {watchlist.map(item => (
+                                            <option key={item.symbol} value={item.symbol}>{item.symbol} - {item.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                <div className="input-group" style={{ margin: 0 }}>
+                                    <label>กรอบเวลาแท่งเทียน (Timeframe)</label>
+                                    <select 
+                                        className="numeric-input"
+                                        value={backtestForm.timeframe}
+                                        onChange={(e) => setBacktestForm({ ...backtestForm, timeframe: e.target.value })}
+                                        style={{ appearance: 'auto', fontSize: '12px', padding: '8px 10px' }}
+                                    >
+                                        <option value="M1">M1 (1 Minute)</option>
+                                        <option value="M5">M5 (5 Minutes)</option>
+                                        <option value="M15">M15 (15 Minutes)</option>
+                                        <option value="M30">M30 (30 Minutes)</option>
+                                        <option value="H1">H1 (1 Hour)</option>
+                                        <option value="H4">H4 (4 Hours)</option>
+                                        <option value="D1">D1 (1 Day)</option>
+                                    </select>
+                                </div>
+
+                                <div className="input-group" style={{ margin: 0 }}>
+                                    <label>จำนวนแท่งเทียนย้อนหลัง (Lookback)</label>
+                                    <select 
+                                        className="numeric-input"
+                                        value={backtestForm.count}
+                                        onChange={(e) => setBacktestForm({ ...backtestForm, count: parseInt(e.target.value) || 200 })}
+                                        style={{ appearance: 'auto', fontSize: '12px', padding: '8px 10px' }}
+                                    >
+                                        <option value="100">100 candles</option>
+                                        <option value="200">200 candles</option>
+                                        <option value="500">500 candles</option>
+                                        <option value="1000">1000 candles</option>
+                                    </select>
+                                </div>
+
+                                <div className="input-group" style={{ margin: 0 }}>
+                                    <div className="backtest-form-section-title">กลยุทธ์อัลกอริทึม (Algorithms)</div>
+                                    <div className="backtest-checkbox-list">
+                                        {[
+                                            { value: 'smc_confluence_pro', label: 'SMC Confluence Pro 🌟' },
+                                            { value: 'smc_order_block', label: 'SMC Order Block 🟩' },
+                                            { value: 'smc_fvg_imbalance', label: 'SMC FVG Imbalance ⚡' },
+                                            { value: 'smc_bos_choch', label: 'SMC BOS / CHoCH 📈' },
+                                            { value: 'rsi_oscillator', label: 'RSI Oscillator 🌊' },
+                                            { value: 'stoch_rsi', label: 'Stochastic RSI ⚡' },
+                                            { value: 'macd_4c', label: 'MACD 4 Color 📊' },
+                                            { value: 'macd', label: 'MACD Crossover 🎛️' },
+                                            { value: 'sma_cross', label: 'SMA Crossover ⚔️' },
+                                            { value: 'ema_cross_50_200', label: 'EMA Crossover 50/200 🧬' },
+                                            { value: 'harmonic_patterns', label: 'Harmonic Patterns 📐' },
+                                            { value: 'elliott_wave', label: 'Elliott Wave 🌊' },
+                                            { value: 'rsi_divergence', label: 'RSI Divergence 🎯' },
+                                            { value: 'atr_breakout', label: 'ATR Breakout 📊' },
+                                            { value: 'support_resistance', label: 'S/R Bounce 🧱' },
+                                            { value: 'liquidity_sweep', label: 'Liquidity Sweep 🧹' }
+                                        ].map((algo) => {
+                                            const isChecked = backtestSelectedAlgos.includes(algo.value);
+                                            return (
+                                                <div 
+                                                    key={algo.value}
+                                                    className="backtest-checkbox-item"
+                                                    onClick={() => {
+                                                        if (isChecked) {
+                                                            setBacktestSelectedAlgos(backtestSelectedAlgos.filter(a => a !== algo.value));
+                                                        } else {
+                                                            setBacktestSelectedAlgos([...backtestSelectedAlgos, algo.value]);
+                                                        }
+                                                    }}
+                                                >
+                                                    <input 
+                                                        type="checkbox"
+                                                        checked={isChecked}
+                                                        readOnly
+                                                    />
+                                                    <span>{algo.label}</span>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+
+                                <div className="input-group" style={{ margin: 0 }}>
+                                    <label>การยืนยันสัญญาณ (Consensus mode)</label>
+                                    <select 
+                                        className="numeric-input"
+                                        value={backtestForm.signal_mode}
+                                        onChange={(e) => setBacktestForm({ ...backtestForm, signal_mode: e.target.value })}
+                                        style={{ appearance: 'auto', fontSize: '12px', padding: '8px 10px' }}
+                                    >
+                                        <option value="or">OR (สัญญาณใดสัญญาณหนึ่งออก)</option>
+                                        <option value="and">AND (ทุกสัญญาณต้องออกร่วมกัน)</option>
+                                    </select>
+                                </div>
+
+                                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '8px' }}>
+                                    <div className="input-group" style={{ margin: 0 }}>
+                                        <label>เงินตั้งต้น (USD)</label>
+                                        <input 
+                                            type="number"
+                                            className="numeric-input"
+                                            value={backtestForm.initial_balance}
+                                            onChange={(e) => setBacktestForm({ ...backtestForm, initial_balance: parseFloat(e.target.value) || 10000.0 })}
+                                            style={{ height: '36px', fontSize: '12px', padding: '6px 10px' }}
+                                        />
+                                    </div>
+                                    <div className="input-group" style={{ margin: 0 }}>
+                                        <label>ขนาด Lot size</label>
+                                        <input 
+                                            type="number"
+                                            className="numeric-input"
+                                            step="0.01"
+                                            value={backtestForm.lot_size}
+                                            onChange={(e) => setBacktestForm({ ...backtestForm, lot_size: parseFloat(e.target.value) || 0.1 })}
+                                            style={{ height: '36px', fontSize: '12px', padding: '6px 10px' }}
+                                        />
+                                    </div>
+                                </div>
+
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                                    <div className="input-group" style={{ margin: 0 }}>
+                                        <label style={{ color: 'var(--bear-red)' }}>Stop Loss (SL)</label>
+                                        <input 
+                                            type="number"
+                                            className="numeric-input"
+                                            placeholder="จุดห่างราคา"
+                                            step="0.1"
+                                            value={backtestForm.sl_points}
+                                            onChange={(e) => setBacktestForm({ ...backtestForm, sl_points: parseFloat(e.target.value) || 0.0 })}
+                                            style={{ height: '36px', fontSize: '12px', padding: '6px 10px' }}
+                                        />
+                                    </div>
+                                    <div className="input-group" style={{ margin: 0 }}>
+                                        <label style={{ color: 'var(--bull-green)' }}>Take Profit (TP)</label>
+                                        <input 
+                                            type="number"
+                                            className="numeric-input"
+                                            placeholder="จุดห่างราคา"
+                                            step="0.1"
+                                            value={backtestForm.tp_points}
+                                            onChange={(e) => setBacktestForm({ ...backtestForm, tp_points: parseFloat(e.target.value) || 0.0 })}
+                                            style={{ height: '36px', fontSize: '12px', padding: '6px 10px' }}
+                                        />
+                                    </div>
+                                </div>
+
+                                <button 
+                                    type="submit"
+                                    className="btn-primary"
+                                    style={{ marginTop: '8px', padding: '10px 14px', fontSize: '12.5px', background: 'linear-gradient(135deg, var(--accent-gold), #f39c12)', color: '#000', boxShadow: 'var(--glow-gold)' }}
+                                    disabled={backtestLoading}
+                                >
+                                    เริ่มทดสอบย้อนหลัง (Run Backtest)
+                                </button>
+                            </form>
+                        </div>
+
+                        {/* Right Panel: Report Stats & Curve Chart & Deals List */}
+                        <div className="backtest-main-report" style={{ height: '100%' }}>
+                            {backtestLoading && (
+                                <div className="backtest-loader-container">
+                                    <div className="backtest-pulse-loader"></div>
+                                    <h3 style={{ fontSize: '14px', color: 'var(--accent-gold)' }}>กำลังประมวลผลการทดสอบย้อนหลัง...</h3>
+                                    <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>ระบบกำลังทำการรันจำลองการเทรดแบบไร้ look-ahead bias ทีละแท่งเทียน</p>
+                                </div>
+                            )}
+
+                            {!backtestLoading && !backtestResult && (
+                                <div className="empty-terminal-state" style={{ height: '100%', flex: 1, border: '1px dashed var(--border-color)', borderRadius: 'var(--border-radius-lg)', background: 'rgba(18,26,44,0.1)' }}>
+                                    <Icon name="refresh" size={48} style={{ color: 'var(--text-muted)' }} />
+                                    <h4 style={{ color: 'var(--text-secondary)' }}>ยินดีต้อนรับสู่ระบบทดสอบประสิทธิภาพเชิงลึก (Giant Backtester)</h4>
+                                    <p style={{ fontSize: '11px', color: 'var(--text-muted)', maxWidth: '380px', textAlign: 'center' }}>
+                                        ปรับเปลี่ยนสินทรัพย์ กรอบเวลา ความคลาดเคลื่อนความเสี่ยง SL/TP และเลือกสูตรกลยุทธ์ด้านซ้ายมือ จากนั้นกด "เริ่มทดสอบย้อนหลัง" เพื่อดูรายงานผลลัพธ์ประสิทธิภาพพอร์ตเชิงลึก
+                                    </p>
+                                </div>
+                            )}
+
+                            {!backtestLoading && backtestResult && (
+                                <React.Fragment>
+                                    {/* Summary Stats Grid */}
+                                    <div className="backtest-stats-grid">
+                                        <div className="backtest-stat-card">
+                                            <span className="metric-label">กำไร/ขาดทุนสุทธิ (Net profit)</span>
+                                            <span className={`metric-value ${backtestResult.net_profit >= 0 ? 'price-up' : 'price-down'}`}>
+                                                {backtestResult.net_profit >= 0 ? '+' : ''}${backtestResult.net_profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                            </span>
+                                        </div>
+                                        <div className="backtest-stat-card">
+                                            <span className="metric-label">อัตราการชนะ (Win Rate)</span>
+                                            <span className="metric-value" style={{ color: 'var(--accent-gold)' }}>
+                                                {backtestResult.win_rate}%
+                                            </span>
+                                            <span style={{ fontSize: '9px', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
+                                                ชนะ {backtestResult.wins_count} | แพ้ {backtestResult.losses_count}
+                                            </span>
+                                        </div>
+                                        <div className="backtest-stat-card">
+                                            <span className="metric-label">ออเดอร์ทั้งหมด (Total deals)</span>
+                                            <span className="metric-value" style={{ color: 'var(--text-primary)' }}>
+                                                {backtestResult.total_trades} ไม้
+                                            </span>
+                                        </div>
+                                        <div className="backtest-stat-card">
+                                            <span className="metric-label">บาลานซ์สุทธิ (Final Balance)</span>
+                                            <span className="metric-value" style={{ color: 'var(--bull-green)' }}>
+                                                ${backtestResult.final_balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    {/* Equity Curve Chart Card */}
+                                    <div className="backtest-chart-card" style={{ height: '350px' }}>
+                                        <h4 style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                            เส้นอัตราความเติบโตของเงินทุนพอร์ตจำลอง (Simulated Equity Growth Curve)
+                                        </h4>
+                                        <div ref={backtestChartContainerRef} className="backtest-chart-container"></div>
+                                    </div>
+
+                                    {/* Deals list table card */}
+                                    <div className="backtest-table-card">
+                                        <h4 style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                            บันทึกประวัติธุรกรรมปิดการเทรดในการทดสอบย้อนหลัง (Backtest Deals History Log)
+                                        </h4>
+                                        
+                                        {backtestResult.trades.length === 0 ? (
+                                            <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '11.5px', padding: '20px 0' }}>
+                                                ไม่มีการเปิดธุรกรรมการเทรดใดๆ เกิดขึ้นในตลอดข้อมูลประวัติศาสตร์ lookback นี้
+                                            </div>
+                                        ) : (
+                                            <div className="backtest-table-wrapper" style={{ maxHeight: '400px' }}>
+                                                <table className="trading-table">
+                                                    <thead>
+                                                        <tr>
+                                                            <th>Ticket</th>
+                                                            <th>ประเภท</th>
+                                                            <th>ขนาด Lot</th>
+                                                            <th>ราคาเปิด</th>
+                                                            <th>ราคาปิด</th>
+                                                            <th>เวลาเปิด</th>
+                                                            <th>เวลาปิด</th>
+                                                            <th>ผลลัพธ์</th>
+                                                            <th>กำไร (USD)</th>
+                                                            <th>เหตุผลปิดดีล</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {backtestResult.trades.map((t, idx) => (
+                                                            <tr key={`${t.ticket}-${idx}`}>
+                                                                <td style={{ fontFamily: 'monospace' }}>#{t.ticket}</td>
+                                                                <td>
+                                                                    <span className={t.type === 'buy' ? 'buy-badge' : 'sell-badge'}>
+                                                                        {t.type.toUpperCase()}
+                                                                    </span>
+                                                                </td>
+                                                                <td style={{ fontFamily: 'monospace' }}>{backtestForm.lot_size}</td>
+                                                                <td style={{ fontFamily: 'monospace' }}>{t.open_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                                                                <td style={{ fontFamily: 'monospace' }}>{t.close_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                                                                <td style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{t.open_time}</td>
+                                                                <td style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>{t.close_time}</td>
+                                                                <td>
+                                                                    <span className={t.result === 'win' ? 'result-win-badge' : 'result-loss-badge'}>
+                                                                        {t.result.toUpperCase()}
+                                                                    </span>
+                                                                </td>
+                                                                <td className={t.profit >= 0 ? 'price-up' : 'price-down'} style={{ fontWeight: 700, fontFamily: 'monospace' }}>
+                                                                    {t.profit >= 0 ? '+' : ''}${t.profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                                                </td>
+                                                                <td style={{ fontWeight: 600, fontSize: '11px', color: t.reason === 'Take Profit' ? 'var(--bull-green)' : t.reason === 'Stop Loss' ? 'var(--bear-red)' : 'var(--text-secondary)' }}>
+                                                                    {t.reason}
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        )}
+                                    </div>
+                                </React.Fragment>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className="app-container">
             {/* --- HEADER --- */}
@@ -1181,10 +2622,56 @@ const TradingApp = () => {
                 </div>
             </header>
 
+            {/* --- BREAKING NEWS TICKER BAR --- */}
+            {newsData && newsData.news && newsData.news.length > 0 && (
+                <div className="breaking-news-ticker-bar" onClick={() => setActiveTab("news")}>
+                    <div className="ticker-label">
+                        <span>⚡ BREAKING NEWS</span>
+                    </div>
+                    <div className="ticker-content-wrapper">
+                        <div className="ticker-content">
+                            {newsData.news.map((item, idx) => {
+                                const impactClass = item.impact === "HIGH" ? "impact-high" : item.impact === "MEDIUM" ? "impact-medium" : "impact-low";
+                                const sentimentEmoji = item.sentiment === "bullish" ? "📈" : item.sentiment === "bearish" ? "📉" : "⚖️";
+                                return (
+                                    <span key={item.id || idx} className={`ticker-item ${impactClass}`}>
+                                        <span className="ticker-dot">•</span>
+                                        <span className="ticker-time">[{item.time ? (item.time.includes('T') ? item.time.split('T')[1].slice(0, 5) : item.time.slice(0, 16)) : ""}]</span>
+                                        <span className="ticker-emoji">{sentimentEmoji}</span>
+                                        <span className="ticker-title">{item.title_th || item.title}</span>
+                                        {item.impact === "HIGH" && <span className="ticker-badge-high">HIGH RISK</span>}
+                                    </span>
+                                );
+                            })}
+                        </div>
+                    </div>
+                    <div className="ticker-cta">
+                        <span>ดูวิเคราะห์ AI 🛡️</span>
+                    </div>
+                </div>
+            )}
+
             {/* --- MAIN WORK GRID --- */}
-            <div className="main-dashboard">
+            <div 
+                className="main-dashboard"
+                style={{
+                    display: 'grid',
+                    gridTemplateColumns: `${isWatchlistCollapsed ? '0px' : '280px'} 1fr ${isExecutionCollapsed ? '0px' : '340px'}`,
+                    transition: 'grid-template-columns 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
+                }}
+            >
                 {/* 1. Left Watchlist */}
-                <div className="watchlist-sidebar">
+                <div 
+                    className="watchlist-sidebar"
+                    style={{
+                        width: isWatchlistCollapsed ? '0px' : '280px',
+                        minWidth: isWatchlistCollapsed ? '0px' : '280px',
+                        overflow: 'hidden',
+                        opacity: isWatchlistCollapsed ? 0 : 1,
+                        borderRight: isWatchlistCollapsed ? 'none' : '1px solid var(--border-color)',
+                        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
+                    }}
+                >
                     <div className="sidebar-header">
                         <h3 style={{ fontSize: '14px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>ตลาดซื้อขาย (Markets)</h3>
                         <Icon name="trend-up" size={16} style={{ color: 'var(--accent-gold)' }} />
@@ -1222,23 +2709,288 @@ const TradingApp = () => {
                 </div>
 
                 {/* 2. Middle (Chart & Terminal) */}
-                <div className="center-content">
+                <div 
+                    className="center-content"
+                    style={{ 
+                        gridTemplateRows: isTerminalExpanded ? '150px 1fr' : '1fr 380px',
+                        transition: 'grid-template-rows 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
+                    }}
+                >
                     {/* Top Chart Box */}
                     <div className="chart-container-box">
-                        <div className="chart-toolbar">
-                            <div className="toolbar-left">
+                        <div className="chart-toolbar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                            <div className="toolbar-left" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                                 <div className="active-symbol-info">
                                     <span className="active-symbol-title">{activeAsset.symbol}</span>
                                     <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{activeAsset.name}</span>
                                 </div>
+                                
+                                {/* ✏️ Drawing Tools Toolbar */}
+                                <div className="drawing-tools-bar" style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255,255,255,0.02)', padding: '3px 6px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.04)' }}>
+                                    <button 
+                                        className={`drawing-btn ${drawingTool === 'trendline' ? 'active' : ''}`}
+                                        onClick={() => setDrawingTool(drawingTool === 'trendline' ? null : 'trendline')}
+                                        title="📈 วาดเส้นแนวโน้ม (Trendline - คลิก 2 จุด)"
+                                        style={{
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '6px',
+                                            padding: '4px 10px',
+                                            borderRadius: '4px',
+                                            border: '1px solid rgba(255,255,255,0.08)',
+                                            background: drawingTool === 'trendline' ? 'rgba(255, 183, 3, 0.2)' : 'rgba(255,255,255,0.03)',
+                                            borderColor: drawingTool === 'trendline' ? 'var(--accent-gold)' : 'rgba(255,255,255,0.08)',
+                                            color: drawingTool === 'trendline' ? 'var(--accent-gold)' : 'var(--text-secondary)',
+                                            cursor: 'pointer',
+                                            fontSize: '11px',
+                                            fontWeight: 600,
+                                            transition: 'all 0.2s'
+                                        }}
+                                    >
+                                        <Icon name="pencil" size={12} />
+                                        <span>Trendline</span>
+                                    </button>
+
+                                    <button 
+                                        className={`drawing-btn ${drawingTool === 'horizontal' ? 'active' : ''}`}
+                                        onClick={() => setDrawingTool(drawingTool === 'horizontal' ? null : 'horizontal')}
+                                        title="➖ วาดเส้นระดับราคาแนวนอน (Horizontal Line - คลิก 1 จุด)"
+                                        style={{
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '6px',
+                                            padding: '4px 10px',
+                                            borderRadius: '4px',
+                                            border: '1px solid rgba(255,255,255,0.08)',
+                                            background: drawingTool === 'horizontal' ? 'rgba(255, 183, 3, 0.2)' : 'rgba(255,255,255,0.03)',
+                                            borderColor: drawingTool === 'horizontal' ? 'var(--accent-gold)' : 'rgba(255,255,255,0.08)',
+                                            color: drawingTool === 'horizontal' ? 'var(--accent-gold)' : 'var(--text-secondary)',
+                                            cursor: 'pointer',
+                                            fontSize: '11px',
+                                            fontWeight: 600,
+                                            transition: 'all 0.2s'
+                                        }}
+                                    >
+                                        <Icon name="minus" size={12} />
+                                        <span>Horizontal</span>
+                                    </button>
+
+                                    <button 
+                                        className={`drawing-btn ${drawingTool === 'bos' ? 'active' : ''}`}
+                                        onClick={() => setDrawingTool(drawingTool === 'bos' ? null : 'bos')}
+                                        title="🔹 วาดเส้นแนวระดับ BOS (Break of Structure - คลิก 1 จุด, สีฟ้า)"
+                                        style={{
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '6px',
+                                            padding: '4px 10px',
+                                            borderRadius: '4px',
+                                            border: '1px solid rgba(255,255,255,0.08)',
+                                            background: drawingTool === 'bos' ? 'rgba(0, 180, 216, 0.2)' : 'rgba(255,255,255,0.03)',
+                                            borderColor: drawingTool === 'bos' ? '#00b4d8' : 'rgba(255,255,255,0.08)',
+                                            color: drawingTool === 'bos' ? '#00b4d8' : 'var(--text-secondary)',
+                                            cursor: 'pointer',
+                                            fontSize: '11px',
+                                            fontWeight: 600,
+                                            transition: 'all 0.2s'
+                                        }}
+                                    >
+                                        <Icon name="minus" size={12} />
+                                        <span style={{ color: drawingTool === 'bos' ? '#00b4d8' : 'var(--text-secondary)' }}>BOS</span>
+                                    </button>
+
+                                    <button 
+                                        className={`drawing-btn ${drawingTool === 'choch' ? 'active' : ''}`}
+                                        onClick={() => setDrawingTool(drawingTool === 'choch' ? null : 'choch')}
+                                        title="🔸 วาดเส้นแนวระดับ CHoCH (Change of Character - คลิก 1 จุด, สีชมพู)"
+                                        style={{
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '6px',
+                                            padding: '4px 10px',
+                                            borderRadius: '4px',
+                                            border: '1px solid rgba(255,255,255,0.08)',
+                                            background: drawingTool === 'choch' ? 'rgba(255, 71, 126, 0.2)' : 'rgba(255,255,255,0.03)',
+                                            borderColor: drawingTool === 'choch' ? '#ff477e' : 'rgba(255,255,255,0.08)',
+                                            color: drawingTool === 'choch' ? '#ff477e' : 'var(--text-secondary)',
+                                            cursor: 'pointer',
+                                            fontSize: '11px',
+                                            fontWeight: 600,
+                                            transition: 'all 0.2s'
+                                        }}
+                                    >
+                                        <Icon name="minus" size={12} />
+                                        <span style={{ color: drawingTool === 'choch' ? '#ff477e' : 'var(--text-secondary)' }}>CHoCH</span>
+                                    </button>
+
+                                    <button 
+                                        className="drawing-btn"
+                                        onClick={autoDrawSMC}
+                                        title="🤖 ตีเส้น BOS และ CHoCH อัตโนมัติ (SMC Smart Market Structure)"
+                                        style={{
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '6px',
+                                            padding: '4px 10px',
+                                            borderRadius: '4px',
+                                            border: '1px solid rgba(255,183,3,0.2)',
+                                            background: 'rgba(255,183,3,0.05)',
+                                            borderColor: 'rgba(255,183,3,0.3)',
+                                            color: 'var(--accent-gold)',
+                                            cursor: 'pointer',
+                                            fontSize: '11px',
+                                            fontWeight: 600,
+                                            transition: 'all 0.2s'
+                                        }}
+                                    >
+                                        <Icon name="server" size={12} />
+                                        <span>Auto BOS/CHoCH</span>
+                                    </button>
+
+                                    {drawnLinesRef.current.some(line => line.symbol === activeSymbol) && (
+                                        <button 
+                                            className="drawing-btn"
+                                            onClick={clearDrawings}
+                                            title="🧹 ล้างลายเส้นทั้งหมดของสินทรัพย์นี้"
+                                            style={{
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: '6px',
+                                                padding: '4px 10px',
+                                                borderRadius: '4px',
+                                                border: '1px solid rgba(231,76,60,0.2)',
+                                                background: 'rgba(231,76,60,0.1)',
+                                                color: '#e74c3c',
+                                                cursor: 'pointer',
+                                                fontSize: '11px',
+                                                fontWeight: 600,
+                                                transition: 'all 0.2s'
+                                            }}
+                                        >
+                                            <Icon name="eraser" size={12} />
+                                            <span>Clear</span>
+                                        </button>
+                                    )}
+                                </div>
+
+                                {/* 🎛️ Sidebar Panels toggles */}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '4px' }}>
+                                    <button
+                                        onClick={() => setIsWatchlistCollapsed(!isWatchlistCollapsed)}
+                                        title={isWatchlistCollapsed ? "แสดงรายชื่อสินทรัพย์ (Watchlist)" : "ซ่อนรายชื่อสินทรัพย์ (Watchlist)"}
+                                        style={{
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '6px',
+                                            padding: '4px 10px',
+                                            borderRadius: '6px',
+                                            border: '1px solid rgba(255,255,255,0.08)',
+                                            background: isWatchlistCollapsed ? 'rgba(255,255,255,0.03)' : 'rgba(255,183,3,0.1)',
+                                            borderColor: isWatchlistCollapsed ? 'rgba(255,255,255,0.08)' : 'rgba(255,183,3,0.3)',
+                                            color: isWatchlistCollapsed ? 'var(--text-secondary)' : 'var(--accent-gold)',
+                                            cursor: 'pointer',
+                                            fontSize: '11px',
+                                            fontWeight: 600,
+                                            transition: 'all 0.2s'
+                                        }}
+                                    >
+                                        {isWatchlistCollapsed ? "📂 แสดงตลาด" : "📁 ซ่อนตลาด"}
+                                    </button>
+
+                                    <button
+                                        onClick={() => setIsExecutionCollapsed(!isExecutionCollapsed)}
+                                        title={isExecutionCollapsed ? "แสดงส่วนส่งคำสั่งซื้อขาย (Order Execution)" : "ซ่อนส่วนส่งคำสั่งซื้อขาย (Order Execution)"}
+                                        style={{
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '6px',
+                                            padding: '4px 10px',
+                                            borderRadius: '6px',
+                                            border: '1px solid rgba(255,255,255,0.08)',
+                                            background: isExecutionCollapsed ? 'rgba(255,255,255,0.03)' : 'rgba(255,183,3,0.1)',
+                                            borderColor: isExecutionCollapsed ? 'rgba(255,255,255,0.08)' : 'rgba(255,183,3,0.3)',
+                                            color: isExecutionCollapsed ? 'var(--text-secondary)' : 'var(--accent-gold)',
+                                            cursor: 'pointer',
+                                            fontSize: '11px',
+                                            fontWeight: 600,
+                                            transition: 'all 0.2s'
+                                        }}
+                                    >
+                                        {isExecutionCollapsed ? "📂 แสดงส่งคำสั่ง" : "📁 ซ่อนส่งคำสั่ง"}
+                                    </button>
+                                </div>
                             </div>
                             
+                            {/* 🎛️ Premium Layout Grid Selector */}
+                            <div className="layout-selector" style={{ display: 'flex', background: 'rgba(0, 0, 0, 0.3)', padding: '3px', borderRadius: '6px', border: '1px solid var(--border-color)', gap: '2px' }}>
+                                <button 
+                                    className={`layout-btn ${chartLayout === 'single' ? 'active' : ''}`}
+                                    onClick={() => setChartLayout('single')}
+                                    title="1 หน้าจอแสดงผลเต็มหน้า"
+                                    style={{
+                                        padding: '4px 10px',
+                                        borderRadius: '4px',
+                                        border: 'none',
+                                        background: chartLayout === 'single' ? 'var(--accent-gold)' : 'transparent',
+                                        color: chartLayout === 'single' ? '#000' : 'var(--text-secondary)',
+                                        fontSize: '11px',
+                                        fontWeight: 600,
+                                        cursor: 'pointer',
+                                        transition: 'all 0.15s ease'
+                                    }}
+                                >
+                                    🖥️ 1 จอ
+                                </button>
+                                <button 
+                                    className={`layout-btn ${chartLayout === 'dual' ? 'active' : ''}`}
+                                    onClick={() => setChartLayout('dual')}
+                                    title="2 หน้าจอแยกคู่ (ซ้าย-ขวา)"
+                                    style={{
+                                        padding: '4px 10px',
+                                        borderRadius: '4px',
+                                        border: 'none',
+                                        background: chartLayout === 'dual' ? 'var(--accent-gold)' : 'transparent',
+                                        color: chartLayout === 'dual' ? '#000' : 'var(--text-secondary)',
+                                        fontSize: '11px',
+                                        fontWeight: 600,
+                                        cursor: 'pointer',
+                                        transition: 'all 0.15s ease'
+                                    }}
+                                >
+                                    ⚖️ 2 จอ
+                                </button>
+                                <button 
+                                    className={`layout-btn ${chartLayout === 'quad' ? 'active' : ''}`}
+                                    onClick={() => setChartLayout('quad')}
+                                    title="4 หน้าจอแยกตาราง (2x2)"
+                                    style={{
+                                        padding: '4px 10px',
+                                        borderRadius: '4px',
+                                        border: 'none',
+                                        background: chartLayout === 'quad' ? 'var(--accent-gold)' : 'transparent',
+                                        color: chartLayout === 'quad' ? '#000' : 'var(--text-secondary)',
+                                        fontSize: '11px',
+                                        fontWeight: 600,
+                                        cursor: 'pointer',
+                                        transition: 'all 0.15s ease'
+                                    }}
+                                >
+                                    🎛️ 4 จอ
+                                </button>
+                            </div>
+
                             <div className="timeframe-selector">
                                 {["M1", "M5", "M15", "M30", "H1", "D1"].map((tf) => (
                                     <button 
                                         key={tf} 
-                                        className={`timeframe-btn ${timeframe === tf ? 'active' : ''}`}
-                                        onClick={() => setTimeframe(tf)}
+                                        className={`timeframe-btn ${paneTimeframes[activePaneId] === tf ? 'active' : ''}`}
+                                        onClick={() => {
+                                            setTimeframe(tf);
+                                            setPaneTimeframes(prev => ({
+                                                ...prev,
+                                                [activePaneId]: tf
+                                            }));
+                                        }}
                                     >
                                         {tf}
                                     </button>
@@ -1246,8 +2998,164 @@ const TradingApp = () => {
                             </div>
                         </div>
 
-                        {/* Chart Render Target */}
-                        <div className="chart-wrapper" ref={chartContainerRef}>
+                        {/* Dynamic Multi-Chart Grid container */}
+                        <div 
+                            className={`chart-grid-container layout-${chartLayout}`}
+                            style={{
+                                display: 'grid',
+                                width: '100%',
+                                height: '100%',
+                                flex: 1,
+                                gap: '8px',
+                                padding: '8px',
+                                gridTemplateColumns: chartLayout === 'single' ? '1fr' : '1fr 1fr',
+                                gridTemplateRows: chartLayout === 'quad' ? '1fr 1fr' : '1fr',
+                                overflow: 'hidden',
+                                position: 'relative'
+                            }}
+                        >
+                            {/* Render active chart panes dynamically */}
+                            {(chartLayout === 'single' ? [0] : chartLayout === 'dual' ? [0, 1] : [0, 1, 2, 3]).map((paneId) => {
+                                const isActive = activePaneId === paneId;
+                                const paneTf = paneTimeframes[paneId] || 'H1';
+                                return (
+                                    <div 
+                                        key={paneId}
+                                        className={`chart-pane-wrapper ${isActive ? 'active' : ''}`}
+                                        onClick={() => setActivePaneId(paneId)}
+                                        style={{
+                                            position: 'relative',
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            width: '100%',
+                                            height: '100%',
+                                            backgroundColor: '#0c1220',
+                                            border: isActive ? '2px solid var(--accent-gold)' : '1px solid var(--border-color)',
+                                            borderRadius: '8px',
+                                            overflow: 'hidden',
+                                            boxShadow: isActive ? 'var(--glow-gold)' : 'none',
+                                            transition: 'border 0.2s, box-shadow 0.2s'
+                                        }}
+                                    >
+                                        {/* Pane Mini Overlay Header */}
+                                        <div 
+                                            className="chart-pane-header"
+                                            style={{
+                                                position: 'absolute',
+                                                top: '8px',
+                                                left: '12px',
+                                                right: '12px',
+                                                zIndex: 5,
+                                                display: 'flex',
+                                                justifyContent: 'space-between',
+                                                alignItems: 'center',
+                                                pointerEvents: 'auto',
+                                                background: 'rgba(12, 18, 32, 0.85)',
+                                                backdropFilter: 'blur(6px)',
+                                                padding: '4px 8px',
+                                                borderRadius: '6px',
+                                                border: '1px solid rgba(255,255,255,0.06)'
+                                            }}
+                                        >
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                <span style={{
+                                                    width: '6px',
+                                                    height: '6px',
+                                                    borderRadius: '50%',
+                                                    backgroundColor: isActive ? 'var(--accent-gold)' : 'transparent',
+                                                    border: isActive ? 'none' : '1px solid var(--text-muted)'
+                                                }}></span>
+                                                <strong style={{ fontSize: '11px', color: isActive ? 'var(--accent-gold)' : 'var(--text-primary)' }}>
+                                                    {activeSymbol}
+                                                </strong>
+                                                <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600 }}>
+                                                    {paneTf}
+                                                </span>
+                                            </div>
+                                            
+                                            {/* Timeframe quick switches */}
+                                            <div style={{ display: 'flex', gap: '2px' }}>
+                                                {["M1", "M5", "M15", "M30", "H1", "D1"].map((tf) => (
+                                                    <button
+                                                        key={tf}
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setPaneTimeframes(prev => ({
+                                                                ...prev,
+                                                                [paneId]: tf
+                                                            }));
+                                                            if (isActive) setTimeframe(tf);
+                                                        }}
+                                                        style={{
+                                                            fontSize: '9px',
+                                                            background: paneTf === tf ? 'var(--accent-gold)' : 'transparent',
+                                                            color: paneTf === tf ? '#000' : 'var(--text-secondary)',
+                                                            border: 'none',
+                                                            borderRadius: '3px',
+                                                            padding: '2px 5px',
+                                                            cursor: 'pointer',
+                                                            fontWeight: 'bold'
+                                                        }}
+                                                    >
+                                                        {tf}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                        
+                                        {/* Chart Render Target */}
+                                        <div 
+                                            ref={el => { if (el) containersRef.current[paneId] = el; }}
+                                            className="chart-container-target"
+                                            style={{ width: '100%', height: '100%', flex: 1 }}
+                                        >
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                            
+                            {drawingTool && (
+                                <div style={{
+                                    position: 'absolute',
+                                    top: '64px',
+                                    left: '50%',
+                                    transform: 'translateX(-50%)',
+                                    zIndex: 10,
+                                    background: 'rgba(12, 18, 32, 0.95)',
+                                    backdropFilter: 'blur(8px)',
+                                    border: '1px solid ' + (drawingTool === 'bos' ? '#00b4d8' : drawingTool === 'choch' ? '#ff477e' : 'var(--accent-gold)'),
+                                    borderRadius: '6px',
+                                    padding: '6px 14px',
+                                    color: drawingTool === 'bos' ? '#00b4d8' : drawingTool === 'choch' ? '#ff477e' : 'var(--accent-gold)',
+                                    fontSize: '11px',
+                                    boxShadow: drawingTool === 'bos' ? '0 0 12px rgba(0, 180, 216, 0.3)' : drawingTool === 'choch' ? '0 0 12px rgba(255, 71, 126, 0.3)' : 'var(--glow-gold)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px',
+                                    pointerEvents: 'none',
+                                    fontWeight: 500,
+                                    letterSpacing: '0.3px',
+                                    borderLeftWidth: '4px'
+                                }}>
+                                    <div style={{
+                                        width: '6px',
+                                        height: '6px',
+                                        borderRadius: '50%',
+                                        backgroundColor: drawingTool === 'bos' ? '#00b4d8' : drawingTool === 'choch' ? '#ff477e' : 'var(--accent-gold)',
+                                        boxShadow: '0 0 8px ' + (drawingTool === 'bos' ? '#00b4d8' : drawingTool === 'choch' ? '#ff477e' : 'var(--accent-gold)'),
+                                    }}></div>
+                                    <span>
+                                        {drawingTool === 'trendline' 
+                                            ? (!drawingStartPoint ? "โหมด Trendline: คลิกเลือกจุดแรกบนกราฟจอใดก็ได้" : "โหมด Trendline: คลิกเลือกจุดที่สองเพื่อสร้างเส้น")
+                                            : drawingTool === 'bos'
+                                            ? "โหมด BOS: คลิกที่ตำแหน่งราคาบนจอใดก็ได้เพื่อสร้างเส้นแนวระดับ BOS ทุกจอ"
+                                            : drawingTool === 'choch'
+                                            ? "โหมด CHoCH: คลิกที่ตำแหน่งราคาบนจอใดก็ได้เพื่อสร้างเส้นแนวระดับ CHoCH ทุกจอ"
+                                            : "โหมด Horizontal: คลิกที่ตำแหน่งราคาบนจอใดก็ได้เพื่อสร้างแนวราบทุกจอ"
+                                        }
+                                    </span>
+                                </div>
+                            )}
                             <div className="chart-watermark">GIANT SLAYER</div>
                         </div>
                     </div>
@@ -1269,13 +3177,45 @@ const TradingApp = () => {
                                 <Icon name="history" size={14} />
                                 <span>ประวัติการเทรด ({tradeHistory.length})</span>
                             </button>
-                            <button 
+                            <div 
                                 className={`tab-btn ${activeTab === 'analytics' ? 'active' : ''}`}
                                 onClick={() => setActiveTab('analytics')}
+                                style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
                             >
                                 <Icon name="trend-up" size={14} />
                                 <span>การวิเคราะห์เชิงลึก (Analytics)</span>
-                            </button>
+                                <span 
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        window.open('/?popout=analytics', '_blank', 'width=1280,height=800,menubar=no,toolbar=no,location=no,status=no');
+                                    }}
+                                    style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        padding: '2px 6px',
+                                        marginLeft: '6px',
+                                        borderRadius: '4px',
+                                        background: 'rgba(255, 255, 255, 0.06)',
+                                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                                        color: 'var(--text-secondary)',
+                                        transition: 'all 0.2s ease',
+                                    }}
+                                    onMouseEnter={(e) => {
+                                        e.currentTarget.style.background = 'rgba(255, 183, 3, 0.15)';
+                                        e.currentTarget.style.borderColor = 'var(--accent-gold)';
+                                        e.currentTarget.style.color = 'var(--accent-gold)';
+                                    }}
+                                    onMouseLeave={(e) => {
+                                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.06)';
+                                        e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)';
+                                        e.currentTarget.style.color = 'var(--text-secondary)';
+                                     }}
+                                     title="เปิดในหน้าต่างใหม่ (Popout)"
+                                 >
+                                     <Icon name="external-link" size={10} />
+                                 </span>
+                            </div>
                             <button 
                                 className={`tab-btn ${activeTab === 'bots' ? 'active' : ''}`}
                                 onClick={() => setActiveTab('bots')}
@@ -1295,6 +3235,85 @@ const TradingApp = () => {
                                         boxShadow: 'var(--glow-green)'
                                     }}></span>
                                 )}
+                            </button>
+                            <button 
+                                className={`tab-btn ${activeTab === 'backtest' ? 'active' : ''}`}
+                                onClick={() => setActiveTab('backtest')}
+                            >
+                                <Icon name="refresh" size={14} />
+                                <span>ทดสอบย้อนหลัง (Backtest)</span>
+                            </button>
+                            <div 
+                                className={`tab-btn ${activeTab === 'news' ? 'active' : ''}`}
+                                onClick={() => setActiveTab('news')}
+                                style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
+                            >
+                                <Icon name="info" size={14} />
+                                <span>ข่าวและ AI วิเคราะห์</span>
+                                <span 
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        window.open('/?popout=news', '_blank', 'width=1280,height=800,menubar=no,toolbar=no,location=no,status=no');
+                                    }}
+                                    style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        padding: '2px 6px',
+                                        marginLeft: '6px',
+                                        borderRadius: '4px',
+                                        background: 'rgba(255, 255, 255, 0.06)',
+                                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                                        color: 'var(--text-secondary)',
+                                        transition: 'all 0.2s ease',
+                                    }}
+                                    onMouseEnter={(e) => {
+                                        e.currentTarget.style.background = 'rgba(255, 183, 3, 0.15)';
+                                        e.currentTarget.style.borderColor = 'var(--accent-gold)';
+                                        e.currentTarget.style.color = 'var(--accent-gold)';
+                                    }}
+                                    onMouseLeave={(e) => {
+                                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.06)';
+                                        e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)';
+                                        e.currentTarget.style.color = 'var(--text-secondary)';
+                                     }}
+                                     title="เปิดในหน้าต่างใหม่ (Popout)"
+                                 >
+                                     <Icon name="external-link" size={10} />
+                                 </span>
+                            </div>
+
+                            {/* Maximize/Minimize Terminal Toggle Button */}
+                            <button 
+                                className="tab-btn"
+                                onClick={() => setIsTerminalExpanded(!isTerminalExpanded)}
+                                style={{ 
+                                    marginLeft: 'auto', 
+                                    display: 'flex', 
+                                    alignItems: 'center', 
+                                    gap: '6px', 
+                                    color: isTerminalExpanded ? 'var(--accent-gold)' : 'var(--text-secondary)', 
+                                    padding: '0 16px',
+                                    borderLeft: '1px solid var(--border-color)'
+                                }}
+                                title={isTerminalExpanded ? "ย่อหน้าจอเทอร์มินัล (Minimize)" : "ขยายหน้าจอเทอร์มินัล (Maximize)"}
+                            >
+                                {isTerminalExpanded ? (
+                                    <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" style={{ transition: 'transform 0.2s' }}>
+                                        <polyline points="4 14 10 14 10 20" />
+                                        <polyline points="20 10 14 10 14 4" />
+                                        <line x1="14" y1="10" x2="21" y2="3" />
+                                        <line x1="10" y1="14" x2="3" y2="21" />
+                                    </svg>
+                                ) : (
+                                    <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" style={{ transition: 'transform 0.2s' }}>
+                                        <polyline points="15 3 21 3 21 9" />
+                                        <polyline points="9 21 3 21 3 15" />
+                                        <line x1="21" y1="3" x2="14" y2="10" />
+                                        <line x1="3" y1="21" x2="10" y2="14" />
+                                    </svg>
+                                )}
+                                <span>{isTerminalExpanded ? "ย่อหน้าจอ" : "ขยายหน้าจอ"}</span>
                             </button>
                         </div>
 
@@ -1435,6 +3454,31 @@ const TradingApp = () => {
                             {/* Analytics Tab Content */}
                             {activeTab === 'analytics' && (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', padding: '8px' }}>
+                                    {/* Popout Button for Deep Analytics */}
+                                    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                                        <button 
+                                            className="btn-trade-execute buy"
+                                            onClick={() => window.open('/?popout=analytics', '_blank', 'width=1280,height=800,menubar=no,toolbar=no,location=no,status=no')}
+                                            style={{ 
+                                                display: 'flex', 
+                                                alignItems: 'center', 
+                                                gap: '6px', 
+                                                padding: '6px 12px', 
+                                                fontSize: '11px', 
+                                                fontWeight: 'bold', 
+                                                borderRadius: '4px',
+                                                border: '1px solid var(--accent-gold)',
+                                                background: 'rgba(255, 183, 3, 0.08)',
+                                                color: 'var(--accent-gold)',
+                                                cursor: 'pointer',
+                                                boxShadow: 'none'
+                                            }}
+                                            title="เปิดในหน้าต่างใหม่ (Popout Window)"
+                                        >
+                                            <Icon name="external-link" size={12} />
+                                            <span>เปิดวิเคราะห์พอร์ตในหน้าต่างใหม่ (Popout)</span>
+                                        </button>
+                                    </div>
                                     {/* Top Summary Cards */}
                                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
                                         <div className="sidebar-panel-card" style={{ padding: '16px', textAlign: 'center' }}>
@@ -1604,6 +3648,8 @@ const TradingApp = () => {
                                                                                 fontWeight: 500
                                                                             }}>
                                                                                 {aTrim === 'rsi_oscillator' ? 'RSI' : 
+                                                                                 aTrim === 'stoch_rsi' ? 'StochRSI' : 
+                                                                                 aTrim === 'macd_4c' ? 'MACD 4C Momentum' :
                                                                                  aTrim === 'sma_cross' ? 'SMA Cross' : 
                                                                                  aTrim === 'macd' ? 'MACD' : 
                                                                                  aTrim === 'elliott_wave' ? 'Elliott Wave' : 
@@ -1707,12 +3753,612 @@ const TradingApp = () => {
                                     </div>
                                 </div>
                             )}
+
+                            {/* Backtesting Tab Content */}
+                            {activeTab === 'backtest' && (
+                                <div className="backtest-layout">
+                                    {/* Left Panel: Form Settings */}
+                                    <div className="backtest-sidebar-panel">
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                            <h4 style={{ fontSize: '13px', textTransform: 'uppercase', color: 'var(--text-secondary)', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                <Icon name="settings" size={14} style={{ color: 'var(--accent-gold)' }} />
+                                                <span>ตั้งค่าการทดสอบ (Setup)</span>
+                                            </h4>
+                                            {!isPopout && (
+                                                <button 
+                                                    type="button"
+                                                    onClick={() => window.open('/?popout=backtest', '_blank', 'width=1280,height=800,menubar=no,toolbar=no,location=no,status=no')}
+                                                    title="ขยายเป็นอีกหน้าต่างแยก (Popout Window)"
+                                                    style={{
+                                                        background: 'rgba(255, 183, 3, 0.1)',
+                                                        border: '1px solid rgba(255, 183, 3, 0.3)',
+                                                        color: 'var(--accent-gold)',
+                                                        padding: '3px 8px',
+                                                        borderRadius: '4px',
+                                                        fontSize: '10px',
+                                                        fontWeight: 600,
+                                                        cursor: 'pointer',
+                                                        transition: 'all 0.2s',
+                                                        display: 'inline-flex',
+                                                        alignItems: 'center',
+                                                        gap: '4px'
+                                                    }}
+                                                >
+                                                    <span>↗️ ขยายหน้าต่าง</span>
+                                                </button>
+                                            )}
+                                        </div>
+                                        
+                                        <form onSubmit={handleRunBacktest} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                            <div className="input-group" style={{ margin: 0 }}>
+                                                <label>สินทรัพย์ที่ต้องการทดสอบ (Symbol)</label>
+                                                <select 
+                                                    className="numeric-input"
+                                                    value={backtestForm.symbol}
+                                                    onChange={(e) => setBacktestForm({ ...backtestForm, symbol: e.target.value })}
+                                                    style={{ appearance: 'auto', fontSize: '12px', padding: '8px 10px' }}
+                                                >
+                                                    {watchlist.map(item => (
+                                                        <option key={item.symbol} value={item.symbol}>{item.symbol} - {item.name}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+
+                                            <div className="input-group" style={{ margin: 0 }}>
+                                                <label>กรอบเวลาแท่งเทียน (Timeframe)</label>
+                                                <select 
+                                                    className="numeric-input"
+                                                    value={backtestForm.timeframe}
+                                                    onChange={(e) => setBacktestForm({ ...backtestForm, timeframe: e.target.value })}
+                                                    style={{ appearance: 'auto', fontSize: '12px', padding: '8px 10px' }}
+                                                >
+                                                    <option value="M1">M1 (1 Minute)</option>
+                                                    <option value="M5">M5 (5 Minutes)</option>
+                                                    <option value="M15">M15 (15 Minutes)</option>
+                                                    <option value="M30">M30 (30 Minutes)</option>
+                                                    <option value="H1">H1 (1 Hour)</option>
+                                                    <option value="H4">H4 (4 Hours)</option>
+                                                    <option value="D1">D1 (1 Day)</option>
+                                                </select>
+                                            </div>
+
+                                            <div className="input-group" style={{ margin: 0 }}>
+                                                <label>จำนวนแท่งเทียนย้อนหลัง (Lookback)</label>
+                                                <select 
+                                                    className="numeric-input"
+                                                    value={backtestForm.count}
+                                                    onChange={(e) => setBacktestForm({ ...backtestForm, count: parseInt(e.target.value) || 200 })}
+                                                    style={{ appearance: 'auto', fontSize: '12px', padding: '8px 10px' }}
+                                                >
+                                                    <option value="100">100 candles</option>
+                                                    <option value="200">200 candles</option>
+                                                    <option value="500">500 candles</option>
+                                                    <option value="1000">1000 candles</option>
+                                                </select>
+                                            </div>
+
+                                            <div className="input-group" style={{ margin: 0 }}>
+                                                <div className="backtest-form-section-title">กลยุทธ์อัลกอริทึม (Algorithms)</div>
+                                                <div className="backtest-checkbox-list">
+                                                    {[
+                                                        { value: 'smc_confluence_pro', label: 'SMC Confluence Pro 🌟' },
+                                                        { value: 'smc_order_block', label: 'SMC Order Block 🟩' },
+                                                        { value: 'smc_fvg_imbalance', label: 'SMC FVG Imbalance ⚡' },
+                                                        { value: 'smc_bos_choch', label: 'SMC BOS / CHoCH 📈' },
+                                                        { value: 'rsi_oscillator', label: 'RSI Oscillator 🌊' },
+                                                        { value: 'stoch_rsi', label: 'Stochastic RSI ⚡' },
+                                                        { value: 'macd_4c', label: 'MACD 4 Color 📊' },
+                                                        { value: 'macd', label: 'MACD Crossover 🎛️' },
+                                                        { value: 'sma_cross', label: 'SMA Crossover ⚔️' },
+                                                        { value: 'ema_cross_50_200', label: 'EMA Crossover 50/200 🧬' },
+                                                        { value: 'harmonic_patterns', label: 'Harmonic Patterns 📐' },
+                                                        { value: 'elliott_wave', label: 'Elliott Wave 🌊' },
+                                                        { value: 'rsi_divergence', label: 'RSI Divergence 🎯' },
+                                                        { value: 'atr_breakout', label: 'ATR Breakout 📊' },
+                                                        { value: 'support_resistance', label: 'S/R Bounce 🧱' },
+                                                        { value: 'liquidity_sweep', label: 'Liquidity Sweep 🧹' }
+                                                    ].map((algo) => {
+                                                        const isChecked = backtestSelectedAlgos.includes(algo.value);
+                                                        return (
+                                                            <div 
+                                                                key={algo.value}
+                                                                className="backtest-checkbox-item"
+                                                                onClick={() => {
+                                                                    if (isChecked) {
+                                                                        setBacktestSelectedAlgos(backtestSelectedAlgos.filter(a => a !== algo.value));
+                                                                    } else {
+                                                                        setBacktestSelectedAlgos([...backtestSelectedAlgos, algo.value]);
+                                                                    }
+                                                                }}
+                                                            >
+                                                                <input 
+                                                                    type="checkbox"
+                                                                    checked={isChecked}
+                                                                    readOnly
+                                                                />
+                                                                <span>{algo.label}</span>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+
+                                            <div className="input-group" style={{ margin: 0 }}>
+                                                <label>การยืนยันสัญญาณ (Consensus mode)</label>
+                                                <select 
+                                                    className="numeric-input"
+                                                    value={backtestForm.signal_mode}
+                                                    onChange={(e) => setBacktestForm({ ...backtestForm, signal_mode: e.target.value })}
+                                                    style={{ appearance: 'auto', fontSize: '12px', padding: '8px 10px' }}
+                                                >
+                                                    <option value="or">OR (สัญญาณใดสัญญาณหนึ่งออก)</option>
+                                                    <option value="and">AND (ทุกสัญญาณต้องออกร่วมกัน)</option>
+                                                </select>
+                                            </div>
+
+                                            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '8px' }}>
+                                                <div className="input-group" style={{ margin: 0 }}>
+                                                    <label>เงินตั้งต้น (USD)</label>
+                                                    <input 
+                                                        type="number"
+                                                        className="numeric-input"
+                                                        value={backtestForm.initial_balance}
+                                                        onChange={(e) => setBacktestForm({ ...backtestForm, initial_balance: parseFloat(e.target.value) || 10000.0 })}
+                                                        style={{ height: '36px', fontSize: '12px', padding: '6px 10px' }}
+                                                    />
+                                                </div>
+                                                <div className="input-group" style={{ margin: 0 }}>
+                                                    <label>ขนาด Lot size</label>
+                                                    <input 
+                                                        type="number"
+                                                        className="numeric-input"
+                                                        step="0.01"
+                                                        value={backtestForm.lot_size}
+                                                        onChange={(e) => setBacktestForm({ ...backtestForm, lot_size: parseFloat(e.target.value) || 0.1 })}
+                                                        style={{ height: '36px', fontSize: '12px', padding: '6px 10px' }}
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                                                <div className="input-group" style={{ margin: 0 }}>
+                                                    <label style={{ color: 'var(--bear-red)' }}>Stop Loss (SL)</label>
+                                                    <input 
+                                                        type="number"
+                                                        className="numeric-input"
+                                                        placeholder="จุดห่างราคา"
+                                                        step="0.1"
+                                                        value={backtestForm.sl_points}
+                                                        onChange={(e) => setBacktestForm({ ...backtestForm, sl_points: parseFloat(e.target.value) || 0.0 })}
+                                                        style={{ height: '36px', fontSize: '12px', padding: '6px 10px' }}
+                                                    />
+                                                </div>
+                                                <div className="input-group" style={{ margin: 0 }}>
+                                                    <label style={{ color: 'var(--bull-green)' }}>Take Profit (TP)</label>
+                                                    <input 
+                                                        type="number"
+                                                        className="numeric-input"
+                                                        placeholder="จุดห่างราคา"
+                                                        step="0.1"
+                                                        value={backtestForm.tp_points}
+                                                        onChange={(e) => setBacktestForm({ ...backtestForm, tp_points: parseFloat(e.target.value) || 0.0 })}
+                                                        style={{ height: '36px', fontSize: '12px', padding: '6px 10px' }}
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            <button 
+                                                type="submit"
+                                                className="btn-primary"
+                                                style={{ marginTop: '8px', padding: '10px 14px', fontSize: '12.5px', background: 'linear-gradient(135deg, var(--accent-gold), #f39c12)', color: '#000', boxShadow: 'var(--glow-gold)' }}
+                                                disabled={backtestLoading}
+                                            >
+                                                เริ่มทดสอบย้อนหลัง (Run Backtest)
+                                            </button>
+                                        </form>
+                                    </div>
+
+                                    {/* Right Panel: Report Stats & Curve Chart & Deals List */}
+                                    <div className="backtest-main-report">
+                                        {backtestLoading && (
+                                            <div className="backtest-loader-container">
+                                                <div className="backtest-pulse-loader"></div>
+                                                <h3 style={{ fontSize: '14px', color: 'var(--accent-gold)' }}>กำลังประมวลผลการทดสอบย้อนหลัง...</h3>
+                                                <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>ระบบกำลังทำการรันจำลองการเทรดแบบไร้ look-ahead bias ทีละแท่งเทียน</p>
+                                            </div>
+                                        )}
+
+                                        {!backtestLoading && !backtestResult && (
+                                            <div className="empty-terminal-state" style={{ height: '100%', flex: 1, border: '1px dashed var(--border-color)', borderRadius: 'var(--border-radius-lg)', background: 'rgba(18,26,44,0.1)' }}>
+                                                <Icon name="refresh" size={48} style={{ color: 'var(--text-muted)' }} />
+                                                <h4 style={{ color: 'var(--text-secondary)' }}>ยินดีต้อนรับสู่ระบบทดสอบประสิทธิภาพเชิงลึก (Giant Backtester)</h4>
+                                                <p style={{ fontSize: '11px', color: 'var(--text-muted)', maxWidth: '380px', textAlign: 'center' }}>
+                                                    ปรับเปลี่ยนสินทรัพย์ กรอบเวลา ความคลาดเคลื่อนความเสี่ยง SL/TP และเลือกสูตรกลยุทธ์ด้านซ้ายมือ จากนั้นกด "เริ่มทดสอบย้อนหลัง" เพื่อดูรายงานผลลัพธ์ประสิทธิภาพพอร์ตเชิงลึก
+                                                </p>
+                                            </div>
+                                        )}
+
+                                        {!backtestLoading && backtestResult && (
+                                            <React.Fragment>
+                                                {/* Summary Stats Grid */}
+                                                <div className="backtest-stats-grid">
+                                                    <div className="backtest-stat-card">
+                                                        <span className="metric-label">กำไร/ขาดทุนสุทธิ (Net profit)</span>
+                                                        <span className={`metric-value ${backtestResult.net_profit >= 0 ? 'price-up' : 'price-down'}`}>
+                                                            {backtestResult.net_profit >= 0 ? '+' : ''}${backtestResult.net_profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                                        </span>
+                                                    </div>
+                                                    <div className="backtest-stat-card">
+                                                        <span className="metric-label">อัตราการชนะ (Win Rate)</span>
+                                                        <span className="metric-value" style={{ color: 'var(--accent-gold)' }}>
+                                                            {backtestResult.win_rate}%
+                                                        </span>
+                                                        <span style={{ fontSize: '9px', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
+                                                            ชนะ {backtestResult.wins_count} | แพ้ {backtestResult.losses_count}
+                                                        </span>
+                                                    </div>
+                                                    <div className="backtest-stat-card">
+                                                        <span className="metric-label">ออเดอร์ทั้งหมด (Total deals)</span>
+                                                        <span className="metric-value" style={{ color: 'var(--text-primary)' }}>
+                                                            {backtestResult.total_trades} ไม้
+                                                        </span>
+                                                    </div>
+                                                    <div className="backtest-stat-card">
+                                                        <span className="metric-label">บาลานซ์สุทธิ (Final Balance)</span>
+                                                        <span className="metric-value" style={{ color: 'var(--bull-green)' }}>
+                                                            ${backtestResult.final_balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                                        </span>
+                                                    </div>
+                                                </div>
+
+                                                {/* Equity Curve Chart Card */}
+                                                <div className="backtest-chart-card">
+                                                    <h4 style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                                        เส้นอัตราความเติบโตของเงินทุนพอร์ตจำลอง (Simulated Equity Growth Curve)
+                                                    </h4>
+                                                    <div ref={backtestChartContainerRef} className="backtest-chart-container"></div>
+                                                </div>
+
+                                                {/* Deals list table card */}
+                                                <div className="backtest-table-card">
+                                                    <h4 style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                                        บันทึกประวัติธุรกรรมปิดการเทรดในการทดสอบย้อนหลัง (Backtest Deals History Log)
+                                                    </h4>
+                                                    
+                                                    {backtestResult.trades.length === 0 ? (
+                                                        <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '11.5px', padding: '20px 0' }}>
+                                                            ไม่มีการเปิดธุรกรรมการเทรดใดๆ เกิดขึ้นในตลอดข้อมูลประวัติศาสตร์ lookback นี้
+                                                        </div>
+                                                    ) : (
+                                                        <div className="backtest-table-wrapper">
+                                                            <table className="trading-table">
+                                                                <thead>
+                                                                    <tr>
+                                                                        <th>Ticket</th>
+                                                                        <th>ประเภท</th>
+                                                                        <th>ขนาด Lot</th>
+                                                                        <th>ราคาเปิด</th>
+                                                                        <th>ราคาปิด</th>
+                                                                        <th>เวลาเปิด</th>
+                                                                        <th>เวลาปิด</th>
+                                                                        <th>ผลลัพธ์</th>
+                                                                        <th>กำไร (USD)</th>
+                                                                        <th>เหตุผลปิดดีล</th>
+                                                                    </tr>
+                                                                </thead>
+                                                                <tbody>
+                                                                    {backtestResult.trades.map((t, idx) => (
+                                                                        <tr key={`${t.ticket}-${idx}`}>
+                                                                            <td style={{ fontFamily: 'monospace' }}>#{t.ticket}</td>
+                                                                            <td>
+                                                                                <span className={t.type === 'buy' ? 'buy-badge' : 'sell-badge'}>
+                                                                                    {t.type.toUpperCase()}
+                                                                                </span>
+                                                                            </td>
+                                                                            <td style={{ fontFamily: 'monospace' }}>{backtestForm.lot_size}</td>
+                                                                            <td style={{ fontFamily: 'monospace' }}>{t.open_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                                                                            <td style={{ fontFamily: 'monospace' }}>{t.close_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                                                                            <td style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{t.open_time}</td>
+                                                                            <td style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>{t.close_time}</td>
+                                                                            <td>
+                                                                                <span className={t.result === 'win' ? 'result-win-badge' : 'result-loss-badge'}>
+                                                                                    {t.result.toUpperCase()}
+                                                                                </span>
+                                                                            </td>
+                                                                            <td className={t.profit >= 0 ? 'price-up' : 'price-down'} style={{ fontWeight: 700, fontFamily: 'monospace' }}>
+                                                                                {t.profit >= 0 ? '+' : ''}${t.profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                                                            </td>
+                                                                            <td style={{ fontWeight: 600, fontSize: '11px', color: t.reason === 'Take Profit' ? 'var(--bull-green)' : t.reason === 'Stop Loss' ? 'var(--bear-red)' : 'var(--text-secondary)' }}>
+                                                                                {t.reason}
+                                                                            </td>
+                                                                        </tr>
+                                                                    ))}
+                                                                </tbody>
+                                                            </table>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </React.Fragment>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Market Intelligence News Tab Content */}
+                            {activeTab === 'news' && (
+                                <div className="news-tab-container" style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: '20px', padding: '8px', height: '100%', minHeight: '350px' }}>
+                                    {/* Left Panel: Market Mood & AI Sentiment */}
+                                    <div className="news-left-panel" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                                        {/* Popout Button for News & AI */}
+                                        <button 
+                                            className="btn-trade-execute buy"
+                                            onClick={() => window.open('/?popout=news', '_blank', 'width=1280,height=800,menubar=no,toolbar=no,location=no,status=no')}
+                                            style={{ 
+                                                width: '100%', 
+                                                height: '36px', 
+                                                padding: '8px', 
+                                                fontSize: '11.5px', 
+                                                fontWeight: 'bold', 
+                                                borderRadius: '6px', 
+                                                border: '1px solid var(--accent-gold)',
+                                                background: 'rgba(255, 183, 3, 0.08)',
+                                                color: 'var(--accent-gold)',
+                                                cursor: 'pointer',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                gap: '6px',
+                                                marginBottom: '4px',
+                                                boxShadow: 'none'
+                                            }}
+                                            title="เปิดหน้าต่างแยก (Popout News Window)"
+                                        >
+                                            <Icon name="external-link" size={12} />
+                                            <span>เปิดวิเคราะห์ข่าวในหน้าต่างใหม่ (Popout)</span>
+                                        </button>
+                                        {/* Market Sentiment Gauge */}
+                                        <div className="sidebar-panel-card" style={{ padding: '16px', position: 'relative', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.06)' }}>
+                                            <h3 style={{ margin: '0 0 14px 0', borderLeft: '3px solid var(--accent-gold)', paddingLeft: '8px', fontSize: '14px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                                ดัชนีอารมณ์ตลาด (Market Mood)
+                                            </h3>
+                                            
+                                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '12px 0', gap: '8px' }}>
+                                                {newsData.sentiment_summary === 'bullish' ? (
+                                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                                        <span style={{ fontSize: '42px', filter: 'drop-shadow(0 0 10px rgba(46, 204, 113, 0.6))' }}>📈</span>
+                                                        <strong style={{ fontSize: '18px', color: 'var(--bull-green)', marginTop: '8px', textTransform: 'uppercase' }}>BULLISH (กระทิง)</strong>
+                                                    </div>
+                                                ) : newsData.sentiment_summary === 'bearish' ? (
+                                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                                        <span style={{ fontSize: '42px', filter: 'drop-shadow(0 0 10px rgba(231, 76, 60, 0.6))' }}>📉</span>
+                                                        <strong style={{ fontSize: '18px', color: 'var(--bear-red)', marginTop: '8px', textTransform: 'uppercase' }}>BEARISH (หมี)</strong>
+                                                    </div>
+                                                ) : (
+                                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                                        <span style={{ fontSize: '42px', filter: 'drop-shadow(0 0 8px rgba(255,255,255,0.4))' }}>⚪</span>
+                                                        <strong style={{ fontSize: '18px', color: 'var(--text-secondary)', marginTop: '8px', textTransform: 'uppercase' }}>NEUTRAL (คงตัว)</strong>
+                                                    </div>
+                                                )}
+                                                <span style={{ fontSize: '10.5px', color: 'var(--text-muted)', textAlign: 'center', marginTop: '4px', lineHeight: '1.4' }}>
+                                                    * คำนวณสรุปแบบถ่วงน้ำหนักโดย AI อิงจากข่าวเศรษฐกิจและภูมิรัฐศาสตร์ 10 รายการล่าสุด
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        {/* Geopolitical Risk Scale */}
+                                        <div className="sidebar-panel-card" style={{ padding: '16px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                                            <h3 style={{ margin: '0 0 12px 0', borderLeft: '3px solid var(--bear-red)', paddingLeft: '8px', fontSize: '14px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                                ระดับภัยคุกคามตลาด
+                                            </h3>
+                                            
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>ระดับความตึงเครียด:</span>
+                                                    <span style={{ 
+                                                        fontSize: '11px', 
+                                                        fontWeight: 800, 
+                                                        color: newsData.risk_level === 'high' ? 'var(--bear-red)' : newsData.risk_level === 'medium' ? 'var(--accent-gold)' : 'var(--bull-green)',
+                                                        background: newsData.risk_level === 'high' ? 'rgba(231, 76, 60, 0.15)' : newsData.risk_level === 'medium' ? 'rgba(255, 183, 3, 0.15)' : 'rgba(46, 204, 113, 0.15)',
+                                                        padding: '2px 8px',
+                                                        borderRadius: '4px'
+                                                    }}>
+                                                        {newsData.risk_level.toUpperCase()}
+                                                    </span>
+                                                </div>
+                                                
+                                                <div style={{ height: '8px', background: 'rgba(0,0,0,0.3)', borderRadius: '4px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.05)' }}>
+                                                    <div style={{ 
+                                                        width: newsData.risk_level === 'high' ? '100%' : newsData.risk_level === 'medium' ? '60%' : '20%', 
+                                                        height: '100%', 
+                                                        background: newsData.risk_level === 'high' ? 'var(--bear-red)' : newsData.risk_level === 'medium' ? 'var(--accent-gold)' : 'var(--bull-green)',
+                                                        boxShadow: newsData.risk_level === 'high' ? '0 0 8px var(--bear-red)' : newsData.risk_level === 'medium' ? '0 0 8px var(--accent-gold)' : 'none',
+                                                        transition: 'width 0.5s ease-in-out'
+                                                    }}></div>
+                                                </div>
+                                                
+                                                <p style={{ fontSize: '10px', color: 'var(--text-secondary)', lineHeight: '1.4', margin: '4px 0 0 0', fontStyle: 'italic' }}>
+                                                    {newsData.risk_level === 'high' 
+                                                        ? '⚠️ ความตึงเครียดทางสงครามหรือภูมิรัฐศาสตร์รุนแรงขึ้น! แนะนำเน้นถือไม้ซื้อทองคำ (BUY Gold) รันเทรนตามระบบและระวังความผันผวนสูง'
+                                                        : newsData.risk_level === 'medium'
+                                                        ? '⚡ มีประเด็นสงครามการค้า/อัตราดอกเบี้ยและเงินเฟ้อระดับปานกลาง ตลาดค่อนข้างผันผวน แนะนำเพิ่มความรัดกุมในการตั้งจุด Stop Loss'
+                                                        : '🟢 ปัจจัยภายนอกยังคงอยู่ในเกณฑ์ปลอดภัย บอทระบบสัมผัสเทคนิคคอลทั่วไปทำงานได้อย่างปกติ'}
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        {/* On-demand manual Refresher controls */}
+                                        <button 
+                                            className={`btn-trade-execute buy ${newsRefreshing ? 'active' : ''}`}
+                                            onClick={handleRefreshNews}
+                                            disabled={newsRefreshing}
+                                            style={{ 
+                                                width: '100%', 
+                                                height: '42px', 
+                                                padding: '10px', 
+                                                fontSize: '12px', 
+                                                fontWeight: 'bold', 
+                                                borderRadius: '6px', 
+                                                boxShadow: 'none',
+                                                border: '1px solid var(--accent-gold)',
+                                                background: 'rgba(255, 183, 3, 0.08)',
+                                                color: 'var(--accent-gold)',
+                                                cursor: 'pointer',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                gap: '8px',
+                                                marginTop: 'auto'
+                                            }}
+                                        >
+                                            <div className={newsRefreshing ? "loader-spinner" : ""} style={{ width: '14px', height: '14px', borderTopColor: 'var(--accent-gold)', animationDuration: '0.8s' }}>
+                                                {!newsRefreshing && <Icon name="refresh" size={14} />}
+                                            </div>
+                                            <span>{newsRefreshing ? 'กำลังดึงและวิเคราะห์ข่าวด้วย AI...' : 'ดึงและอัปเดตข่าวเรียลไทม์'}</span>
+                                        </button>
+                                    </div>
+
+                                    {/* Right Panel: Analyzed News Feed */}
+                                    <div className="news-right-panel" style={{ display: 'flex', flexDirection: 'column', gap: '12px', overflowY: 'auto', maxHeight: isTerminalExpanded ? 'calc(100vh - 220px)' : '420px', paddingRight: '4px', flex: 1, transition: 'all 0.3s' }}>
+                                        {newsData.news.length === 0 ? (
+                                            <div className="empty-terminal-state" style={{ height: '300px' }}>
+                                                <Icon name="info" size={32} />
+                                                <p>ยังไม่มีรายงานข่าวสารวิเคราะห์ในระบบ กดปุ่มดึงข่าวสารด้านซ้ายเพื่อรับอัปเดต</p>
+                                            </div>
+                                        ) : (
+                                            newsData.news.map((item) => {
+                                                const isExpanded = expandedNewsId === item.id;
+                                                const pubDate = item.published_at ? new Date(item.published_at).toLocaleString('th-TH', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: 'short' }) : 'N/A';
+                                                
+                                                // Badges styles
+                                                const impactColor = item.impact_level === 'high' ? 'rgba(231, 76, 60, 0.12)' : item.impact_level === 'medium' ? 'rgba(255, 183, 3, 0.12)' : 'rgba(0, 180, 216, 0.12)';
+                                                const impactTextColor = item.impact_level === 'high' ? 'var(--bear-red)' : item.impact_level === 'medium' ? 'var(--accent-gold)' : '#00b4d8';
+                                                const impactBorderColor = item.impact_level === 'high' ? 'rgba(231, 76, 60, 0.25)' : item.impact_level === 'medium' ? 'rgba(255, 183, 3, 0.25)' : 'rgba(0, 180, 216, 0.25)';
+                                                
+                                                const sentimentEmoji = item.sentiment === 'bullish' ? '📈 BUY' : item.sentiment === 'bearish' ? '📉 SELL' : '⚪ NEUTRAL';
+                                                const sentimentTextColor = item.sentiment === 'bullish' ? 'var(--bull-green)' : item.sentiment === 'bearish' ? 'var(--bear-red)' : 'var(--text-muted)';
+                                                
+                                                return (
+                                                    <div 
+                                                        key={item.id} 
+                                                        className="sidebar-panel-card"
+                                                        style={{ 
+                                                            padding: '14px 16px', 
+                                                            border: '1px solid ' + (isExpanded ? 'var(--accent-gold)' : 'rgba(255, 255, 255, 0.05)'),
+                                                            background: isExpanded ? 'rgba(255, 183, 3, 0.02)' : 'rgba(255,255,255,0.01)',
+                                                            cursor: 'pointer',
+                                                            borderRadius: '8px',
+                                                            display: 'flex',
+                                                            flexDirection: 'column',
+                                                            gap: '8px',
+                                                            transition: 'all 0.2s ease',
+                                                            boxShadow: isExpanded ? '0 0 10px rgba(255, 183, 3, 0.06)' : 'none'
+                                                        }}
+                                                        onClick={() => setExpandedNewsId(isExpanded ? null : item.id)}
+                                                    >
+                                                        {/* Header row */}
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
+                                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center' }}>
+                                                                {/* Category */}
+                                                                <span style={{ fontSize: '9px', background: 'rgba(255,255,255,0.06)', color: 'var(--text-secondary)', padding: '2px 6px', borderRadius: '4px', textTransform: 'uppercase', fontWeight: 'bold' }}>
+                                                                    {item.category === 'geopolitical' ? 'สงคราม/ภูมิรัฐศาสตร์ 🛡️' : 'เศรษฐกิจมหภาค 📊'}
+                                                                </span>
+                                                                
+                                                                {/* Impact Level */}
+                                                                <span style={{ 
+                                                                    fontSize: '9px', 
+                                                                    background: impactColor, 
+                                                                    color: impactTextColor, 
+                                                                    border: '1px solid ' + impactBorderColor,
+                                                                    padding: '2px 6px', 
+                                                                    borderRadius: '4px',
+                                                                    fontWeight: 800,
+                                                                    display: 'inline-flex',
+                                                                    alignItems: 'center',
+                                                                    gap: '4px'
+                                                                }}>
+                                                                    {item.impact_level === 'high' && <div className="pulse-dot" style={{ backgroundColor: 'var(--bear-red)', width: '5px', height: '5px', margin: 0 }}></div>}
+                                                                    <span>{item.impact_level.toUpperCase()} IMPACT</span>
+                                                                </span>
+                                                                
+                                                                {/* Sentiment */}
+                                                                <span style={{ fontSize: '10px', color: sentimentTextColor, fontWeight: 'bold', marginLeft: '4px' }}>
+                                                                    {sentimentEmoji}
+                                                                </span>
+                                                            </div>
+                                                            <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'monospace' }}>{pubDate}</span>
+                                                        </div>
+                                                        
+                                                        {/* Title */}
+                                                        <h4 style={{ margin: 0, fontSize: '13px', fontWeight: 600, color: isExpanded ? 'var(--accent-gold)' : 'var(--text-primary)', lineHeight: '1.4' }}>
+                                                            {item.title_th || item.title}
+                                                        </h4>
+                                                        
+                                                        {/* Summary Preview */}
+                                                        <p style={{ margin: 0, fontSize: '11px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+                                                            {item.summary_th || item.summary}
+                                                        </p>
+                                                        
+                                                        {/* Collapsible AI Analysis section */}
+                                                        {isExpanded && (
+                                                            <div style={{ 
+                                                                marginTop: '10px', 
+                                                                borderTop: '1px dashed rgba(255,255,255,0.08)', 
+                                                                paddingTop: '10px',
+                                                                display: 'flex',
+                                                                flexDirection: 'column',
+                                                                gap: '8px'
+                                                            }} onClick={(e) => e.stopPropagation()}>
+                                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                                    <strong style={{ fontSize: '11px', color: 'var(--accent-gold)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                                        <Icon name="message" size={12} />
+                                                                        <span>วิเคราะห์ความเชื่อมโยงโดย AI Agent</span>
+                                                                    </strong>
+                                                                    
+                                                                    {item.url && (
+                                                                        <a 
+                                                                            href={item.url} 
+                                                                            target="_blank" 
+                                                                            rel="noopener noreferrer"
+                                                                            style={{ fontSize: '10px', color: 'var(--accent-gold)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '3px' }}
+                                                                        >
+                                                                            <span>อ่านข่าวเต็ม</span>
+                                                                            <Icon name="external-link" size={10} />
+                                                                        </a>
+                                                                    )}
+                                                                </div>
+                                                                
+                                                                <div style={{ padding: '10px 12px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)', borderRadius: '6px', fontSize: '11px', color: 'var(--text-primary)', lineHeight: '1.5' }}>
+                                                                    {item.analysis || 'โมเดล AI กำลังทบทวนข้อสรุปจากข่าวสารรายการนี้...'}
+                                                                </div>
+                                                                <span style={{ fontSize: '9px', color: 'var(--text-muted)', display: 'block', alignSelf: 'flex-end' }}>
+                                                                    สำนักข่าว: {item.source}
+                                                                </span>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })
+                                        )}
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
 
                 {/* 3. Right Sidebar (Order Controls) */}
-                <div className="execution-sidebar">
+                <div 
+                    className="execution-sidebar"
+                    style={{
+                        width: isExecutionCollapsed ? '0px' : '340px',
+                        minWidth: isExecutionCollapsed ? '0px' : '340px',
+                        overflow: 'hidden',
+                        opacity: isExecutionCollapsed ? 0 : 1,
+                        borderLeft: isExecutionCollapsed ? 'none' : '1px solid var(--border-color)',
+                        padding: isExecutionCollapsed ? '0px' : '20px',
+                        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
+                    }}
+                >
                     {/* Execution Card */}
                     <div className="sidebar-panel-card">
                         <h3>ส่งคำสั่งซื้อขาย (Order Execution)</h3>
@@ -1828,6 +4474,337 @@ const TradingApp = () => {
                                     </span>
                                 </div>
                             )}
+                        </div>
+                    </div>
+
+                    {/* Stochastic RSI Live Widget */}
+                    <div className="sidebar-panel-card" style={{ marginTop: '16px', position: 'relative', overflow: 'hidden' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <h3 style={{ margin: 0, borderLeft: '3px solid var(--accent-gold)', paddingLeft: '8px', fontSize: '15px' }}>
+                                    Stochastic RSI วิเคราะห์ด่วน
+                                </h3>
+                                <button 
+                                    onClick={openStochRsiSettings}
+                                    style={{ 
+                                        background: 'transparent', 
+                                        border: 'none', 
+                                        color: 'var(--text-secondary)', 
+                                        cursor: 'pointer', 
+                                        display: 'flex', 
+                                        alignItems: 'center', 
+                                        padding: '4px',
+                                        borderRadius: '4px',
+                                        transition: 'all 0.2s ease',
+                                    }}
+                                    onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent-gold)'; e.currentTarget.style.backgroundColor = 'rgba(255, 183, 3, 0.08)'; }}
+                                    onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.backgroundColor = 'transparent'; }}
+                                    title="ตั้งค่า Stoch RSI"
+                                >
+                                    <Icon name="settings" size={14} />
+                                </button>
+                            </div>
+                            <span style={{ fontSize: '10px', background: 'rgba(255, 183, 3, 0.1)', color: 'var(--accent-gold)', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold', fontFamily: 'monospace' }}>
+                                {activeSymbol} ({stochRsiSettings.timeframe === "Chart" ? (paneTimeframes[activePaneId] || 'H1') : stochRsiSettings.timeframe})
+                            </span>
+                        </div>
+
+                        {stochRsiData.status === 'loading' ? (
+                            <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--text-muted)', fontSize: '12px' }}>
+                                <div className="loader-spinner" style={{ width: '20px', height: '20px', margin: '0 auto 10px auto' }}></div>
+                                <span>กำลังคำนวณอินดิเคเตอร์...</span>
+                            </div>
+                        ) : stochRsiData.status === 'success' && stochRsiData.k !== null && stochRsiData.d !== null ? (
+                            <div>
+                                {/* Status badges and values */}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                                    <div style={{ display: 'flex', gap: '8px' }}>
+                                        {stochRsiData.k >= 80 ? (
+                                            <span style={{ fontSize: '10px', color: '#fff', background: 'var(--bear-red)', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>
+                                                OVERBOUGHT 🔴
+                                            </span>
+                                        ) : stochRsiData.k <= 20 ? (
+                                            <span style={{ fontSize: '10px', color: '#fff', background: 'var(--bull-green)', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>
+                                                OVERSOLD 🟢
+                                            </span>
+                                        ) : (
+                                            <span style={{ fontSize: '10px', color: 'var(--text-secondary)', background: 'rgba(255,255,255,0.06)', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>
+                                                NEUTRAL ⚪
+                                            </span>
+                                        )}
+                                    </div>
+                                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 500 }}>
+                                        RSI ดิบ: <strong style={{ color: 'var(--text-primary)', fontFamily: 'monospace' }}>{stochRsiData.rsi !== null ? stochRsiData.rsi.toFixed(1) : 'N/A'}</strong>
+                                    </span>
+                                </div>
+
+                                {/* Dynamic Values Grid */}
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '14px', background: 'rgba(0,0,0,0.15)', padding: '10px', borderRadius: '6px' }}>
+                                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                        <span style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>%K (Fast Line)</span>
+                                        <span style={{ fontSize: '20px', fontWeight: 800, color: 'var(--accent-gold)', fontFamily: 'monospace' }}>
+                                            {stochRsiData.k.toFixed(1)}
+                                        </span>
+                                    </div>
+                                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                        <span style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>%D (Slow Line)</span>
+                                        <span style={{ fontSize: '20px', fontWeight: 800, color: '#00b4d8', fontFamily: 'monospace' }}>
+                                            {stochRsiData.d.toFixed(1)}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                {/* Visual Gauge Scale */}
+                                <div style={{ marginBottom: '16px' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                                        <span>0 (Oversold)</span>
+                                        <span>50</span>
+                                        <span>100 (Overbought)</span>
+                                    </div>
+                                    {/* Gauge bar container */}
+                                    <div style={{ height: '14px', background: 'rgba(0,0,0,0.3)', borderRadius: '7px', border: '1px solid rgba(255,255,255,0.05)', position: 'relative', overflow: 'hidden' }}>
+                                        {/* Oversold region overlay */}
+                                        <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '20%', background: 'rgba(46, 204, 113, 0.08)', borderRight: '1px dashed rgba(46, 204, 113, 0.2)' }}></div>
+                                        {/* Overbought region overlay */}
+                                        <div style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: '20%', background: 'rgba(231, 76, 60, 0.08)', borderLeft: '1px dashed rgba(231, 76, 60, 0.2)' }}></div>
+                                        
+                                        {/* %K Line Marker (Gold Bar) */}
+                                        <div style={{ position: 'absolute', left: `${Math.min(96, Math.max(4, stochRsiData.k))}%`, top: '2px', bottom: '2px', width: '4px', background: 'var(--accent-gold)', borderRadius: '2px', boxShadow: '0 0 6px var(--accent-gold)', transform: 'translateX(-2px)', transition: 'left 0.4s ease' }} title={`%K: ${stochRsiData.k.toFixed(1)}`}></div>
+                                        {/* %D Line Marker (Blue Circle) */}
+                                        <div style={{ position: 'absolute', left: `${Math.min(96, Math.max(4, stochRsiData.d))}%`, top: '3px', bottom: '3px', width: '8px', height: '8px', background: '#00b4d8', borderRadius: '50%', boxShadow: '0 0 6px #00b4d8', transform: 'translateX(-4px)', transition: 'left 0.4s ease' }} title={`%D: ${stochRsiData.d.toFixed(1)}`}></div>
+                                    </div>
+                                </div>
+
+                                {/* Live recommendation based on StochRSI strategy */}
+                                <div style={{ padding: '10px 12px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)', borderRadius: '6px', fontSize: '11px', display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                                    <span style={{ fontSize: '14px' }}>
+                                        {stochRsiData.k >= 80 ? '⚠️' : stochRsiData.k <= 20 ? '🚀' : '💡'}
+                                    </span>
+                                    <div>
+                                        <strong style={{ display: 'block', color: 'var(--text-primary)', marginBottom: '2px' }}>
+                                            {stochRsiData.k >= 80 ? 'ระวังแรงเทขาย (Overbought)' : stochRsiData.k <= 20 ? 'จับตาโอกาสซื้อ (Oversold)' : 'กำลังสะสมพลัง (Neutral)'}
+                                        </strong>
+                                        <span style={{ color: 'var(--text-secondary)', fontSize: '10.5px', lineHeight: '1.4' }}>
+                                            {stochRsiData.k >= 80 
+                                                ? 'ราคาเคลื่อนไหวปรับตัวเร็วเกินไปในเขตซื้อมากเกินไป แนะนำชะลอการ BUY และรอสัญญาณกลับตัวเป็นฝั่ง SELL เมื่อ %K ตัดใต้ %D' 
+                                                : stochRsiData.k <= 20 
+                                                ? 'ราคาปรับตัวดิ่งลงลึกมากในเขตขายมากเกินไป มีโอกาสกลับตัวสูง แนะนำมองหาจังหวะเปิด BUY เมื่อ %K ตัดขึ้นเหนือ %D' 
+                                                : 'เครื่องมือแสดงทิศทางอยู่ระดับกลาง แนะนำหลีกเลี่ยงการเปิดออเดอร์ หรือเทรดตามเทรนหลักด้วยการดูเส้น EMA 50/200 Cross ประกอบ'}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (
+                            <div style={{ textAlign: 'center', padding: '16px 0', color: 'var(--text-muted)', fontSize: '11px' }}>
+                                ⚠️ ข้อมูลไม่เพียงพอสำหรับการคำนวณ Stochastic RSI ในกรอบเวลานี้
+                            </div>
+                        )}
+                        
+                        {/* Explanation Help Link */}
+                        <div style={{ marginTop: '12px', borderTop: '1px solid rgba(255,255,255,0.04)', paddingTop: '8px', textAlign: 'right' }}>
+                            <button 
+                                onClick={() => alert('Stochastic RSI (StochRSI) คือ ออสซิลเลเตอร์ที่คำนวณซ้ำบนค่า RSI (Relative Strength Index) อีกชั้นหนึ่ง แทนการคำนวณบนราคาโดยตรง ส่งผลให้มีความรวดเร็วและจับสภาวะกลับตัว Overbought (>80) และ Oversold (<20) ได้ไวกว่าปกติ ช่วยให้เทรดเดอร์ Day Trading สังเกตสัญญาณจุดสปริงตัวของราคาได้อย่างแม่นยำยิ่งขึ้น')}
+                                style={{ background: 'transparent', border: 'none', color: 'var(--accent-gold)', fontSize: '10px', cursor: 'pointer', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                            >
+                                <span>💡 StochRSI คืออะไร?</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* MACD 4C Live Momentum Widget */}
+                    <div className="sidebar-panel-card" style={{ marginTop: '16px', position: 'relative', overflow: 'hidden' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <h3 style={{ margin: 0, borderLeft: '3px solid var(--bull-green)', paddingLeft: '8px', fontSize: '15px' }}>
+                                    MACD 4C โมเมนตัมคลื่น
+                                </h3>
+                                <button 
+                                    onClick={openMacdSettings}
+                                    style={{ 
+                                        background: 'transparent', 
+                                        border: 'none', 
+                                        color: 'var(--text-secondary)', 
+                                        cursor: 'pointer', 
+                                        display: 'flex', 
+                                        alignItems: 'center', 
+                                        padding: '4px',
+                                        borderRadius: '4px',
+                                        transition: 'all 0.2s ease',
+                                    }}
+                                    onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--bull-green)'; e.currentTarget.style.backgroundColor = 'rgba(46, 204, 113, 0.08)'; }}
+                                    onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.backgroundColor = 'transparent'; }}
+                                    title="ตั้งค่า MACD 4C"
+                                >
+                                    <Icon name="settings" size={14} />
+                                </button>
+                            </div>
+                            <span style={{ fontSize: '10px', background: 'rgba(46, 204, 113, 0.1)', color: 'var(--bull-green)', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold', fontFamily: 'monospace' }}>
+                                {activeSymbol} ({paneTimeframes[activePaneId] || 'H1'})
+                            </span>
+                        </div>
+
+                        {stochRsiData.status === 'loading' ? (
+                            <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--text-muted)', fontSize: '12px' }}>
+                                <div className="loader-spinner" style={{ width: '20px', height: '20px', margin: '0 auto 10px auto' }}></div>
+                                <span>กำลังคำนวณโมเมนตัม...</span>
+                            </div>
+                        ) : stochRsiData.status === 'success' && stochRsiData.macd_val !== null ? (
+                            <div>
+                                {/* Status badges and values */}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                                    <div style={{ display: 'flex', gap: '8px' }}>
+                                        {stochRsiData.macd_color === 'lime' ? (
+                                            <span style={{ fontSize: '10px', color: '#fff', background: '#2ecc71', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold', boxShadow: '0 0 6px rgba(46, 204, 113, 0.4)' }}>
+                                                BULLISH ACCEL 🚀
+                                            </span>
+                                        ) : stochRsiData.macd_color === 'green' ? (
+                                            <span style={{ fontSize: '10px', color: '#fff', background: '#27ae60', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>
+                                                BULLISH SLOW 📈
+                                            </span>
+                                        ) : stochRsiData.macd_color === 'maroon' ? (
+                                            <span style={{ fontSize: '10px', color: '#fff', background: '#8b0000', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold', boxShadow: '0 0 6px rgba(139, 0, 0, 0.4)' }}>
+                                                BEARISH DUMP 🚨
+                                            </span>
+                                        ) : stochRsiData.macd_color === 'red' ? (
+                                            <span style={{ fontSize: '10px', color: '#fff', background: '#e74c3c', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>
+                                                BEARISH REBOUND 📉
+                                            </span>
+                                        ) : (
+                                            <span style={{ fontSize: '10px', color: 'var(--text-secondary)', background: 'rgba(255,255,255,0.06)', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>
+                                                NEUTRAL ⚪
+                                            </span>
+                                        )}
+                                    </div>
+                                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 500 }}>
+                                        ค่า MACD: <strong style={{ color: 'var(--text-primary)', fontFamily: 'monospace' }}>
+                                            {stochRsiData.macd_val !== null ? (Math.abs(stochRsiData.macd_val) < 0.0001 ? stochRsiData.macd_val.toFixed(6) : stochRsiData.macd_val.toFixed(4)) : 'N/A'}
+                                        </strong>
+                                    </span>
+                                </div>
+
+                                {/* Premium Visual Histogram Wave of last 12 periods */}
+                                <div style={{ marginBottom: '14px' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                                        <span>โมเมนตัมย้อนหลัง 12 แท่ง</span>
+                                        <span style={{ color: stochRsiData.macd_color === 'lime' ? '#2ecc71' : stochRsiData.macd_color === 'green' ? '#27ae60' : stochRsiData.macd_color === 'maroon' ? '#e74c3c' : '#f39c12' }}>
+                                            {stochRsiData.macd_color === 'lime' ? 'กำลังขึ้นแรง' : stochRsiData.macd_color === 'green' ? 'กำลังชะลอขาขึ้น' : stochRsiData.macd_color === 'maroon' ? 'กำลังลงแรง' : 'กำลังชะลอขาลง'}
+                                        </span>
+                                    </div>
+                                    
+                                    <div style={{ 
+                                        display: 'flex', 
+                                        justifyContent: 'space-around', 
+                                        height: '80px', 
+                                        background: 'rgba(0,0,0,0.25)', 
+                                        borderRadius: '6px', 
+                                        border: '1px solid rgba(255,255,255,0.05)', 
+                                        padding: '10px 4px', 
+                                        position: 'relative', 
+                                        overflow: 'hidden' 
+                                    }}>
+                                        {/* Zero Line */}
+                                        <div style={{ 
+                                            position: 'absolute', 
+                                            left: 0, 
+                                            right: 0, 
+                                            top: '50%', 
+                                            height: '1px', 
+                                            background: 'rgba(255,255,255,0.15)', 
+                                            borderStyle: 'dashed' 
+                                        }}></div>
+                                        
+                                        {/* 12 Columns */}
+                                        {(() => {
+                                            const maxAbsVal = stochRsiData.macd_history && stochRsiData.macd_history.length > 0
+                                                ? Math.max(...stochRsiData.macd_history.map(item => Math.abs(item.value || 0)), 0.00001)
+                                                : 0.00001;
+                                                
+                                            return stochRsiData.macd_history.map((item, idx) => {
+                                                const heightPct = (Math.abs(item.value) / maxAbsVal) * 50;
+                                                const isPositive = item.value >= 0;
+                                                
+                                                return (
+                                                    <div 
+                                                        key={idx} 
+                                                        style={{ 
+                                                            width: '6%', 
+                                                            height: '100%', 
+                                                            display: 'flex', 
+                                                            flexDirection: 'column', 
+                                                            position: 'relative', 
+                                                            zIndex: 2 
+                                                        }} 
+                                                        title={`Bar ${idx + 1}: ${Math.abs(item.value) < 0.0001 ? item.value.toFixed(6) : item.value.toFixed(4)}`}
+                                                    >
+                                                        {/* Upper Half */}
+                                                        <div style={{ height: '50%', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+                                                            {isPositive && (
+                                                                <div style={{ 
+                                                                    height: `${heightPct * 2}%`,
+                                                                    backgroundColor: item.color,
+                                                                    borderRadius: '2px 2px 0 0',
+                                                                    boxShadow: item.color === 'lime' ? '0 0 4px rgba(46, 204, 113, 0.4)' : 'none',
+                                                                    transition: 'height 0.4s ease'
+                                                                }}></div>
+                                                            )}
+                                                        </div>
+                                                        {/* Lower Half */}
+                                                        <div style={{ height: '50%', display: 'flex', flexDirection: 'column', justifyContent: 'flex-start' }}>
+                                                            {!isPositive && (
+                                                                <div style={{ 
+                                                                    height: `${heightPct * 2}%`,
+                                                                    backgroundColor: item.color,
+                                                                    borderRadius: '0 0 2px 2px',
+                                                                    boxShadow: item.color === 'maroon' ? '0 0 4px rgba(139, 0, 0, 0.4)' : 'none',
+                                                                    transition: 'height 0.4s ease'
+                                                                }}></div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            });
+                                        })()}
+                                    </div>
+                                </div>
+
+                                {/* Dynamic descriptive analysis */}
+                                <div style={{ padding: '10px 12px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)', borderRadius: '6px', fontSize: '11px', display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                                    <span style={{ fontSize: '14px' }}>
+                                        {stochRsiData.macd_color === 'lime' ? '🚀' : stochRsiData.macd_color === 'green' ? '📈' : stochRsiData.macd_color === 'maroon' ? '🚨' : '📉'}
+                                    </span>
+                                    <div>
+                                        <strong style={{ display: 'block', color: 'var(--text-primary)', marginBottom: '2px' }}>
+                                            {stochRsiData.macd_color === 'lime' ? 'แนวโน้มขาขึ้นมีแรงขับเคลื่อนเต็มเปี่ยม' : 
+                                             stochRsiData.macd_color === 'green' ? 'แนวโน้มขาขึ้นเริ่มชะลอแรงเหวี่ยง' : 
+                                             stochRsiData.macd_color === 'maroon' ? 'แนวโน้มขาลงกำลังเทขายอย่างรุนแรง' : 
+                                             'แนวโน้มขาลงเริ่มอ่อนกำลังหรือมีแรงดีดกลับ'}
+                                        </strong>
+                                        <span style={{ color: 'var(--text-secondary)', fontSize: '10.5px', lineHeight: '1.4' }}>
+                                            {stochRsiData.macd_color === 'lime' 
+                                                ? 'โมเมนตัมกำลังเพิ่มขึ้นในแดนบวกอย่างมีนัยสำคัญ แรงซื้อได้เปรียบสูง แนะนำถือฝั่ง BUY หรือพิจารณาเข้าตามเทรน' 
+                                                : stochRsiData.macd_color === 'green' 
+                                                ? 'แม้ราคาอยู่แดนบวกแต่แท่งสีจางลง แสดงว่าพลังฝั่งซื้อเริ่มแผ่ว ควรระวังการไล่ราคา BUY และเฝ้ารอการพักตัว' 
+                                                : stochRsiData.macd_color === 'maroon' 
+                                                ? 'โมเมนตัมเร่งตัวลงใต้เส้น Zero อย่างมีพลัง แรงเทขายรุนแรง แนะนำถือฝั่ง SELL หรือชะลอการ BUY ทุกกรณี' 
+                                                : 'แรงขายเริ่มเบาบางลงใต้เส้น Zero เกิดการดีดกลับชั่วคราวหรือสิ้นสุดรอบเทขาย ลุ้นเกิด Bullish Reversal'}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (
+                            <div style={{ textAlign: 'center', padding: '16px 0', color: 'var(--text-muted)', fontSize: '11px' }}>
+                                ⚠️ ข้อมูลไม่เพียงพอสำหรับการวิเคราะห์ MACD 4C ในกรอบเวลานี้
+                            </div>
+                        )}
+
+                        {/* Explanation Help Link */}
+                        <div style={{ marginTop: '12px', borderTop: '1px solid rgba(255,255,255,0.04)', paddingTop: '8px', textAlign: 'right' }}>
+                            <button 
+                                onClick={() => alert('4-Color MACD (MACD 4C) คือ ออสซิลเลเตอร์ที่ปรับปรุงการแสดงผลโมเมนตัมแบบ 4 สีมิติ โดยแท่งเหนือ Zero (สีเขียวสว่าง/สีเขียวเข้ม) และใต้ Zero (สีแดงเข้ม/สีแดงสว่าง) จะช่วยแยกแยะว่าทิศทางคลื่นอยู่ในช่วงเร่งความเร็วหรือเริ่มชะลอตัว ช่วยให้เข้าต้นเทรนได้เร็วและออกได้คมกว่า MACD ทั่วไป')}
+                                style={{ background: 'transparent', border: 'none', color: 'var(--bull-green)', fontSize: '10px', cursor: 'pointer', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                            >
+                                <span>📊 MACD 4C คืออะไร?</span>
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -2027,6 +5004,8 @@ const TradingApp = () => {
                                 }}>
                                     {[
                                         { id: 'rsi_oscillator', name: 'RSI Overbought/Oversold', desc: 'เทรดเมื่อจุดกลับตัวจากเขต RSI Overbought/Oversold' },
+                                        { id: 'stoch_rsi', name: 'Stochastic RSI (StochRSI)', desc: 'จับสัญญาณซื้อขายและจุดกลับตัวได้รวดเร็วกว่า RSI ทั่วไป โดยใช้ออสซิลเลเตอร์คำนวณซ้ำบน RSI' },
+                                        { id: 'macd_4c', name: 'MACD 4 Color (4C) Momentum', desc: 'ตรวจจับแรงขับเคลื่อนเทรนด้วยแท่งสีโมเมนตัม 4 มิติ (Pine Script 4-Color MACD)' },
                                         { id: 'sma_cross', name: 'Double SMA Crossover', desc: 'เทรดตามแนวโน้มเมื่อเส้น SMA 5 ตัดกับ 15' },
                                         { id: 'macd', name: 'MACD Signal Cross', desc: 'เทรดตามโมเมนตัมเมื่อเส้น MACD ตัดกับ Signal' },
                                         { id: 'elliott_wave', name: 'Elliott Wave Theory', desc: 'ตรวจจับคลื่น Impulse/Correction จากราคาย้อนหลัง' },
@@ -2061,6 +5040,7 @@ const TradingApp = () => {
                                                     if (nextAlgos.length === 1) {
                                                         const single = nextAlgos[0];
                                                         const suffix = single === "rsi_oscillator" ? "RSI Overbought/Oversold" :
+                                                                       single === "stoch_rsi" ? "StochRSI Fast Reversal" :
                                                                        single === "sma_cross" ? "Double SMA" :
                                                                        single === "macd" ? "MACD Cross" :
                                                                        single === "elliott_wave" ? "Elliott Wave Bot" :
@@ -2402,6 +5382,36 @@ const TradingApp = () => {
                                         </div>
                                     )}
                                 </div>
+
+                                {/* 3. AI News & Geopolitical Risk Filter Box */}
+                                <div style={{
+                                    background: botForm.use_news_filter ? 'rgba(212, 175, 55, 0.05)' : 'rgba(255,255,255,0.02)',
+                                    border: botForm.use_news_filter ? '1px solid rgba(212, 175, 55, 0.2)' : '1px solid rgba(255,255,255,0.05)',
+                                    borderRadius: '8px',
+                                    padding: '12px',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '6px',
+                                    transition: 'all 0.3s ease',
+                                    boxShadow: botForm.use_news_filter ? '0 0 10px rgba(212, 175, 55, 0.05)' : 'none'
+                                }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }} onClick={() => setBotForm({ ...botForm, use_news_filter: !botForm.use_news_filter })}>
+                                        <input 
+                                            type="checkbox" 
+                                            id="chk-news-filter"
+                                            checked={botForm.use_news_filter || false}
+                                            onChange={(e) => setBotForm({ ...botForm, use_news_filter: e.target.checked })}
+                                            onClick={(e) => e.stopPropagation()}
+                                            style={{ accentColor: 'var(--accent-gold)', width: '16px', height: '16px', cursor: 'pointer' }}
+                                        />
+                                        <label htmlFor="chk-news-filter" style={{ margin: 0, cursor: 'pointer', textTransform: 'none', fontSize: '11px', fontWeight: 700, color: 'var(--accent-gold)' }}>
+                                            🛡️ เปิดระบบ AI กรองข่าวด่วนและสงครามภูมิรัฐศาสตร์ (AI Geopolitical Risk Filter)
+                                        </label>
+                                    </div>
+                                    <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontStyle: 'italic', display: 'block', lineHeight: '1.3' }}>
+                                        * กรองและบล็อกคำสั่งซื้อขายอัตโนมัติเมื่อตรวจพบระดับความรุนแรงสูง (High Threat เช่น ความตึงเครียดทางสงคราม) หรือมีปัจจัยข่าวสารระดับ High Impact ที่ขัดแย้งกับการเปิดสถานะ เพื่อความปลอดภัยสูงสุดของทุนในพอร์ต
+                                    </span>
+                                </div>
                             </div>
 
                             <button 
@@ -2423,6 +5433,294 @@ const TradingApp = () => {
                     </div>
                 </div>
             </div>
+
+            {/* --- STOCHASTIC RSI CONFIGURATION MODAL --- */}
+            {stochRsiSettingsOpen && (
+                <div className="modal-overlay active" style={{ display: 'flex' }}>
+                    <div className="modal-container" style={{ width: '380px', background: '#1c2030', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', boxShadow: '0 8px 32px rgba(0,0,0,0.5)', overflow: 'hidden' }}>
+                        {/* Modal Header */}
+                        <div className="modal-header" style={{ padding: '16px 20px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(0,0,0,0.15)' }}>
+                            <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 600, color: '#f8f9fa', fontFamily: 'Outfit' }}>Stoch RSI</h3>
+                            <button onClick={() => setStochRsiSettingsOpen(false)} style={{ background: 'transparent', border: 'none', color: '#94a3b8', fontSize: '20px', cursor: 'pointer' }}>×</button>
+                        </div>
+                        
+                        {/* Modal Tabs */}
+                        <div style={{ display: 'flex', borderBottom: '1px solid rgba(255,255,255,0.06)', padding: '0 20px', background: 'rgba(0,0,0,0.05)' }}>
+                            {['Inputs', 'Style', 'Visibility'].map((tab) => (
+                                <div 
+                                    key={tab} 
+                                    style={{ 
+                                        padding: '12px 16px', 
+                                        color: tab === 'Inputs' ? 'var(--accent-gold)' : '#94a3b8', 
+                                        fontWeight: 600, 
+                                        fontSize: '13px', 
+                                        cursor: 'pointer',
+                                        borderBottom: tab === 'Inputs' ? '2px solid var(--accent-gold)' : '2px solid transparent',
+                                        marginBottom: '-1px'
+                                    }}
+                                    onClick={() => tab !== 'Inputs' && alert(`${tab} ทำงานในโหมดพรีเมียมอัตโนมัติเรียบร้อยแล้ว`)}
+                                >
+                                    {tab}
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* Modal Body */}
+                        <div className="modal-body" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px', background: '#1c2030' }}>
+                            {/* Input K */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <label style={{ fontSize: '13px', color: '#94a3b8' }}>K</label>
+                                <input 
+                                    type="number" 
+                                    value={stochRsiForm.k} 
+                                    onChange={(e) => setStochRsiForm({ ...stochRsiForm, k: parseInt(e.target.value) || 3 })}
+                                    style={{ width: '100px', padding: '6px 10px', background: '#131722', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#f8f9fa', fontSize: '13px', textAlign: 'center', outline: 'none' }}
+                                    min="1" max="100"
+                                />
+                            </div>
+
+                            {/* Input D */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <label style={{ fontSize: '13px', color: '#94a3b8' }}>D</label>
+                                <input 
+                                    type="number" 
+                                    value={stochRsiForm.d} 
+                                    onChange={(e) => setStochRsiForm({ ...stochRsiForm, d: parseInt(e.target.value) || 3 })}
+                                    style={{ width: '100px', padding: '6px 10px', background: '#131722', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#f8f9fa', fontSize: '13px', textAlign: 'center', outline: 'none' }}
+                                    min="1" max="100"
+                                />
+                            </div>
+
+                            {/* Input RSI Length */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <label style={{ fontSize: '13px', color: '#94a3b8' }}>RSI Length</label>
+                                <input 
+                                    type="number" 
+                                    value={stochRsiForm.rsiLength} 
+                                    onChange={(e) => setStochRsiForm({ ...stochRsiForm, rsiLength: parseInt(e.target.value) || 13 })}
+                                    style={{ width: '100px', padding: '6px 10px', background: '#131722', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#f8f9fa', fontSize: '13px', textAlign: 'center', outline: 'none' }}
+                                    min="1" max="100"
+                                />
+                            </div>
+
+                            {/* Input Stochastic Length */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <label style={{ fontSize: '13px', color: '#94a3b8' }}>Stochastic Length</label>
+                                <input 
+                                    type="number" 
+                                    value={stochRsiForm.stochasticLength} 
+                                    onChange={(e) => setStochRsiForm({ ...stochRsiForm, stochasticLength: parseInt(e.target.value) || 13 })}
+                                    style={{ width: '100px', padding: '6px 10px', background: '#131722', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#f8f9fa', fontSize: '13px', textAlign: 'center', outline: 'none' }}
+                                    min="1" max="100"
+                                />
+                            </div>
+
+                            {/* Input RSI Source */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <label style={{ fontSize: '13px', color: '#94a3b8' }}>RSI Source</label>
+                                <select 
+                                    value={stochRsiForm.rsiSource} 
+                                    onChange={(e) => setStochRsiForm({ ...stochRsiForm, rsiSource: e.target.value })}
+                                    style={{ width: '100px', padding: '6px 8px', background: '#131722', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#f8f9fa', fontSize: '13px', outline: 'none', appearance: 'auto' }}
+                                >
+                                    {['Close', 'Open', 'High', 'Low'].map(src => (
+                                        <option key={src} value={src}>{src}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            {/* Heading CALCULATION */}
+                            <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 'bold', letterSpacing: '0.8px', marginTop: '6px', borderTop: '1px solid rgba(255,255,255,0.04)', paddingTop: '10px' }}>
+                                CALCULATION
+                            </div>
+
+                            {/* Input Timeframe */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <label style={{ fontSize: '13px', color: '#94a3b8' }}>Timeframe</label>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <select 
+                                        value={stochRsiForm.timeframe} 
+                                        onChange={(e) => setStochRsiForm({ ...stochRsiForm, timeframe: e.target.value })}
+                                        style={{ width: '100px', padding: '6px 8px', background: '#131722', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#f8f9fa', fontSize: '13px', outline: 'none', appearance: 'auto' }}
+                                    >
+                                        {['Chart', 'M1', 'M5', 'M15', 'M30', 'H1', 'D1'].map(tf => (
+                                            <option key={tf} value={tf}>{tf === 'Chart' ? 'Chart' : tf}</option>
+                                        ))}
+                                    </select>
+                                    <span 
+                                        title="ใช้กรอบเวลาเดียวกันกับหน้าต่างกราฟหลัก หรือบังคับให้ใช้กรอบเวลาเฉพาะเจาะจง" 
+                                        style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '16px', height: '16px', borderRadius: '50%', background: 'rgba(255,255,255,0.06)', color: '#94a3b8', fontSize: '11px', cursor: 'help', fontWeight: 'bold' }}
+                                    >
+                                        ?
+                                    </span>
+                                </div>
+                            </div>
+
+                            {/* Checkbox Wait for closes */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+                                <input 
+                                    type="checkbox" 
+                                    id="wait-closes-chk"
+                                    checked={stochRsiForm.waitClose} 
+                                    onChange={(e) => setStochRsiForm({ ...stochRsiForm, waitClose: e.target.checked })}
+                                    style={{ accentColor: 'var(--accent-gold)', cursor: 'pointer', width: '15px', height: '15px' }}
+                                />
+                                <label htmlFor="wait-closes-chk" style={{ fontSize: '12px', color: '#f8f9fa', cursor: 'pointer', userSelect: 'none' }}>
+                                    Wait for timeframe closes
+                                </label>
+                            </div>
+                        </div>
+
+                        {/* Modal Footer */}
+                        <div className="modal-footer" style={{ padding: '16px 20px', borderTop: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(0,0,0,0.15)' }}>
+                            {/* Defaults Button */}
+                            <div style={{ position: 'relative' }}>
+                                <button 
+                                    onClick={() => {
+                                        setStochRsiForm({
+                                            k: 3,
+                                            d: 3,
+                                            rsiLength: 13,
+                                            stochasticLength: 13,
+                                            rsiSource: "Close",
+                                            timeframe: "Chart",
+                                            waitClose: true
+                                        });
+                                        alert('รีเซ็ตการตั้งค่าเป็นค่าเริ่มต้นเรียบร้อยแล้ว');
+                                    }} 
+                                    style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8', padding: '6px 12px', borderRadius: '4px', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                >
+                                    <span>Defaults</span>
+                                    <span style={{ fontSize: '9px' }}>▼</span>
+                                </button>
+                            </div>
+
+                            {/* Cancel / OK */}
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                                <button 
+                                    onClick={() => setStochRsiSettingsOpen(false)} 
+                                    style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.15)', color: '#f8f9fa', padding: '6px 16px', borderRadius: '6px', fontSize: '13px', fontWeight: 500, cursor: 'pointer' }}
+                                >
+                                    Cancel
+                                </button>
+                                <button 
+                                    onClick={() => {
+                                        setStochRsiSettings({ ...stochRsiForm });
+                                        setStochRsiSettingsOpen(false);
+                                    }} 
+                                    style={{ background: '#fff', border: 'none', color: '#000', padding: '6px 20px', borderRadius: '6px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
+                                >
+                                    Ok
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* --- MACD 4C CONFIGURATION MODAL --- */}
+            {macdSettingsOpen && (
+                <div className="modal-overlay active" style={{ display: 'flex' }}>
+                    <div className="modal-container" style={{ width: '380px', background: '#1c2030', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', boxShadow: '0 8px 32px rgba(0,0,0,0.5)', overflow: 'hidden' }}>
+                        {/* Modal Header */}
+                        <div className="modal-header" style={{ padding: '16px 20px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(0,0,0,0.15)' }}>
+                            <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 600, color: '#f8f9fa', fontFamily: 'Outfit' }}>MACD 4C</h3>
+                            <button onClick={() => setMacdSettingsOpen(false)} style={{ background: 'transparent', border: 'none', color: '#94a3b8', fontSize: '20px', cursor: 'pointer' }}>×</button>
+                        </div>
+                        
+                        {/* Modal Tabs */}
+                        <div style={{ display: 'flex', borderBottom: '1px solid rgba(255,255,255,0.06)', padding: '0 20px', background: 'rgba(0,0,0,0.05)' }}>
+                            {['Inputs', 'Style', 'Visibility'].map((tab) => (
+                                <div 
+                                    key={tab} 
+                                    style={{ 
+                                        padding: '12px 16px', 
+                                        color: tab === 'Inputs' ? 'var(--bull-green)' : '#94a3b8', 
+                                        fontWeight: 600, 
+                                        fontSize: '13px', 
+                                        cursor: 'pointer',
+                                        borderBottom: tab === 'Inputs' ? '2px solid var(--bull-green)' : '2px solid transparent',
+                                        marginBottom: '-1px'
+                                    }}
+                                    onClick={() => tab !== 'Inputs' && alert(`${tab} ทำงานในโหมดพรีเมียมอัตโนมัติเรียบร้อยแล้ว`)}
+                                >
+                                    {tab}
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* Modal Body */}
+                        <div className="modal-body" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px', background: '#1c2030' }}>
+                            {/* Input Fast EMA */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <label style={{ fontSize: '13px', color: '#94a3b8' }}>Fast moving average</label>
+                                <input 
+                                    type="number" 
+                                    value={macdForm.fastPeriod} 
+                                    onChange={(e) => setMacdForm({ ...macdForm, fastPeriod: parseInt(e.target.value) || 12 })}
+                                    style={{ width: '100px', padding: '6px 10px', background: '#131722', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#f8f9fa', fontSize: '13px', textAlign: 'center', outline: 'none' }}
+                                    min="1" max="100"
+                                />
+                            </div>
+
+                            {/* Input Slow EMA */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <label style={{ fontSize: '13px', color: '#94a3b8' }}>Slow moving average</label>
+                                <input 
+                                    type="number" 
+                                    value={macdForm.slowPeriod} 
+                                    onChange={(e) => setMacdForm({ ...macdForm, slowPeriod: parseInt(e.target.value) || 26 })}
+                                    style={{ width: '100px', padding: '6px 10px', background: '#131722', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#f8f9fa', fontSize: '13px', textAlign: 'center', outline: 'none' }}
+                                    min="1" max="100"
+                                />
+                            </div>
+                        </div>
+
+                        {/* Modal Footer */}
+                        <div className="modal-footer" style={{ padding: '16px 20px', borderTop: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(0,0,0,0.15)' }}>
+                            {/* Defaults Button */}
+                            <div style={{ position: 'relative' }}>
+                                <button 
+                                    onClick={() => {
+                                        setMacdForm({
+                                            fastPeriod: 12,
+                                            slowPeriod: 26
+                                        });
+                                        alert('รีเซ็ตการตั้งค่าเป็นค่าเริ่มต้นเรียบร้อยแล้ว');
+                                    }} 
+                                    style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8', padding: '6px 12px', borderRadius: '4px', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                >
+                                    <span>Defaults</span>
+                                    <span style={{ fontSize: '9px' }}>▼</span>
+                                </button>
+                            </div>
+
+                            {/* Cancel / OK */}
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                                <button 
+                                    onClick={() => setMacdSettingsOpen(false)} 
+                                    style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.15)', color: '#f8f9fa', padding: '6px 16px', borderRadius: '6px', fontSize: '13px', fontWeight: 500, cursor: 'pointer' }}
+                                >
+                                    Cancel
+                                </button>
+                                <button 
+                                    onClick={() => {
+                                        setMacdSettings({
+                                            ...macdSettings,
+                                            fastPeriod: macdForm.fastPeriod,
+                                            slowPeriod: macdForm.slowPeriod
+                                        });
+                                        setMacdSettingsOpen(false);
+                                    }} 
+                                    style={{ background: '#fff', border: 'none', color: '#000', padding: '6px 20px', borderRadius: '6px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
+                                >
+                                    Ok
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* --- AI TRADING ASSISTANT CHATBOT --- */}
             <div 
@@ -2481,6 +5779,13 @@ const TradingApp = () => {
                                 title="ล้างการสนทนา"
                             >
                                 <Icon name="trash" size={14} />
+                            </button>
+                            <button 
+                                className="chatbot-action-btn"
+                                onClick={() => window.open('/?popout=chatbot', '_blank', 'width=450,height=750,menubar=no,toolbar=no,location=no,status=no')}
+                                title="ขยายหน้าต่างแชทแยก (Popout Window)"
+                            >
+                                <Icon name="external-link" size={14} />
                             </button>
                             <button 
                                 className="chatbot-action-btn close"

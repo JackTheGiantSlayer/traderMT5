@@ -179,6 +179,7 @@ class MT5Manager:
                 "M15": mt5.TIMEFRAME_M15,
                 "M30": mt5.TIMEFRAME_M30,
                 "H1": mt5.TIMEFRAME_H1,
+                "H4": mt5.TIMEFRAME_H4,
                 "D1": mt5.TIMEFRAME_D1
             }
             tf = tf_map.get(timeframe_str, mt5.TIMEFRAME_H1)
@@ -209,7 +210,7 @@ class MT5Manager:
         cache_key = f"{symbol}_{timeframe_str}"
         
         # Timeframe spacing in seconds
-        spacing_map = {"M1": 60, "M5": 300, "M15": 900, "M30": 1800, "H1": 3600, "D1": 86400}
+        spacing_map = {"M1": 60, "M5": 300, "M15": 900, "M30": 1800, "H1": 3600, "H4": 14400, "D1": 86400}
         seconds_per_candle = spacing_map.get(timeframe_str, 3600)
         
         current_time = int(time.time())
@@ -385,6 +386,48 @@ class MT5Manager:
             self._get_simulated_account_info()
             return self.sim_positions
 
+    def sanitize_comment(self, comment_str: str) -> str:
+        """Sanitizes comment to ensure it is ASCII-only and strictly <= 30 characters."""
+        if not comment_str:
+            return "Bot"
+            
+        import re
+        
+        # Try to parse "Name [Algo]" to keep brackets balanced if truncated
+        match = re.search(r'^(.*?)\s*\[(.*?)\]$', comment_str)
+        if match:
+            name_part = match.group(1).encode("ascii", "ignore").decode("ascii").strip()
+            algo_part = match.group(2).encode("ascii", "ignore").decode("ascii").strip()
+            
+            # Reduce multiple spaces
+            name_part = re.sub(r'\s+', ' ', name_part).strip()
+            algo_part = re.sub(r'\s+', ' ', algo_part).strip()
+            
+            if name_part and algo_part:
+                # We want the total length of "name_part [algo_part]" to be <= 30
+                # " [algo_part]" takes len(algo_part) + 3 characters (space + [ + ])
+                max_name_len = 30 - (len(algo_part) + 3)
+                if max_name_len > 0:
+                    name_part = name_part[:max_name_len].strip()
+                    clean = f"{name_part} [{algo_part}]"
+                else:
+                    clean = algo_part[:30]
+            elif name_part:
+                clean = name_part[:30]
+            elif algo_part:
+                clean = algo_part[:30]
+            else:
+                clean = "Bot"
+        else:
+            # Fallback for simple comments
+            clean = comment_str.encode("ascii", "ignore").decode("ascii")
+            clean = re.sub(r'\s+', ' ', clean).strip()
+            if not clean:
+                clean = "GiantSlayer"
+            clean = clean[:30].strip()
+            
+        return clean
+
     def open_position(self, symbol: str, order_type: str, volume: float, sl: float = 0.0, tp: float = 0.0, comment: str = "Manual") -> dict:
         """Opens a BUY or SELL trade."""
         if volume <= 0:
@@ -407,7 +450,7 @@ class MT5Manager:
                 "tp": tp,
                 "deviation": 20,
                 "magic": 234000,
-                "comment": comment[:31],  # Limit comment to 31 chars for Exness/MT5 safety
+                "comment": self.sanitize_comment(comment),  # Clean comment for Exness/MT5 safety
                 "type_time": mt5.ORDER_TIME_GTC,
             }
             
@@ -438,7 +481,7 @@ class MT5Manager:
             if result is None:
                 raise Exception(f"Failed to place real MT5 order: {last_err_str} (Code: {last_err_code})")
                 
-            return {
+            res_dict = {
                 "success": True,
                 "ticket": result.order,
                 "symbol": symbol,
@@ -448,6 +491,16 @@ class MT5Manager:
                 "profit": 0.0,
                 "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             }
+            self._notify_discord_open(
+                ticket=res_dict["ticket"],
+                symbol=res_dict["symbol"],
+                order_type=res_dict["type"],
+                volume=res_dict["volume"],
+                open_price=res_dict["open_price"],
+                comment=comment,
+                is_live=True
+            )
+            return res_dict
         else:
             # Simulation trade execution
             price_dict = self.sim_prices.get(symbol, {"bid": 100.0, "ask": 100.5})
@@ -472,6 +525,15 @@ class MT5Manager:
             
             self.sim_positions.append(new_position)
             logger.info(f"Simulated position opened successfully: Ticket {ticket}")
+            self._notify_discord_open(
+                ticket=ticket,
+                symbol=symbol,
+                order_type=order_type,
+                volume=new_position["volume"],
+                open_price=new_position["open_price"],
+                comment=new_position["comment"],
+                is_live=False
+            )
             return {"success": True, "ticket": ticket, **new_position}
 
     def close_position(self, ticket: int) -> dict:
@@ -485,6 +547,14 @@ class MT5Manager:
             position = positions[0]
             close_type = mt5.ORDER_TYPE_SELL if position.type == 0 else mt5.ORDER_TYPE_BUY
             price = mt5.symbol_info_tick(position.symbol).bid if position.type == 0 else mt5.symbol_info_tick(position.symbol).ask
+            
+            # Store details before closing for notification
+            p_symbol = position.symbol
+            p_type = "buy" if position.type == 0 else "sell"
+            p_volume = position.volume
+            p_open_price = position.price_open
+            p_profit = position.profit
+            p_comment = position.comment
             
             # Request to close (send matching opposite order specifying position ticket)
             request = {
@@ -523,6 +593,17 @@ class MT5Manager:
             if result is None:
                 raise Exception(f"Failed to close MT5 position: {last_err_str} (Code: {last_err_code})")
                 
+            self._notify_discord_close(
+                ticket=ticket,
+                symbol=p_symbol,
+                order_type=p_type,
+                volume=p_volume,
+                open_price=p_open_price,
+                close_price=price,
+                profit=p_profit,
+                comment=p_comment,
+                is_live=True
+            )
             return {
                 "success": True,
                 "ticket": ticket,
@@ -558,6 +639,17 @@ class MT5Manager:
             
             logger.info(f"Simulated position {ticket} closed. Profit: ${profit}. New Balance: ${self.sim_balance}")
             
+            self._notify_discord_close(
+                ticket=ticket,
+                symbol=target_pos["symbol"],
+                order_type=target_pos["type"],
+                volume=target_pos["volume"],
+                open_price=target_pos["open_price"],
+                close_price=close_price,
+                profit=profit,
+                comment=target_pos.get("comment", "Manual"),
+                is_live=False
+            )
             return {
                 "success": True,
                 "ticket": ticket,
@@ -571,3 +663,93 @@ class MT5Manager:
                 "profit": profit,
                 "comment": target_pos.get("comment", "Manual")
             }
+
+    def _notify_discord_open(self, ticket: int, symbol: str, order_type: str, volume: float, open_price: float, comment: str, is_live: bool):
+        """Builds and broadcasts a beautifully formatted Discord embed for open order event."""
+        mode_str = "🟢 [LIVE ACCOUNT]" if is_live else "🧪 [SIMULATION MODE]"
+        title = f"{mode_str} New Order Opened Successfully!"
+        
+        # Color: Emerald green (#2FCCA1)
+        color = 3132577
+        
+        price_fmt = f"{open_price:,.5f}" if 'EURUSD' in symbol.upper() else f"{open_price:,.2f}"
+        
+        embed = {
+            "title": title,
+            "color": color,
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "fields": [
+                {"name": "Ticket ID", "value": f"`#{ticket}`", "inline": True},
+                {"name": "Symbol", "value": f"**{symbol.upper()}**", "inline": True},
+                {"name": "Order Type", "value": f"`{order_type.upper()}`", "inline": True},
+                {"name": "Volume (Lots)", "value": f"`{volume:.2f} Lots`", "inline": True},
+                {"name": "Open Price", "value": f"`{price_fmt}`", "inline": True},
+                {"name": "Trigger Source", "value": f"`{comment}`", "inline": True}
+            ],
+            "footer": {
+                "text": "Giant Slayer Trading Dashboard • Auto Alert System"
+            }
+        }
+        self.send_discord_notification(message="", embeds=[embed])
+
+    def _notify_discord_close(self, ticket: int, symbol: str, order_type: str, volume: float, open_price: float, close_price: float, profit: float, comment: str, is_live: bool):
+        """Builds and broadcasts a beautifully formatted Discord embed for close order event."""
+        mode_str = "🟢 [LIVE ACCOUNT]" if is_live else "🧪 [SIMULATION MODE]"
+        
+        pnl_emoji = "💰" if profit >= 0 else "📉"
+        pnl_sign = "+" if profit >= 0 else ""
+        title = f"{mode_str} Position Closed Successfully!"
+        
+        # Colors: Green for profit (#57F287), Red for loss (#ED4245)
+        color = 5763719 if profit >= 0 else 15548997
+        
+        open_price_fmt = f"{open_price:,.5f}" if 'EURUSD' in symbol.upper() else f"{open_price:,.2f}"
+        close_price_fmt = f"{close_price:,.5f}" if 'EURUSD' in symbol.upper() else f"{close_price:,.2f}"
+        
+        embed = {
+            "title": title,
+            "color": color,
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "fields": [
+                {"name": "Ticket ID", "value": f"`#{ticket}`", "inline": True},
+                {"name": "Symbol", "value": f"**{symbol.upper()}**", "inline": True},
+                {"name": "Order Type", "value": f"`{order_type.upper()}`", "inline": True},
+                {"name": "Volume (Lots)", "value": f"`{volume:.2f} Lots`", "inline": True},
+                {"name": "Open Price", "value": f"`{open_price_fmt}`", "inline": True},
+                {"name": "Close Price", "value": f"`{close_price_fmt}`", "inline": True},
+                {"name": f"{pnl_emoji} Net Profit/Loss (PnL)", "value": f"**`{pnl_sign}${profit:,.2f}`**", "inline": False},
+                {"name": "Trigger Source", "value": f"`{comment}`", "inline": True}
+            ],
+            "footer": {
+                "text": "Giant Slayer Trading Dashboard • Auto Alert System"
+            }
+        }
+        self.send_discord_notification(message="", embeds=[embed])
+
+    def send_discord_notification(self, message: str, embeds: list = None):
+        """Asynchronously sends a notification message to the Discord webhook."""
+        from backend.config import DISCORD_WEBHOOK_URL
+        if not DISCORD_WEBHOOK_URL:
+            return
+            
+        def _send():
+            try:
+                import json
+                import urllib.request
+                
+                payload = {"content": message}
+                if embeds:
+                    payload["embeds"] = embeds
+                    
+                data = json.dumps(payload).encode("utf-8")
+                req = urllib.request.Request(
+                    DISCORD_WEBHOOK_URL,
+                    data=data,
+                    headers={"Content-Type": "application/json", "User-Agent": "Mozilla/5.0"}
+                )
+                with urllib.request.urlopen(req, timeout=5) as response:
+                    pass
+            except Exception as e:
+                logger.error(f"Failed to send Discord notification in background: {e}")
+                
+        threading.Thread(target=_send, daemon=True).start()

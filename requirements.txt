@@ -5,3 +5,5 @@ pydantic>=2.6.0
 python-dotenv>=1.0.0
 psycopg2-binary>=2.9.0
 MetaTrader5>=5.0.4000
+google-generativeai>=0.8.0
+

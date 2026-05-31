@@ -131,6 +131,19 @@ def evaluate_signals(prices, algorithm, candles=None):
         if rsi[-2] >= 70 and rsi[-1] < 70:
             return "sell"
             
+    elif algorithm == "stoch_rsi":
+        from backend.pattern_detector import calculate_stoch_rsi
+        k_vals, d_vals = calculate_stoch_rsi(prices, 14, 14, 3, 3)
+        if len(k_vals) < 2 or len(d_vals) < 2 or k_vals[-1] is None or k_vals[-2] is None or d_vals[-1] is None or d_vals[-2] is None:
+            return "none"
+            
+        # %K crosses above %D while in or near oversold zone (<= 25) -> BUY
+        if k_vals[-2] <= d_vals[-2] and k_vals[-1] > d_vals[-1] and (k_vals[-1] <= 25 or k_vals[-2] <= 20):
+            return "buy"
+        # %K crosses below %D while in or near overbought zone (>= 75) -> SELL
+        if k_vals[-2] >= d_vals[-2] and k_vals[-1] < d_vals[-1] and (k_vals[-1] >= 75 or k_vals[-2] >= 80):
+            return "sell"
+            
     elif algorithm == "macd":
         macd_line, signal_line = calculate_macd(prices)
         if macd_line[-1] is None or macd_line[-2] is None or signal_line[-1] is None or signal_line[-2] is None:
@@ -141,6 +154,35 @@ def evaluate_signals(prices, algorithm, candles=None):
             return "buy"
         # Bearish MACD Crossover (MACD Line cuts below Signal Line)
         if macd_line[-2] >= signal_line[-2] and macd_line[-1] < signal_line[-1]:
+            return "sell"
+            
+    elif algorithm == "macd_4c":
+        from backend.pattern_detector import calculate_macd_4c
+        macd_vals, colors = calculate_macd_4c(prices, 12, 26, 9)
+        if len(macd_vals) < 2 or len(colors) < 2 or macd_vals[-1] is None or macd_vals[-2] is None or colors[-1] is None or colors[-2] is None:
+            return "none"
+            
+        curr_color = colors[-1]
+        prev_color = colors[-2]
+        curr_val = macd_vals[-1]
+        prev_val = macd_vals[-2]
+        
+        # BUY signal:
+        # 1. shifts from maroon to red (curling up below zero)
+        # 2. shifts from green to lime (curling up above zero)
+        # 3. crosses above zero (prev_val <= 0 and curr_val > 0)
+        is_bullish_curl = (prev_color == "maroon" and curr_color == "red") or (prev_color == "green" and curr_color == "lime")
+        is_zero_cross_up = (prev_val <= 0 and curr_val > 0)
+        if is_bullish_curl or is_zero_cross_up:
+            return "buy"
+            
+        # SELL signal:
+        # 1. shifts from lime to green (curling down above zero)
+        # 2. shifts from red to maroon (curling down below zero)
+        # 3. crosses below zero (prev_val >= 0 and curr_val < 0)
+        is_bearish_curl = (prev_color == "lime" and curr_color == "green") or (prev_color == "red" and curr_color == "maroon")
+        is_zero_cross_down = (prev_val >= 0 and curr_val < 0)
+        if is_bearish_curl or is_zero_cross_down:
             return "sell"
             
     elif algorithm == "elliott_wave":
@@ -377,6 +419,49 @@ class BotManager:
                 # Ticket no longer open (closed manually, or hit TP/SL)
                 msg = f"ออเดอร์ #{bot.active_ticket} ถูกปิดการทำงานแล้ว (โดยผู้ใช้ หรือถึงขีดจำกัด TP/SL)"
                 self._log_to_db(db, bot.id, msg, "close")
+                
+                # Fetch details from MT5 history if live to notify Discord
+                if not self.mt5.is_simulated and self.mt5.is_connected:
+                    try:
+                        import MetaTrader5 as mt5_lib
+                        deals = mt5_lib.history_deals_get(position=bot.active_ticket)
+                        if deals:
+                            exit_deals = [d for d in deals if d.entry == 1]
+                            entry_deals = [d for d in deals if d.entry == 0]
+                            if exit_deals and entry_deals:
+                                exit_deal = exit_deals[0]
+                                entry_deal = entry_deals[0]
+                                
+                                p_symbol = exit_deal.symbol
+                                p_type = "buy" if entry_deal.type == 0 else "sell"
+                                p_volume = exit_deal.volume
+                                p_open_price = entry_deal.price
+                                p_close_price = exit_deal.price
+                                p_profit = exit_deal.profit
+                                
+                                # Determine close reason from broker comment (e.g. "[tp]" or "[sl]")
+                                close_reason = exit_deal.comment or "Take Profit / Stop Loss or Manual"
+                                if "[tp]" in close_reason.lower():
+                                    close_reason = "Take Profit (TP) 🎯"
+                                elif "[sl]" in close_reason.lower():
+                                    close_reason = "Stop Loss (SL) 🛑"
+                                elif "sl/tp" in close_reason.lower() or "s/l" in close_reason.lower():
+                                    close_reason = "Stop Loss / Take Profit 🛑🎯"
+                                    
+                                self.mt5._notify_discord_close(
+                                    ticket=bot.active_ticket,
+                                    symbol=p_symbol,
+                                    order_type=p_type,
+                                    volume=p_volume,
+                                    open_price=p_open_price,
+                                    close_price=p_close_price,
+                                    profit=p_profit,
+                                    comment=close_reason,
+                                    is_live=True
+                                )
+                    except Exception as hist_err:
+                        logger.error(f"Failed to fetch real MT5 closed history for Discord notification: {hist_err}")
+                
                 bot.active_ticket = None
                 db.commit()
                 
@@ -384,6 +469,45 @@ class BotManager:
         algorithms_list = [a.strip() for a in bot.algorithms.split(",") if a.strip()]
         signal = evaluate_multi_signals(close_prices, algorithms_list, bot.signal_mode, candles=candles)
         
+        # Apply Geopolitical & News Sentiment Filter
+        if getattr(bot, "use_news_filter", False) and signal in ["buy", "sell"]:
+            try:
+                from backend.models import NewsRecord
+                # Query the latest news records
+                latest_news = db.query(NewsRecord).order_by(NewsRecord.published_at.desc()).limit(10).all()
+                
+                # Compute current sentiment and risk levels
+                bullish_count = sum(1 for n in latest_news if n.sentiment == "bullish")
+                bearish_count = sum(1 for n in latest_news if n.sentiment == "bearish")
+                neutral_count = sum(1 for n in latest_news if n.sentiment == "neutral")
+                
+                has_high_geopolitical_threat = any(n.impact_level == "high" and n.category == "geopolitical" for n in latest_news)
+                has_medium_threat = any(n.impact_level in ["high", "medium"] for n in latest_news)
+                
+                risk_level = "low"
+                if has_high_geopolitical_threat:
+                    risk_level = "high"
+                elif has_medium_threat:
+                    risk_level = "medium"
+                    
+                sentiment_summary = "neutral"
+                if bullish_count > bearish_count and bullish_count > neutral_count:
+                    sentiment_summary = "bullish"
+                elif bearish_count > bullish_count and bearish_count > neutral_count:
+                    sentiment_summary = "bearish"
+                
+                symbol_upper = bot.symbol.upper()
+                is_gold = "XAU" in symbol_upper or "GOLD" in symbol_upper
+                
+                if risk_level == "high" and is_gold and signal == "sell":
+                    self._log_to_db(db, bot.id, "🛡️ AI News Filter: บล็อกคำสั่ง SELL [XAUUSD] อัตโนมัติ เนื่องจากตรวจพบความเสี่ยงภูมิรัฐศาสตร์ระดับ HIGH (ข่าวกระตุ้นแรงซื้อสินทรัพย์ปลอดภัย)", "info")
+                    signal = "none"
+                elif sentiment_summary == "bearish" and is_gold and signal == "buy":
+                    self._log_to_db(db, bot.id, "🛡️ AI News Filter: บล็อกคำสั่ง BUY [XAUUSD] อัตโนมัติ เนื่องจากอารมณ์ข่าวเศรษฐกิจมหภาคเป็น BEARISH รุนแรงต่อทองคำ", "info")
+                    signal = "none"
+            except Exception as news_err:
+                logger.error(f"Error executing AI news filter inside trading loop: {news_err}")
+                
         # Apply Macro Trend Filter (EMA 200)
         if getattr(bot, "use_trend_filter", False) and signal in ["buy", "sell"]:
             ema200 = calculate_ema(close_prices, 200)
@@ -563,10 +687,20 @@ class BotManager:
                             rsi = calculate_rsi(close_prices, 14)[-1]
                             if rsi is not None:
                                 ind_info_list.append(f"RSI={rsi:.2f}")
+                        elif algo == "stoch_rsi":
+                            from backend.pattern_detector import calculate_stoch_rsi
+                            k_vals, d_vals = calculate_stoch_rsi(close_prices, 14, 14, 3, 3)
+                            if k_vals[-1] is not None and d_vals[-1] is not None:
+                                ind_info_list.append(f"StochRSI(K={k_vals[-1]:.1f}, D={d_vals[-1]:.1f})")
                         elif algo == "macd":
                             macd_l, signal_l = calculate_macd(close_prices)
                             if macd_l[-1] is not None and signal_l[-1] is not None:
                                 ind_info_list.append(f"MACD={macd_l[-1]:.4f}/Signal={signal_l[-1]:.4f}")
+                        elif algo == "macd_4c":
+                            from backend.pattern_detector import calculate_macd_4c
+                            macd_vals, colors = calculate_macd_4c(close_prices, 12, 26, 9)
+                            if macd_vals[-1] is not None and colors[-1] is not None:
+                                ind_info_list.append(f"MACD4C(Val={macd_vals[-1]:.4f}, Col={colors[-1]})")
                         elif algo == "elliott_wave":
                             from backend.pattern_detector import detect_elliott_waves
                             wave = detect_elliott_waves(candles)

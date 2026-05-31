@@ -423,6 +423,27 @@ header {
     color: #000;
 }
 
+/* Multi-Timeframe Layout Button & Pane Styling */
+.layout-btn:hover {
+    color: var(--text-primary) !important;
+}
+
+.layout-btn.active {
+    background-color: var(--accent-gold) !important;
+    color: #000 !important;
+    box-shadow: 0 0 8px rgba(255, 183, 3, 0.4);
+}
+
+.chart-pane-wrapper {
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.chart-pane-wrapper.active {
+    border: 2px solid var(--accent-gold) !important;
+    box-shadow: var(--glow-gold) !important;
+}
+
+
 .chart-wrapper {
     flex: 1;
     position: relative;
@@ -1666,3 +1687,424 @@ header {
         right: 16px;
     }
 }
+
+/* --- Premium Backtester Layout --- */
+.backtest-layout {
+    display: flex;
+    gap: 16px;
+    height: 100%;
+    min-height: 320px;
+    padding: 8px;
+    overflow: hidden;
+}
+
+.backtest-sidebar-panel {
+    width: 320px;
+    min-width: 320px;
+    background: rgba(18, 26, 44, 0.4);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-lg);
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    overflow-y: auto;
+    backdrop-filter: blur(12px);
+}
+
+.backtest-main-report {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.backtest-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 12px;
+}
+
+.backtest-stat-card {
+    background: rgba(18, 26, 44, 0.5);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-md);
+    padding: 12px;
+    text-align: center;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.backtest-stat-card .metric-label {
+    font-size: 9.5px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    display: block;
+    margin-bottom: 4px;
+}
+
+.backtest-stat-card .metric-value {
+    font-size: 18px;
+    font-weight: 700;
+    font-family: monospace;
+}
+
+.backtest-chart-card {
+    background: rgba(18, 26, 44, 0.3);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-lg);
+    padding: 16px;
+    height: 240px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.backtest-chart-container {
+    flex: 1;
+    width: 100%;
+    height: 100%;
+}
+
+.backtest-table-card {
+    background: rgba(18, 26, 44, 0.4);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-lg);
+    padding: 16px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    min-height: 200px;
+}
+
+.backtest-table-wrapper {
+    overflow-y: auto;
+    flex: 1;
+    max-height: 250px;
+}
+
+.backtest-form-section-title {
+    font-size: 11px;
+    color: var(--accent-gold);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    margin-bottom: 8px;
+    border-bottom: 1px solid rgba(255, 183, 3, 0.15);
+    padding-bottom: 4px;
+}
+
+.backtest-checkbox-list {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 6px;
+    max-height: 150px;
+    overflow-y: auto;
+    padding-right: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: var(--border-radius-sm);
+    padding: 8px;
+    background: rgba(0, 0, 0, 0.15);
+}
+
+.backtest-checkbox-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: 4px;
+    transition: background 0.15s;
+}
+
+.backtest-checkbox-item:hover {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.backtest-checkbox-item input {
+    accent-color: var(--accent-gold);
+    width: 14px;
+    height: 14px;
+    cursor: pointer;
+}
+
+.backtest-checkbox-item span {
+    font-size: 11px;
+    color: var(--text-primary);
+}
+
+.backtest-loader-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 0;
+    gap: 16px;
+    flex: 1;
+}
+
+.backtest-pulse-loader {
+    width: 50px;
+    height: 50px;
+    border: 3px solid rgba(255, 183, 3, 0.1);
+    border-top-color: var(--accent-gold);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    box-shadow: var(--glow-gold);
+}
+
+.result-win-badge {
+    color: var(--bull-green);
+    background-color: var(--bull-green-alpha);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 700;
+    font-size: 10px;
+    text-transform: uppercase;
+}
+
+.result-loss-badge {
+    color: var(--bear-red);
+    background-color: var(--bear-red-alpha);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 700;
+    font-size: 10px;
+    text-transform: uppercase;
+}
+
+
+
+/* --- Market Intelligence News Tab Styling --- */
+.news-tab-container {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    gap: 20px;
+    padding: 8px;
+    height: 100%;
+    min-height: 350px;
+}
+
+.news-left-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.news-right-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    overflow-y: auto;
+    max-height: 420px;
+    padding-right: 4px;
+    flex: 1;
+}
+
+.news-right-panel::-webkit-scrollbar {
+    width: 4px;
+}
+
+.news-right-panel::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 2px;
+}
+
+.news-right-panel::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 183, 3, 0.3);
+}
+
+/* Glassmorphism panel cards hover states */
+.news-right-panel .sidebar-panel-card:hover {
+    background: rgba(255, 255, 255, 0.03) !important;
+    border-color: rgba(255, 183, 3, 0.25) !important;
+    transform: translateX(4px);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+}
+
+/* Pulsing Threat Keyframes and Animation for Cards */
+@keyframes news-threat-pulse-red {
+    0% {
+        box-shadow: 0 0 0 0 rgba(231, 76, 60, 0.15);
+        border-color: rgba(231, 76, 60, 0.2);
+    }
+    50% {
+        box-shadow: 0 0 12px 4px rgba(231, 76, 60, 0.1);
+        border-color: rgba(231, 76, 60, 0.45);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(231, 76, 60, 0.15);
+        border-color: rgba(231, 76, 60, 0.2);
+    }
+}
+
+@keyframes news-threat-pulse-gold {
+    0% {
+        box-shadow: 0 0 0 0 rgba(255, 183, 3, 0.1);
+        border-color: rgba(255, 183, 3, 0.15);
+    }
+    50% {
+        box-shadow: 0 0 10px 3px rgba(255, 183, 3, 0.08);
+        border-color: rgba(255, 183, 3, 0.35);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(255, 183, 3, 0.1);
+        border-color: rgba(255, 183, 3, 0.15);
+    }
+}
+
+/* Apply pulsing border for high geopolitical and economic threat cards */
+.news-right-panel .sidebar-panel-card.high-threat-card {
+    animation: news-threat-pulse-red 3s infinite ease-in-out;
+}
+
+.news-right-panel .sidebar-panel-card.medium-threat-card {
+    animation: news-threat-pulse-gold 3.5s infinite ease-in-out;
+}
+
+.news-right-panel .sidebar-panel-card {
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* --- Breaking News Ticker Bar --- */
+.breaking-news-ticker-bar {
+    display: flex;
+    align-items: center;
+    background: rgba(10, 14, 23, 0.95);
+    border-bottom: 1px solid rgba(231, 76, 60, 0.35);
+    height: 38px;
+    padding: 0 16px;
+    overflow: hidden;
+    font-size: 12px;
+    cursor: pointer;
+    z-index: 99;
+    position: relative;
+    backdrop-filter: blur(10px);
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+}
+
+.breaking-news-ticker-bar:hover {
+    background: rgba(20, 28, 45, 0.98);
+    border-bottom-color: var(--accent-gold);
+}
+
+.ticker-label {
+    background: linear-gradient(135deg, #e74c3c, #c0392b);
+    color: #fff;
+    padding: 4px 10px;
+    font-weight: 800;
+    font-family: 'Outfit', sans-serif;
+    font-size: 10px;
+    letter-spacing: 0.8px;
+    border-radius: var(--border-radius-sm);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-right: 16px;
+    box-shadow: 0 0 8px rgba(231, 76, 60, 0.4);
+    flex-shrink: 0;
+    animation: ticker-flash-alert 1.5s infinite ease-in-out;
+}
+
+@keyframes ticker-flash-alert {
+    0% { opacity: 0.85; box-shadow: 0 0 4px rgba(231, 76, 60, 0.3); }
+    50% { opacity: 1; box-shadow: 0 0 12px rgba(231, 76, 60, 0.75); }
+    100% { opacity: 0.85; box-shadow: 0 0 4px rgba(231, 76, 60, 0.3); }
+}
+
+.ticker-content-wrapper {
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    position: relative;
+    height: 100%;
+}
+
+.ticker-content {
+    display: flex;
+    align-items: center;
+    white-space: nowrap;
+    position: absolute;
+    animation: ticker-marquee-scroll 180s linear infinite;
+    gap: 32px;
+    padding-left: 100%;
+}
+
+.breaking-news-ticker-bar:hover .ticker-content {
+    animation-play-state: paused;
+}
+
+@keyframes ticker-marquee-scroll {
+    0% { transform: translate3d(0, 0, 0); }
+    100% { transform: translate3d(-100%, 0, 0); }
+}
+
+.ticker-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+.ticker-dot {
+    color: var(--text-muted);
+    font-weight: bold;
+}
+
+.ticker-time {
+    color: var(--text-muted);
+    font-family: monospace;
+}
+
+.ticker-title {
+    color: var(--text-primary);
+}
+
+.ticker-item.impact-high .ticker-title {
+    color: #ff4d4d;
+    font-weight: 700;
+    text-shadow: 0 0 8px rgba(255, 77, 77, 0.25);
+}
+
+.ticker-badge-high {
+    background: rgba(231, 76, 60, 0.15);
+    color: #e74c3c;
+    border: 1px solid rgba(231, 76, 60, 0.3);
+    font-size: 8px;
+    font-weight: 800;
+    padding: 1px 4px;
+    border-radius: 3px;
+    letter-spacing: 0.5px;
+}
+
+.ticker-item.impact-medium .ticker-title {
+    color: var(--accent-gold);
+    font-weight: 600;
+}
+
+.ticker-cta {
+    font-size: 10px;
+    color: var(--text-muted);
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: 16px;
+    background: rgba(255, 255, 255, 0.03);
+    padding: 3px 8px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    flex-shrink: 0;
+    transition: all 0.2s ease;
+}
+
+.breaking-news-ticker-bar:hover .ticker-cta {
+    color: var(--accent-gold);
+    background: rgba(255, 183, 3, 0.08);
+    border-color: rgba(255, 183, 3, 0.2);
+}

@@ -51,6 +51,7 @@ class BotSettings(Base):
     is_running = Column(Boolean, default=False)
     use_trend_filter = Column(Boolean, default=False)
     use_atr_sizing = Column(Boolean, default=False)
+    use_news_filter = Column(Boolean, default=False)
     risk_percent = Column(Float, default=1.0)
     allowed_sessions = Column(String(50), default="all")
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -63,4 +64,23 @@ class BotLog(Base):
     timestamp = Column(DateTime, default=datetime.utcnow)
     message = Column(String(200), nullable=False)
     log_type = Column(String(20), default="info") # 'info', 'buy', 'sell', 'close', 'error'
+
+
+class NewsRecord(Base):
+    __tablename__ = "news_records"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(200), nullable=False)
+    title_th = Column(String(300), nullable=True) # Thai translated title
+    summary = Column(String(1000), nullable=False)
+    summary_th = Column(String(1500), nullable=True) # Thai translated summary
+    source = Column(String(50), nullable=False)
+    url = Column(String(300), nullable=True)
+    published_at = Column(DateTime, nullable=False)
+    sentiment = Column(String(20), default="neutral") # 'bullish', 'bearish', 'neutral'
+    impact_level = Column(String(20), default="low") # 'high', 'medium', 'low'
+    category = Column(String(20), default="general") # 'economic', 'geopolitical', 'general'
+    analysis = Column(String(2000), nullable=True) # Detailed AI impact analysis on Gold, USD, Crypto
+    created_at = Column(DateTime, default=datetime.utcnow)
+
 
