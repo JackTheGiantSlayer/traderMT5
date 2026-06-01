@@ -122,6 +122,8 @@ class ChatbotAssistant:
                         "volume": r.volume,
                         "open_price": r.open_price,
                         "close_price": r.close_price,
+                        "sl": r.sl or 0.0,
+                        "tp": r.tp or 0.0,
                         "open_time": r.open_time,
                         "close_time": r.close_time,
                         "profit": r.profit,
@@ -139,6 +141,17 @@ class ChatbotAssistant:
                         to_date = datetime.now() + timedelta(days=1)
                         
                         deals = mt5_lib.history_deals_get(from_date, to_date)
+                        orders = mt5_lib.history_orders_get(from_date, to_date)
+                        
+                        order_sl_tp = {}
+                        if orders is not None:
+                            for o in orders:
+                                if o.position_id > 0:
+                                    existing = order_sl_tp.get(o.position_id, {"sl": 0.0, "tp": 0.0})
+                                    sl = o.sl if o.sl > 0 else existing["sl"]
+                                    tp = o.tp if o.tp > 0 else existing["tp"]
+                                    order_sl_tp[o.position_id] = {"sl": sl, "tp": tp}
+                                    
                         if deals is not None:
                             entry_info = {}
                             for d in deals:
@@ -167,6 +180,8 @@ class ChatbotAssistant:
                                         "volume": d.volume,
                                         "open_price": open_price,
                                         "close_price": d.price,
+                                        "sl": order_sl_tp.get(d.position_id, {}).get("sl", 0.0),
+                                        "tp": order_sl_tp.get(d.position_id, {}).get("tp", 0.0),
                                         "open_time": open_time,
                                         "close_time": datetime.fromtimestamp(d.time),
                                         "profit": d.profit,
@@ -200,9 +215,17 @@ class ChatbotAssistant:
                         pnl_emoji = "🟢" if pnl >= 0 else "🔴"
                         mode_tag = " (จำลอง)" if r["is_simulated"] else " (บัญชีจริง)"
                         
+                        sl_val = r.get("sl", 0.0)
+                        tp_val = r.get("tp", 0.0)
+                        sl_str = f"{sl_val:,.5f}" if 'EURUSD' in r['symbol'].upper() else f"{sl_val:,.2f}"
+                        tp_str = f"{tp_val:,.5f}" if 'EURUSD' in r['symbol'].upper() else f"{tp_val:,.2f}"
+                        sl_display = sl_str if sl_val > 0 else "ไม่ได้ตั้ง"
+                        tp_display = tp_str if tp_val > 0 else "ไม่ได้ตั้ง"
+                        
                         response += (
                             f"{idx + 1}. **#{r['ticket']} {r['symbol']}** ({r['type'].upper()}){mode_tag}\n"
                             f"   • Lot: `{r['volume']}` | เปิด `{r['open_price']}` ➔ ปิด `{r['close_price']}`\n"
+                            f"   • SL: `{sl_display}` | TP: `{tp_display}`\n"
                             f"   • ผลลัพธ์: **{pnl_str}** {pnl_emoji}\n"
                             f"   • ที่มา: `{r['comment']}`\n"
                             f"   • เวลาปิด: `{r['close_time'].strftime('%Y-%m-%d %H:%M:%S')}`\n\n"

@@ -661,6 +661,8 @@ class MT5Manager:
                 "open_time": target_pos["time"],
                 "close_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "profit": profit,
+                "sl": target_pos.get("sl", 0.0),
+                "tp": target_pos.get("tp", 0.0),
                 "comment": target_pos.get("comment", "Manual")
             }
 

@@ -3406,6 +3406,8 @@ const TradingApp = () => {
                                                 <th>ประเภท</th>
                                                 <th>ขนาด (Lot)</th>
                                                 <th>ราคาเปิด</th>
+                                                <th>SL</th>
+                                                <th>TP</th>
                                                 <th>ราคาปิด</th>
                                                 <th>กำไร/ขาดทุน (USD)</th>
                                             </tr>
@@ -3415,6 +3417,12 @@ const TradingApp = () => {
                                                 const isManual = !t.comment || t.comment === 'Manual' || t.comment === 'เทรดเอง (Manual)' || t.comment === 'Exness Real Close' || t.comment === 'Simulation' || t.comment === 'Close via Antigravity MT5';
                                                 const cleanComment = t.comment ? t.comment.replace(/\s*\[.*?\]$/, '') : '';
                                                 const sourceName = cleanComment ? (cleanComment === 'Manual' || cleanComment === 'Simulation' || cleanComment === 'Exness Real Close' || cleanComment === 'Close via Antigravity MT5' ? 'เทรดเอง (Manual)' : cleanComment) : 'เทรดเอง (Manual)';
+                                                
+                                                const decimals = t.symbol && t.symbol.includes('EURUSD') ? 5 : 2;
+                                                const formatP = (val) => {
+                                                    if (val === undefined || val === null || val === 0 || isNaN(Number(val))) return '-';
+                                                    return Number(val).toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+                                                };
                                                 
                                                 return (
                                                     <tr key={`${t.ticket}-${idx}`}>
@@ -3435,8 +3443,10 @@ const TradingApp = () => {
                                                             </span>
                                                         </td>
                                                         <td style={{ fontFamily: 'monospace' }}>{t.volume}</td>
-                                                        <td style={{ fontFamily: 'monospace' }}>{t.open_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-                                                        <td style={{ fontFamily: 'monospace' }}>{t.close_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                                                        <td style={{ fontFamily: 'monospace' }}>{formatP(t.open_price)}</td>
+                                                        <td style={{ fontFamily: 'monospace', color: 'var(--text-muted)' }}>{formatP(t.sl)}</td>
+                                                        <td style={{ fontFamily: 'monospace', color: 'var(--text-muted)' }}>{formatP(t.tp)}</td>
+                                                        <td style={{ fontFamily: 'monospace' }}>{formatP(t.close_price)}</td>
                                                         <td 
                                                             className={t.profit >= 0 ? 'price-up' : 'price-down'}
                                                             style={{ fontWeight: 700, fontFamily: 'monospace', fontSize: '13px' }}

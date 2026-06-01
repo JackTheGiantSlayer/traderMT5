@@ -582,6 +582,8 @@ class BotManager:
                                     volume=res["volume"],
                                     open_price=res["open_price"],
                                     close_price=res["close_price"],
+                                    sl=res.get("sl", 0.0),
+                                    tp=res.get("tp", 0.0),
                                     open_time=datetime.strptime(res["open_time"], "%Y-%m-%d %H:%M:%S") if isinstance(res["open_time"], str) else res["open_time"],
                                     close_time=datetime.strptime(res["close_time"], "%Y-%m-%d %H:%M:%S") if isinstance(res["close_time"], str) else res["close_time"],
                                     profit=res["profit"],

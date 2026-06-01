@@ -21,6 +21,8 @@ class TradeHistoryRecord(Base):
     volume = Column(Float, nullable=False) # Lot size
     open_price = Column(Float, nullable=False)
     close_price = Column(Float, nullable=False)
+    sl = Column(Float, nullable=True, default=0.0)
+    tp = Column(Float, nullable=True, default=0.0)
     open_time = Column(DateTime, nullable=False)
     close_time = Column(DateTime, nullable=False)
     profit = Column(Float, nullable=False) # Profit or Loss in USD

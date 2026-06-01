@@ -61,6 +61,16 @@ try:
         if "summary_th" not in news_columns:
             conn.execute(text("ALTER TABLE news_records ADD COLUMN summary_th VARCHAR(1500) NULL"))
             print("Database Migration: Successfully added 'summary_th' column to 'news_records' table.")
+
+    # TradeHistoryRecord self-healing migration
+    history_columns = [col['name'] for col in inspector.get_columns('trade_history')]
+    with engine.begin() as conn:
+        if "sl" not in history_columns:
+            conn.execute(text("ALTER TABLE trade_history ADD COLUMN sl FLOAT DEFAULT 0.0"))
+            print("Database Migration: Successfully added 'sl' column to 'trade_history' table.")
+        if "tp" not in history_columns:
+            conn.execute(text("ALTER TABLE trade_history ADD COLUMN tp FLOAT DEFAULT 0.0"))
+            print("Database Migration: Successfully added 'tp' column to 'trade_history' table.")
 except Exception as e:
     print(f"Database Migration Warning: {e}")
 
@@ -405,6 +415,8 @@ def close_trade(ticket: int, db: Session = Depends(get_db)):
                 volume=result["volume"],
                 open_price=result["open_price"],
                 close_price=result["close_price"],
+                sl=result.get("sl", 0.0),
+                tp=result.get("tp", 0.0),
                 open_time=datetime.strptime(result["open_time"], "%Y-%m-%d %H:%M:%S") if isinstance(result["open_time"], str) else result["open_time"],
                 close_time=datetime.strptime(result["close_time"], "%Y-%m-%d %H:%M:%S") if isinstance(result["close_time"], str) else result["close_time"],
                 profit=result["profit"],
@@ -448,6 +460,8 @@ def close_all(db: Session = Depends(get_db)):
                         volume=res["volume"],
                         open_price=res["open_price"],
                         close_price=res["close_price"],
+                        sl=res.get("sl", 0.0),
+                        tp=res.get("tp", 0.0),
                         open_time=datetime.strptime(res["open_time"], "%Y-%m-%d %H:%M:%S") if isinstance(res["open_time"], str) else res["open_time"],
                         close_time=datetime.strptime(res["close_time"], "%Y-%m-%d %H:%M:%S") if isinstance(res["close_time"], str) else res["close_time"],
                         profit=res["profit"],
@@ -479,6 +493,8 @@ def get_history(db: Session = Depends(get_db)):
             "volume": t.volume,
             "open_price": t.open_price,
             "close_price": t.close_price,
+            "sl": t.sl or 0.0,
+            "tp": t.tp or 0.0,
             "open_time": t.open_time.strftime("%Y-%m-%d %H:%M:%S"),
             "close_time": t.close_time.strftime("%Y-%m-%d %H:%M:%S"),
             "profit": t.profit,
@@ -495,6 +511,17 @@ def get_history(db: Session = Depends(get_db)):
             
             # Fetch deals
             deals = mt5_lib.history_deals_get(from_date, to_date)
+            orders = mt5_lib.history_orders_get(from_date, to_date)
+            
+            order_sl_tp = {}
+            if orders is not None:
+                for o in orders:
+                    if o.position_id > 0:
+                        existing = order_sl_tp.get(o.position_id, {"sl": 0.0, "tp": 0.0})
+                        sl = o.sl if o.sl > 0 else existing["sl"]
+                        tp = o.tp if o.tp > 0 else existing["tp"]
+                        order_sl_tp[o.position_id] = {"sl": sl, "tp": tp}
+            
             if deals is not None:
                 # Map position_id to entry deal's details (entry == 0 is DEAL_ENTRY_IN)
                 entry_info = {}
@@ -523,6 +550,8 @@ def get_history(db: Session = Depends(get_db)):
                             "volume": d.volume,
                             "open_price": open_price,
                             "close_price": d.price,
+                            "sl": order_sl_tp.get(d.position_id, {}).get("sl", 0.0),
+                            "tp": order_sl_tp.get(d.position_id, {}).get("tp", 0.0),
                             "open_time": open_time,
                             "close_time": datetime.fromtimestamp(d.time).strftime("%Y-%m-%d %H:%M:%S"),
                             "profit": d.profit,
