@@ -387,46 +387,25 @@ class MT5Manager:
             return self.sim_positions
 
     def sanitize_comment(self, comment_str: str) -> str:
-        """Sanitizes comment to ensure it is ASCII-only and strictly <= 30 characters."""
+        """Sanitizes comment to ensure it is ASCII-only, alphanumeric/underscore/hyphen, and strictly <= 15 characters."""
         if not comment_str:
             return "Bot"
             
         import re
         
-        # Try to parse "Name [Algo]" to keep brackets balanced if truncated
-        match = re.search(r'^(.*?)\s*\[(.*?)\]$', comment_str)
-        if match:
-            name_part = match.group(1).encode("ascii", "ignore").decode("ascii").strip()
-            algo_part = match.group(2).encode("ascii", "ignore").decode("ascii").strip()
+        comment_str = str(comment_str)
+        
+        # Remove non-ASCII characters
+        clean = comment_str.encode("ascii", "ignore").decode("ascii")
+        
+        # Keep only letters, numbers, underscores, and hyphens (NO SPACES for safety)
+        clean = re.sub(r'[^a-zA-Z0-9_\-]', '', clean)
+        
+        if not clean:
+            return "GiantSlayer"
             
-            # Reduce multiple spaces
-            name_part = re.sub(r'\s+', ' ', name_part).strip()
-            algo_part = re.sub(r'\s+', ' ', algo_part).strip()
-            
-            if name_part and algo_part:
-                # We want the total length of "name_part [algo_part]" to be <= 30
-                # " [algo_part]" takes len(algo_part) + 3 characters (space + [ + ])
-                max_name_len = 30 - (len(algo_part) + 3)
-                if max_name_len > 0:
-                    name_part = name_part[:max_name_len].strip()
-                    clean = f"{name_part} [{algo_part}]"
-                else:
-                    clean = algo_part[:30]
-            elif name_part:
-                clean = name_part[:30]
-            elif algo_part:
-                clean = algo_part[:30]
-            else:
-                clean = "Bot"
-        else:
-            # Fallback for simple comments
-            clean = comment_str.encode("ascii", "ignore").decode("ascii")
-            clean = re.sub(r'\s+', ' ', clean).strip()
-            if not clean:
-                clean = "GiantSlayer"
-            clean = clean[:30].strip()
-            
-        return clean
+        # Strictly truncate to 15 characters to avoid any broker/API limits
+        return clean[:15]
 
     def open_position(self, symbol: str, order_type: str, volume: float, sl: float = 0.0, tp: float = 0.0, comment: str = "Manual") -> dict:
         """Opens a BUY or SELL trade."""
@@ -566,7 +545,7 @@ class MT5Manager:
                 "price": price,
                 "deviation": 20,
                 "magic": 234000,
-                "comment": "Close via Antigravity MT5",
+                "comment": "CloseBot",
                 "type_time": mt5.ORDER_TIME_GTC,
             }
             
