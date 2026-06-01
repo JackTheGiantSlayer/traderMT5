@@ -6,10 +6,13 @@ class AccountSettings(Base):
     __tablename__ = "account_settings"
 
     id = Column(Integer, primary_key=True, index=True)
-    login = Column(Integer, nullable=False)
-    server = Column(String(100), nullable=False)
-    auto_connect = Column(Boolean, default=False)
-    last_connected = Column(DateTime, default=datetime.utcnow)
+    login = Column(Integer, unique=True, index=True, nullable=False) # เลขพอร์ต MT5
+    server = Column(String(100), nullable=False)                     # Exness Server
+    encrypted_password = Column(String(250), nullable=False)         # รหัสผ่านที่เข้ารหัสลับแล้ว
+    is_active = Column(Boolean, default=False, index=True)           # เป็นบัญชีที่เลือกใช้งานอยู่หรือไม่
+    auto_connect = Column(Boolean, default=False)                    # เชื่อมต่ออัตโนมัติเมื่อสตาร์ทระบบ
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_connected = Column(DateTime, nullable=True)
 
 class TradeHistoryRecord(Base):
     __tablename__ = "trade_history"

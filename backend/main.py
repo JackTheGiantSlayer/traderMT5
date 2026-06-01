@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 
-from backend.config import HOST, PORT, STATIC_DIR, MT5_LOGIN, MT5_PASSWORD, MT5_SERVER
+from backend.config import HOST, PORT, STATIC_DIR, MT5_LOGIN, MT5_PASSWORD, MT5_SERVER, ENCRYPTION_KEY, encrypt_password, decrypt_password
 from backend.database import engine, Base, get_db
 from backend.models import AccountSettings, TradeHistoryRecord, WatchlistItem, BotSettings, BotLog, NewsRecord
 from backend.mt5_manager import MT5Manager
@@ -71,8 +71,57 @@ try:
         if "tp" not in history_columns:
             conn.execute(text("ALTER TABLE trade_history ADD COLUMN tp FLOAT DEFAULT 0.0"))
             print("Database Migration: Successfully added 'tp' column to 'trade_history' table.")
+
+        # AccountSettings self-healing migration
+        account_columns = [col['name'] for col in inspector.get_columns('account_settings')]
+        if "encrypted_password" not in account_columns:
+            conn.execute(text("ALTER TABLE account_settings ADD COLUMN encrypted_password VARCHAR(250) NULL"))
+            print("Database Migration: Successfully added 'encrypted_password' column to 'account_settings' table.")
+        if "is_active" not in account_columns:
+            conn.execute(text("ALTER TABLE account_settings ADD COLUMN is_active BOOLEAN DEFAULT 0"))
+            print("Database Migration: Successfully added 'is_active' column to 'account_settings' table.")
+        if "created_at" not in account_columns:
+            conn.execute(text("ALTER TABLE account_settings ADD COLUMN created_at DATETIME NULL"))
+            print("Database Migration: Successfully added 'created_at' column to 'account_settings' table.")
 except Exception as e:
     print(f"Database Migration Warning: {e}")
+
+
+# Proactive data migration for legacy accounts in database
+db = next(get_db())
+try:
+    # 1. Seed default account from .env if table is empty and .env has login credentials
+    if db.query(AccountSettings).count() == 0 and MT5_LOGIN and MT5_PASSWORD:
+        default_acc = AccountSettings(
+            login=int(MT5_LOGIN),
+            server=MT5_SERVER,
+            encrypted_password=encrypt_password(MT5_PASSWORD),
+            auto_connect=True,
+            is_active=True,
+            created_at=datetime.utcnow()
+        )
+        db.add(default_acc)
+        db.commit()
+        print(f"Database Seeding: Proactively seeded active account {MT5_LOGIN} from .env.")
+        
+    # 2. Update any existing accounts in DB that are missing encrypted_password
+    legacy_accounts = db.query(AccountSettings).filter(AccountSettings.encrypted_password == None).all()
+    if legacy_accounts:
+        for acc in legacy_accounts:
+            # If MT5_PASSWORD from .env is set, encrypt and seed it
+            if MT5_PASSWORD:
+                acc.encrypted_password = encrypt_password(MT5_PASSWORD)
+                acc.is_active = True
+                acc.created_at = datetime.utcnow()
+                print(f"Database Seeding: Migrated legacy account {acc.login} using .env MT5_PASSWORD.")
+            else:
+                db.delete(acc)
+                print(f"Database Seeding: Deleted legacy account {acc.login} with no available password.")
+        db.commit()
+except Exception as e:
+    print(f"Database Seeding Error: {e}")
+finally:
+    db.close()
 
 
 # Seed default watchlist if empty
@@ -103,8 +152,8 @@ finally:
 
 # Initialize FastAPI
 app = FastAPI(
-    title="Antigravity MT5 Exness Trader API",
-    description="Backend for stock and gold trading web application connected to MT5/Exness.",
+    title="MT5 Trader API",
+    description="Backend for stock and gold trading web application connected to MetaTrader 5.",
     version="1.0.0"
 )
 
@@ -120,13 +169,35 @@ app.add_middleware(
 # Initialize MT5 Manager singleton
 mt5_manager = MT5Manager()
 
-# Try to auto-connect if credentials are set in .env
-if MT5_LOGIN and MT5_PASSWORD and MT5_SERVER:
+# Startup Auto-connect sequence using database settings
+connected = False
+db = next(get_db())
+try:
+    active_acc = db.query(AccountSettings).filter(AccountSettings.is_active == True, AccountSettings.auto_connect == True).first()
+    if active_acc and active_acc.encrypted_password:
+        try:
+            decrypted_password = decrypt_password(active_acc.encrypted_password)
+            if decrypted_password:
+                success = mt5_manager.connect(active_acc.login, decrypted_password, active_acc.server)
+                if success:
+                    print(f"Auto-connected to active Exness MT5 Account {active_acc.login} from database.")
+                    connected = True
+                    active_acc.last_connected = datetime.utcnow()
+                    db.commit()
+        except Exception as e:
+            print(f"Auto-connect to active DB account {active_acc.login} failed: {e}")
+except Exception as e:
+    print(f"Error querying active account for startup auto-connect: {e}")
+finally:
+    db.close()
+
+# Fallback to .env default credentials if no active account was connected
+if not connected and MT5_LOGIN and MT5_PASSWORD and MT5_SERVER:
     try:
         mt5_manager.connect(int(MT5_LOGIN), MT5_PASSWORD, MT5_SERVER)
-        print(f"Auto-connected to Exness MT5 Account {MT5_LOGIN}")
+        print(f"Auto-connected to Exness MT5 Account {MT5_LOGIN} using .env fallback credentials.")
     except Exception as e:
-        print(f"Auto-connect failed: {e}. Running in Simulation Mode.")
+        print(f"Auto-connect using .env fallback failed: {e}. Running in Simulation Mode.")
 
 # --- API Models ---
 class ConnectionRequest(BaseModel):
@@ -134,6 +205,18 @@ class ConnectionRequest(BaseModel):
     password: str
     server: str
     auto_connect: bool = False
+
+class AccountCreateRequest(BaseModel):
+    login: int
+    password: str
+    server: str
+    auto_connect: bool = False
+    is_active: bool = False
+
+class AccountUpdateRequest(BaseModel):
+    server: str = None
+    auto_connect: bool = None
+    password: str = None
 
 class TradeRequest(BaseModel):
     symbol: str
@@ -183,19 +266,36 @@ def get_status():
 
 @app.post("/api/mt5/connect")
 def connect_mt5(req: ConnectionRequest, db: Session = Depends(get_db)):
-    """Logs into the user's Exness MT5 account."""
+    """Logs into the user's Exness MT5 account (Legacy compatibility wrapper)."""
     try:
         success = mt5_manager.connect(req.login, req.password, req.server)
         if success:
+            # Encrypt password
+            encrypted_password = encrypt_password(req.password)
+            if not encrypted_password:
+                raise Exception("Failed to encrypt account credentials.")
+                
+            # Deactivate all other accounts
+            db.query(AccountSettings).update({AccountSettings.is_active: False})
+            
             # Save or update settings in database
-            settings = db.query(AccountSettings).first()
+            settings = db.query(AccountSettings).filter(AccountSettings.login == req.login).first()
             if not settings:
-                settings = AccountSettings(login=req.login, server=req.server, auto_connect=req.auto_connect)
+                settings = AccountSettings(
+                    login=req.login,
+                    server=req.server,
+                    encrypted_password=encrypted_password,
+                    auto_connect=req.auto_connect,
+                    is_active=True,
+                    created_at=datetime.utcnow(),
+                    last_connected=datetime.utcnow()
+                )
                 db.add(settings)
             else:
-                settings.login = req.login
                 settings.server = req.server
+                settings.encrypted_password = encrypted_password
                 settings.auto_connect = req.auto_connect
+                settings.is_active = True
                 settings.last_connected = datetime.utcnow()
             db.commit()
             
@@ -212,6 +312,119 @@ def disconnect_mt5():
     """Disconnects from the live Exness MT5 account and enters Simulation Mode."""
     mt5_manager.disconnect()
     return {"success": True, "message": "Disconnected from live account, entered simulation mode."}
+
+# --- Secure Multi-Account API Group ---
+
+@app.get("/api/mt5/accounts")
+def get_mt5_accounts(db: Session = Depends(get_db)):
+    """Retrieve all saved Exness accounts without exposing raw or encrypted passwords."""
+    accounts = db.query(AccountSettings).order_by(AccountSettings.created_at.desc()).all()
+    return [{
+        "id": a.id,
+        "login": a.login,
+        "server": a.server,
+        "is_active": a.is_active,
+        "auto_connect": a.auto_connect,
+        "last_connected": a.last_connected.isoformat() if a.last_connected else None,
+        "created_at": a.created_at.isoformat() if a.created_at else None
+    } for a in accounts]
+
+@app.post("/api/mt5/accounts")
+def add_mt5_account(req: AccountCreateRequest, db: Session = Depends(get_db)):
+    """Add a new Exness account to database, password is encrypted using AES-256 Fernet."""
+    existing = db.query(AccountSettings).filter(AccountSettings.login == req.login).first()
+    if existing:
+        raise HTTPException(status_code=400, detail=f"บัญชีหมายเลข {req.login} มีอยู่ในระบบแล้ว")
+        
+    encrypted_pw = encrypt_password(req.password)
+    if not encrypted_pw:
+        raise HTTPException(status_code=500, detail="ระบบขัดข้อง: ไม่สามารถเข้ารหัสผ่านบัญชีได้")
+        
+    # If this is set to active, make all other accounts inactive
+    if req.is_active:
+        db.query(AccountSettings).update({AccountSettings.is_active: False})
+        
+    new_acc = AccountSettings(
+        login=req.login,
+        server=req.server,
+        encrypted_password=encrypted_pw,
+        auto_connect=req.auto_connect,
+        is_active=req.is_active,
+        created_at=datetime.utcnow()
+    )
+    db.add(new_acc)
+    db.commit()
+    db.refresh(new_acc)
+    
+    return {"success": True, "message": "เพิ่มบัญชีเรียบร้อยแล้ว", "account_id": new_acc.id}
+
+@app.put("/api/mt5/accounts/{account_id}")
+def update_mt5_account(account_id: int, req: AccountUpdateRequest, db: Session = Depends(get_db)):
+    """Edit an existing Exness account properties in database."""
+    account = db.query(AccountSettings).filter(AccountSettings.id == account_id).first()
+    if not account:
+        raise HTTPException(status_code=404, detail="ไม่พบบัญชีที่ต้องการแก้ไข")
+        
+    if req.server is not None:
+        account.server = req.server
+    if req.auto_connect is not None:
+        account.auto_connect = req.auto_connect
+        
+    if req.password is not None and req.password.strip() != "":
+        encrypted_pw = encrypt_password(req.password)
+        if not encrypted_pw:
+            raise HTTPException(status_code=500, detail="ระบบขัดข้อง: ไม่สามารถเข้ารหัสผ่านใหม่ได้")
+        account.encrypted_password = encrypted_pw
+        
+    db.commit()
+    return {"success": True, "message": "อัปเดตข้อมูลบัญชีเรียบร้อยแล้ว"}
+
+@app.post("/api/mt5/accounts/{account_id}/activate")
+def activate_mt5_account(account_id: int, db: Session = Depends(get_db)):
+    """Switch connection to this Exness account, decrypting password and establishing live link in MT5."""
+    account = db.query(AccountSettings).filter(AccountSettings.id == account_id).first()
+    if not account:
+        raise HTTPException(status_code=404, detail="ไม่พบบัญชีที่ต้องการเปิดใช้งาน")
+        
+    decrypted_pw = decrypt_password(account.encrypted_password)
+    if not decrypted_pw:
+        raise HTTPException(status_code=500, detail="ระบบขัดข้อง: ไม่สามารถถอดรหัสผ่านเพื่อเชื่อมต่อได้")
+        
+    # Disconnect current connection first
+    mt5_manager.disconnect()
+    
+    try:
+        success = mt5_manager.connect(account.login, decrypted_pw, account.server)
+        if success:
+            # Set all other accounts to inactive
+            db.query(AccountSettings).update({AccountSettings.is_active: False})
+            account.is_active = True
+            account.last_connected = datetime.utcnow()
+            db.commit()
+            return {
+                "success": True, 
+                "message": f"สลับบัญชีและเชื่อมต่อ MT5 พอร์ตหมายเลข {account.login} สำเร็จเรียบร้อยแล้ว!",
+                "account": account.login
+            }
+        else:
+            raise Exception("การตรวจสอบสิทธิ์ MT5 ล้มเหลว")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"เชื่อมต่อไม่สำเร็จ: {str(e)}")
+
+@app.delete("/api/mt5/accounts/{account_id}")
+def delete_mt5_account(account_id: int, db: Session = Depends(get_db)):
+    """Delete an Exness account. If active, safely disconnects first."""
+    account = db.query(AccountSettings).filter(AccountSettings.id == account_id).first()
+    if not account:
+        raise HTTPException(status_code=404, detail="ไม่พบบัญชีที่ต้องการลบ")
+        
+    # If active, disconnect to return to Simulation Mode
+    if account.is_active:
+        mt5_manager.disconnect()
+        
+    db.delete(account)
+    db.commit()
+    return {"success": True, "message": "ลบบัญชีออกจากระบบเรียบร้อยแล้ว"}
 
 @app.get("/api/mt5/account")
 def get_account():
@@ -358,7 +571,7 @@ def get_positions(db: Session = Depends(get_db)):
             else:
                 # Fallback to the position's own comment if it contains bot name information
                 comment = pos.get("comment", "")
-                is_manual = not comment or comment in ['Manual', 'Simulation', 'Exness Real Close', 'Close via Antigravity MT5']
+                is_manual = not comment or comment.lower() in ['manual', 'simulation'] or 'real close' in comment.lower() or 'close via' in comment.lower() or 'mt5 trader' in comment.lower()
                 if is_manual:
                     pos["bot_name"] = "เทรดเอง (Manual)"
                 else:
@@ -539,7 +752,7 @@ def get_history(db: Session = Depends(get_db)):
                     # entry: 0=buy/sell open, 1=close
                     if d.entry == 1:
                         info = entry_info.get(d.position_id, {})
-                        orig_comment = info.get("comment", d.comment) or "Exness Real Close"
+                        orig_comment = info.get("comment", d.comment) or "MT5 Trader Real Close"
                         open_price = info.get("price", d.price)
                         open_time = info.get("time", datetime.fromtimestamp(d.time).strftime("%Y-%m-%d %H:%M:%S"))
                         
@@ -997,7 +1210,9 @@ def run_backtest(req: BacktestRequest):
                         "ticket": active_trade["ticket"],
                         "type": t_type,
                         "open_time": active_trade["open_time"],
+                        "open_timestamp": active_trade["open_timestamp"],
                         "close_time": datetime.fromtimestamp(current_time).strftime("%Y-%m-%d %H:%M:%S"),
+                        "close_timestamp": current_time,
                         "open_price": open_p,
                         "close_price": close_p,
                         "profit": round(pnl, 2),
@@ -1031,6 +1246,7 @@ def run_backtest(req: BacktestRequest):
                         "type": sig,
                         "open_price": current_price,
                         "open_time": datetime.fromtimestamp(current_time).strftime("%Y-%m-%d %H:%M:%S"),
+                        "open_timestamp": current_time,
                         "sl": sl_p,
                         "tp": tp_p
                     }
@@ -1053,7 +1269,9 @@ def run_backtest(req: BacktestRequest):
                 "ticket": active_trade["ticket"],
                 "type": t_type,
                 "open_time": active_trade["open_time"],
+                "open_timestamp": active_trade["open_timestamp"],
                 "close_time": datetime.fromtimestamp(candles[-1]["time"]).strftime("%Y-%m-%d %H:%M:%S"),
+                "close_timestamp": candles[-1]["time"],
                 "open_price": open_p,
                 "close_price": close_p,
                 "profit": round(pnl, 2),
@@ -1066,9 +1284,56 @@ def run_backtest(req: BacktestRequest):
                 "value": round(balance, 2)
             })
             
+        # Calculate extended statistics
         wins = [t for t in trades_history if t["profit"] >= 0]
         losses = [t for t in trades_history if t["profit"] < 0]
+        
+        gross_profit = sum(t["profit"] for t in wins)
+        gross_loss = sum(abs(t["profit"]) for t in losses)
+        
+        profit_factor = round(gross_profit / gross_loss, 2) if gross_loss > 0 else round(gross_profit, 2)
+        
+        # Max drawdown calculation from equity curve
+        peak = req.initial_balance
+        max_drawdown = 0.0
+        max_drawdown_pct = 0.0
+        
+        for eq in equity_curve:
+            val = eq["value"]
+            if val > peak:
+                peak = val
+            dd = peak - val
+            dd_pct = (dd / peak * 100) if peak > 0 else 0.0
+            if dd > max_drawdown:
+                max_drawdown = dd
+            if dd_pct > max_drawdown_pct:
+                max_drawdown_pct = dd_pct
+                
+        # Average Win & Average Loss
+        avg_win = round(gross_profit / len(wins), 2) if wins else 0.0
+        avg_loss = round(gross_loss / len(losses), 2) if losses else 0.0
+        
+        # Consecutive wins / losses
+        max_consec_wins = 0
+        max_consec_losses = 0
+        curr_consec_wins = 0
+        curr_consec_losses = 0
+        
+        for t in trades_history:
+            if t["profit"] >= 0:
+                curr_consec_wins += 1
+                curr_consec_losses = 0
+                if curr_consec_wins > max_consec_wins:
+                    max_consec_wins = curr_consec_wins
+            else:
+                curr_consec_losses += 1
+                curr_consec_wins = 0
+                if curr_consec_losses > max_consec_losses:
+                    max_consec_losses = curr_consec_losses
+                    
         win_rate = (len(wins) / len(trades_history) * 100) if trades_history else 0.0
+        net_profit = round(balance - req.initial_balance, 2)
+        expectancy = round(net_profit / len(trades_history), 2) if trades_history else 0.0
         
         return {
             "symbol": req.symbol,
@@ -1076,13 +1341,24 @@ def run_backtest(req: BacktestRequest):
             "algorithm": req.algorithm,
             "initial_balance": req.initial_balance,
             "final_balance": round(balance, 2),
-            "net_profit": round(balance - req.initial_balance, 2),
+            "net_profit": net_profit,
             "total_trades": len(trades_history),
             "win_rate": round(win_rate, 1),
             "wins_count": len(wins),
             "losses_count": len(losses),
-            "trades": trades_history,  # ordered chronologically
-            "equity_curve": equity_curve
+            "gross_profit": round(gross_profit, 2),
+            "gross_loss": round(gross_loss, 2),
+            "profit_factor": profit_factor,
+            "max_drawdown": round(max_drawdown, 2),
+            "max_drawdown_percent": round(max_drawdown_pct, 2),
+            "avg_win": avg_win,
+            "avg_loss": avg_loss,
+            "max_consecutive_wins": max_consec_wins,
+            "max_consecutive_losses": max_consec_losses,
+            "expectancy": expectancy,
+            "trades": trades_history,
+            "equity_curve": equity_curve,
+            "candles": candles
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

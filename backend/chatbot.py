@@ -38,7 +38,7 @@ class ChatbotAssistant:
         if any(keyword in query_lower for keyword in ["สวัสดี", "hello", "hi", "หวัดดี", "บอท", "bot", "assistant"]):
             response = (
                 "สวัสดีครับ! ผมคือ **Giant Slayer AI Assistant** ผู้ช่วยเทรดอัจฉริยะส่วนตัวของคุณ 🤖📊\n\n"
-                "ผมสามารถช่วยเหลือคุณดึงข้อมูลแบบเรียลไทม์จาก Exness/MT5 และระบบบอทเทรดได้ครับ โดยคุณสามารถสอบถามผมได้ดังนี้:\n"
+                "ผมสามารถช่วยเหลือคุณดึงข้อมูลแบบเรียลไทม์จาก MT5 Trader และระบบบอทเทรดได้ครับ โดยคุณสามารถสอบถามผมได้ดังนี้:\n"
                 "• 📊 **ขอดูยอดเงินในพอร์ต** (ยอดบาลานซ์, อีควิตี้, กำไรลอยตัว)\n"
                 "• 💼 **ขอดูออเดอร์/โพสิชันที่เปิดอยู่**\n"
                 "• 📜 **ขอดูประวัติการเทรดล่าสุด**\n"
@@ -91,7 +91,7 @@ class ChatbotAssistant:
                         bot_name = ticket_to_bot.get(pos["ticket"])
                         if not bot_name:
                             comment = pos.get("comment", "")
-                            is_manual = not comment or comment in ['Manual', 'Simulation', 'Exness Real Close', 'Close via Antigravity MT5']
+                            is_manual = not comment or comment.lower() in ['manual', 'simulation'] or 'real close' in comment.lower() or 'close via' in comment.lower() or 'mt5 trader' in comment.lower()
                             bot_name = "เทรดเอง (Manual)" if is_manual else re.sub(r'\s*\[.*?\]$', '', comment)
                             
                         response += (
@@ -113,7 +113,7 @@ class ChatbotAssistant:
                 formatted_records = []
                 for r in sim_records:
                     clean_comment = re.sub(r'\s*\[.*?\]$', '', r.comment) if r.comment else 'เทรดเอง (Manual)'
-                    is_manual = not clean_comment or clean_comment in ['Manual', 'Simulation', 'Exness Real Close', 'Close via Antigravity MT5']
+                    is_manual = not clean_comment or clean_comment.lower() in ['manual', 'simulation'] or 'real close' in clean_comment.lower() or 'close via' in clean_comment.lower() or 'mt5 trader' in clean_comment.lower()
                     source_name = "เทรดเอง (Manual)" if is_manual else clean_comment
                     formatted_records.append({
                         "ticket": r.ticket,
@@ -170,7 +170,7 @@ class ChatbotAssistant:
                                     open_time = info.get("time", datetime.fromtimestamp(d.time))
                                     
                                     clean_comment = re.sub(r'\s*\[.*?\]$', '', orig_comment) if orig_comment else 'เทรดเอง (Manual)'
-                                    is_manual = not clean_comment or clean_comment in ['Manual', 'Simulation', 'Exness Real Close', 'Close via Antigravity MT5']
+                                    is_manual = not clean_comment or clean_comment.lower() in ['manual', 'simulation'] or 'real close' in clean_comment.lower() or 'close via' in clean_comment.lower() or 'mt5 trader' in clean_comment.lower()
                                     source_name = "เทรดเอง (Manual)" if is_manual else clean_comment
                                     
                                     real_records.append({
@@ -201,7 +201,7 @@ class ChatbotAssistant:
                         "💡 *คำแนะนำ: คุณสามารถเลือกสะสมประวัติการเทรดได้ง่ายๆ โดย:*\n"
                         "1. **ส่งคำสั่งซื้อขายด้วยตนเอง:** ไปที่แผงควบคุมหลักด้านซ้ายแล้วกรอก Lot และกดปุ่ม BUY หรือ SELL เมื่อเทรดจบและปิดคำสั่ง ระบบจะบันทึกเข้าสู่ประวัติทันที\n"
                         "2. **สร้างบอทเทรดจำลองอัตโนมัติ:** คลิกแท็บ **'ระบบบอทเทรด'** -> **'สร้างบอทใหม่'** เพื่อให้ระบบเปิด/ปิดคำสั่งตามเงื่อนไขโมเมนตัมแบบเรียลไทม์\n"
-                        "3. **เชื่อมโยงพอร์ตจริง:** คลิกไอคอน **'ฟันเฟือง/เซิร์ฟเวอร์'** มุมขวาบนเพื่อป้อนข้อมูลล็อกอินบัญชี **Exness MT5** ของคุณ ระบบจะดึงประวัติการเทรดจริงจากโบรกเกอร์ย้อนหลัง 30 วันมาแสดงผลในระบบทันที!"
+                        "3. **เชื่อมโยงพอร์ตจริง:** คลิกไอคอน **'ฟันเฟือง/เซิร์ฟเวอร์'** มุมขวาบนเพื่อป้อนข้อมูลล็อกอินบัญชี **MT5 Trader** ของคุณ ระบบจะดึงประวัติการเทรดจริงจากโบรกเกอร์ย้อนหลัง 30 วันมาแสดงผลในระบบทันที!"
                     )
                 else:
                     total_count = len(all_records)

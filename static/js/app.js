@@ -159,6 +159,8 @@ const TradingApp = () => {
 
     // Assets & Selection
     const [watchlist, setWatchlist] = useState([]);
+    const [showAddWatchlistForm, setShowAddWatchlistForm] = useState(false);
+    const [addWatchlistForm, setAddWatchlistForm] = useState({ symbol: "", name: "", asset_type: "forex" });
     
     // Live Stochastic RSI and general indicators state
     const [stochRsiData, setStochRsiData] = useState({ 
@@ -455,10 +457,15 @@ const TradingApp = () => {
     const [backtestSelectedAlgos, setBacktestSelectedAlgos] = useState(["rsi_oscillator"]);
     const [backtestResult, setBacktestResult] = useState(null);
     const [backtestLoading, setBacktestLoading] = useState(false);
+    const [backtestSubTab, setBacktestSubTab] = useState("stats"); // 'stats' | 'price' | 'equity' | 'deals'
 
     const backtestChartContainerRef = useRef(null);
     const backtestChartRef = useRef(null);
     const backtestAreaSeriesRef = useRef(null);
+
+    const backtestPriceChartContainerRef = useRef(null);
+    const backtestPriceChartRef = useRef(null);
+    const backtestCandlestickSeriesRef = useRef(null);
 
     // Modal Control
     const [settingsOpen, setSettingsOpen] = useState(false);
@@ -466,13 +473,19 @@ const TradingApp = () => {
     const [settingsLoading, setSettingsLoading] = useState(false);
     const [settingsAlert, setSettingsAlert] = useState(null); // { type: 'success'|'error', text: '' }
 
+    // Multi-Account secure settings states
+    const [accounts, setAccounts] = useState([]);
+    const [accountFormOpen, setAccountFormOpen] = useState(false);
+    const [accountForm, setAccountForm] = useState({ id: null, login: "", password: "", server: "", auto_connect: false, is_active: false });
+    const [accountFormLoading, setAccountFormLoading] = useState(false);
+
     // Chatbot States
     const [chatbotOpen, setChatbotOpen] = useState(false);
     const [messages, setMessages] = useState([
         {
             id: 'welcome',
             sender: 'bot',
-            text: `สวัสดีครับ! ผมคือ **Giant Slayer AI Assistant** ผู้ช่วยเทรดอัจฉริยะส่วนตัวของคุณ 🤖📊\n\nผมสามารถช่วยเหลือคุณดึงข้อมูลแบบเรียลไทม์จาก Exness/MT5 และระบบบอทเทรดได้ครับ โดยคุณสามารถพิมพ์สอบถามผม หรือคลิกที่ตัวเลือกด่วนด้านล่างได้เลยครับ!`,
+            text: `สวัสดีครับ! ผมคือ **Giant Slayer AI Assistant** ผู้ช่วยเทรดอัจฉริยะส่วนตัวของคุณ 🤖📊\n\nผมสามารถช่วยเหลือคุณดึงข้อมูลแบบเรียลไทม์จาก MT5 Trader และระบบบอทเทรดได้ครับ โดยคุณสามารถพิมพ์สอบถามผม หรือคลิกที่ตัวเลือกด่วนด้านล่างได้เลยครับ!`,
             timestamp: new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })
         }
     ]);
@@ -590,6 +603,7 @@ const TradingApp = () => {
         fetchHistory();
         fetchBots();
         fetchNews();
+        fetchAccounts();
 
         // 1-second interval for prices & dynamic ticks
         const priceInterval = setInterval(() => {
@@ -604,6 +618,7 @@ const TradingApp = () => {
             fetchHistory();
             fetchBots();
             fetchNews();
+            fetchAccounts();
         }, 5000);
 
         return () => {
@@ -622,6 +637,13 @@ const TradingApp = () => {
             return () => clearInterval(logInterval);
         }
     }, [activeBot]);
+
+    // Fetch accounts when settings modal opens
+    useEffect(() => {
+        if (settingsOpen) {
+            fetchAccounts();
+        }
+    }, [settingsOpen]);
 
     // Load prices loop helper
     const fetchPrices = async () => {
@@ -1136,7 +1158,7 @@ const TradingApp = () => {
 
     // --- Backtesting Equity Curve Chart Initializer ---
     useEffect(() => {
-        if (activeTab !== 'backtest' || !backtestResult || !backtestResult.equity_curve || backtestLoading) {
+        if (activeTab !== 'backtest' || backtestSubTab !== 'equity' || !backtestResult || !backtestResult.equity_curve || backtestLoading) {
             if (backtestChartRef.current) {
                 try {
                     backtestChartRef.current.remove();
@@ -1243,11 +1265,148 @@ const TradingApp = () => {
             backtestChartRef.current = null;
             backtestAreaSeriesRef.current = null;
         };
-    }, [activeTab, backtestResult, backtestLoading]);
+    }, [activeTab, backtestSubTab, backtestResult, backtestLoading]);
+
+    // --- Backtesting Price Candlestick Chart Initializer ---
+    useEffect(() => {
+        if (activeTab !== 'backtest' || backtestSubTab !== 'price' || !backtestResult || !backtestResult.candles || backtestLoading) {
+            if (backtestPriceChartRef.current) {
+                try {
+                    backtestPriceChartRef.current.remove();
+                } catch (e) {}
+                backtestPriceChartRef.current = null;
+                backtestCandlestickSeriesRef.current = null;
+            }
+            return;
+        }
+
+        const container = backtestPriceChartContainerRef.current;
+        if (!container) return;
+
+        // Destroy any existing backtest price chart first to avoid duplicates
+        if (backtestPriceChartRef.current) {
+            try {
+                backtestPriceChartRef.current.remove();
+            } catch (e) {}
+            backtestPriceChartRef.current = null;
+            backtestCandlestickSeriesRef.current = null;
+        }
+
+        const chart = LightweightCharts.createChart(container, {
+            layout: {
+                background: { type: LightweightCharts.ColorType.Solid, color: '#0c1220' },
+                textColor: '#94a3b8',
+                fontSize: 11,
+                fontFamily: 'Inter',
+            },
+            grid: {
+                vertLines: { color: 'rgba(38, 50, 80, 0.2)' },
+                horzLines: { color: 'rgba(38, 50, 80, 0.2)' },
+            },
+            crosshair: {
+                mode: LightweightCharts.CrosshairMode.Normal,
+                vertLine: { color: '#ffb703', width: 1, style: 2 },
+                horzLine: { color: '#ffb703', width: 1, style: 2 }
+            },
+            rightPriceScale: {
+                borderColor: 'rgba(38, 50, 80, 0.4)',
+                textColor: '#94a3b8',
+            },
+            timeScale: {
+                borderColor: 'rgba(38, 50, 80, 0.4)',
+                timeVisible: true,
+                secondsVisible: false,
+            },
+            localization: {
+                locale: 'th-TH',
+            }
+        });
+
+        const candlestickSeries = chart.addCandlestickSeries({
+            upColor: '#2ecc71',
+            downColor: '#e74c3c',
+            borderUpColor: '#2ecc71',
+            borderDownColor: '#e74c3c',
+            wickUpColor: '#2ecc71',
+            wickDownColor: '#e74c3c',
+        });
+
+        // Format candlestick data
+        const candleData = backtestResult.candles.map(item => ({
+            time: item.time,
+            open: item.open,
+            high: item.high,
+            low: item.low,
+            close: item.close
+        }));
+
+        candleData.sort((a, b) => a.time - b.time);
+        candlestickSeries.setData(candleData);
+
+        // Generate buy/sell markers overlay
+        const markers = [];
+        if (backtestResult.trades && backtestResult.trades.length > 0) {
+            backtestResult.trades.forEach(trade => {
+                // Entry Marker
+                if (trade.open_timestamp) {
+                    markers.push({
+                        time: trade.open_timestamp,
+                        position: trade.type === 'buy' ? 'belowBar' : 'aboveBar',
+                        color: trade.type === 'buy' ? '#2ecc71' : '#e74c3c',
+                        shape: trade.type === 'buy' ? 'arrowUp' : 'arrowDown',
+                        text: `${trade.type.toUpperCase()} (#${trade.ticket}) @ ${trade.open_price}`
+                    });
+                }
+                // Exit Marker
+                if (trade.close_timestamp) {
+                    markers.push({
+                        time: trade.close_timestamp,
+                        position: trade.type === 'buy' ? 'aboveBar' : 'belowBar',
+                        color: trade.profit >= 0 ? '#2ecc71' : '#e74c3c',
+                        shape: 'pin',
+                        text: `CLOSE (#${trade.ticket}) $${trade.profit >= 0 ? '+' : ''}${trade.profit}`
+                    });
+                }
+            });
+        }
+
+        // Sort markers by time chronologically
+        markers.sort((a, b) => a.time - b.time);
+        candlestickSeries.setMarkers(markers);
+
+        chart.timeScale().fitContent();
+
+        backtestPriceChartRef.current = chart;
+        backtestCandlestickSeriesRef.current = candlestickSeries;
+
+        const handleResize = () => {
+            if (chart && container) {
+                chart.applyOptions({
+                    width: container.clientWidth,
+                    height: container.clientHeight
+                });
+            }
+        };
+
+        window.addEventListener('resize', handleResize);
+        const resizeTimeout = setTimeout(handleResize, 150);
+
+        return () => {
+            window.removeEventListener('resize', handleResize);
+            clearTimeout(resizeTimeout);
+            if (chart) {
+                try {
+                    chart.remove();
+                } catch (e) {}
+            }
+            backtestPriceChartRef.current = null;
+            backtestCandlestickSeriesRef.current = null;
+        };
+    }, [activeTab, backtestSubTab, backtestResult, backtestLoading]);
 
     // Resizing trigger for backtest chart on sidebars animation toggles
     useEffect(() => {
-        const resizeBacktestChart = () => {
+        const resizeBacktestCharts = () => {
             const chart = backtestChartRef.current;
             const container = backtestChartContainerRef.current;
             if (chart && container) {
@@ -1256,13 +1415,22 @@ const TradingApp = () => {
                     height: container.clientHeight
                 });
             }
+
+            const priceChart = backtestPriceChartRef.current;
+            const priceContainer = backtestPriceChartContainerRef.current;
+            if (priceChart && priceContainer) {
+                priceChart.applyOptions({
+                    width: priceContainer.clientWidth,
+                    height: priceContainer.clientHeight
+                });
+            }
         };
         
-        const intervals = [50, 100, 150, 200, 250, 300, 350];
-        const timers = intervals.map(ms => setTimeout(resizeBacktestChart, ms));
+        const intervals = [50, 100, 150, 200, 250, 300, 350, 500, 700];
+        const timers = intervals.map(ms => setTimeout(resizeBacktestCharts, ms));
         
         return () => timers.forEach(clearTimeout);
-    }, [isWatchlistCollapsed, isExecutionCollapsed, activeTab, isTerminalExpanded]);
+    }, [isWatchlistCollapsed, isExecutionCollapsed, activeTab, isTerminalExpanded, backtestSubTab, backtestResult]);
 
     // --- API Interactions ---
 
@@ -1335,6 +1503,111 @@ const TradingApp = () => {
         }
     };
 
+    const fetchAccounts = async () => {
+        try {
+            const res = await fetch("/api/mt5/accounts");
+            if (res.ok) {
+                const data = await res.json();
+                setAccounts(data);
+            }
+        } catch (err) {
+            console.error("Error fetching accounts:", err);
+        }
+    };
+
+    const handleSaveAccount = async (e) => {
+        if (e) e.preventDefault();
+        setAccountFormLoading(true);
+        setSettingsAlert(null);
+
+        const isEdit = !!accountForm.id;
+        const url = isEdit ? `/api/mt5/accounts/${accountForm.id}` : "/api/mt5/accounts";
+        const method = isEdit ? "PUT" : "POST";
+
+        try {
+            const payload = {
+                server: accountForm.server,
+                auto_connect: accountForm.auto_connect
+            };
+
+            if (!isEdit) {
+                payload.login = parseInt(accountForm.login);
+                payload.password = accountForm.password;
+                payload.is_active = accountForm.is_active;
+            } else if (accountForm.password && accountForm.password.trim() !== "") {
+                payload.password = accountForm.password;
+            }
+
+            const res = await fetch(url, {
+                method: method,
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+
+            const data = await res.json();
+            if (res.ok) {
+                setSettingsAlert({ type: "success", text: isEdit ? "แก้ไขข้อมูลพอร์ตสำเร็จเรียบร้อย!" : "เพิ่มพอร์ต MT5 Trader ใหม่ลงในระบบสำเร็จเรียบร้อย!" });
+                setAccountFormOpen(false);
+                setAccountForm({ id: null, login: "", password: "", server: "", auto_connect: false, is_active: false });
+                await fetchAccounts();
+                await fetchStatus();
+                await fetchAccount();
+                await fetchPositions();
+                setTimeout(() => setSettingsAlert(null), 3000);
+            } else {
+                setSettingsAlert({ type: "error", text: `ล้มเหลว: ${data.detail || "เกิดข้อผิดพลาดในการบันทึกข้อมูล"}` });
+            }
+        } catch (err) {
+            setSettingsAlert({ type: "error", text: `เกิดข้อผิดพลาด: ${err.message}` });
+        } finally {
+            setAccountFormLoading(false);
+        }
+    };
+
+    const handleActivateAccount = async (accountId, loginNum) => {
+        setSettingsLoading(true);
+        setSettingsAlert(null);
+        try {
+            const res = await fetch(`/api/mt5/accounts/${accountId}/activate`, { method: "POST" });
+            const data = await res.json();
+            if (res.ok) {
+                setSettingsAlert({ type: "success", text: `สลับเปิดใช้งานพอร์ตหมายเลข ${loginNum} และเชื่อมต่อ MT5 สำเร็จ!` });
+                await fetchAccounts();
+                await fetchStatus();
+                await fetchAccount();
+                await fetchPositions();
+                setTimeout(() => setSettingsAlert(null), 3000);
+            } else {
+                setSettingsAlert({ type: "error", text: `สลับบัญชีผิดพลาด: ${data.detail}` });
+            }
+        } catch (err) {
+            setSettingsAlert({ type: "error", text: `สลับบัญชีล้มเหลว: ${err.message}` });
+        } finally {
+            setSettingsLoading(false);
+        }
+    };
+
+    const handleDeleteAccount = async (accountId, loginNum) => {
+        if (!confirm(`คุณต้องการลบพอร์ต MT5 Trader หมายเลข ${loginNum} ออกจากระบบความปลอดภัยใช่หรือไม่?`)) return;
+        setSettingsAlert(null);
+        try {
+            const res = await fetch(`/api/mt5/accounts/${accountId}`, { method: "DELETE" });
+            const data = await res.json();
+            if (res.ok) {
+                setSettingsAlert({ type: "success", text: "ลบพอร์ตออกจากระบบจัดการความปลอดภัยเรียบร้อยแล้ว" });
+                await fetchAccounts();
+                await fetchStatus();
+                await fetchAccount();
+                await fetchPositions();
+                setTimeout(() => setSettingsAlert(null), 3000);
+            } else {
+                setSettingsAlert({ type: "error", text: `ลบพอร์ตล้มเหลว: ${data.detail}` });
+            }
+        } catch (err) {
+            setSettingsAlert({ type: "error", text: `เกิดข้อผิดพลาดในการลบพอร์ต: ${err.message}` });
+        }
+    };
+
     const fetchWatchlist = async () => {
         try {
             const res = await fetch("/api/watchlist");
@@ -1350,6 +1623,69 @@ const TradingApp = () => {
             }
         } catch (err) {
             console.error("Error fetching watchlist:", err);
+        }
+    };
+
+    const handleAddWatchlist = async () => {
+        if (!addWatchlistForm.symbol || !addWatchlistForm.symbol.trim()) {
+            alert("กรุณากรอกสัญลักษณ์สินค้า (Symbol)");
+            return;
+        }
+        if (!addWatchlistForm.name || !addWatchlistForm.name.trim()) {
+            alert("กรุณากรอกชื่อสินค้า (Name)");
+            return;
+        }
+        try {
+            const res = await fetch("/api/watchlist", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    symbol: addWatchlistForm.symbol.trim().toUpperCase(),
+                    name: addWatchlistForm.name.trim(),
+                    asset_type: addWatchlistForm.asset_type
+                })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                setAddWatchlistForm({ symbol: "", name: "", asset_type: "forex" });
+                setShowAddWatchlistForm(false);
+                await fetchWatchlist();
+            } else {
+                alert(`เพิ่มไม่สำเร็จ: ${data.detail || "เกิดข้อผิดพลาด"}`);
+            }
+        } catch (err) {
+            alert(`เกิดข้อผิดพลาด: ${err.message}`);
+        }
+    };
+
+    const handleDeleteWatchlist = async (symbolToDelete) => {
+        if (!confirm(`คุณต้องการลบ ${symbolToDelete} ออกจากกระดานเฝ้าดูใช่หรือไม่?`)) return;
+        try {
+            const res = await fetch(`/api/watchlist/${symbolToDelete}`, {
+                method: "DELETE"
+            });
+            const data = await res.json();
+            if (res.ok) {
+                // Determine new active symbol if deleting current active symbol
+                let newActive = null;
+                if (activeSymbol === symbolToDelete) {
+                    const remaining = watchlist.filter(item => item.symbol !== symbolToDelete);
+                    if (remaining.length > 0) {
+                        newActive = remaining[0];
+                    }
+                }
+                
+                await fetchWatchlist();
+                
+                if (newActive) {
+                    setActiveSymbol(newActive.symbol);
+                    setActiveAsset(newActive);
+                }
+            } else {
+                alert(`ลบไม่สำเร็จ: ${data.detail || "เกิดข้อผิดพลาด"}`);
+            }
+        } catch (err) {
+            alert(`เกิดข้อผิดพลาด: ${err.message}`);
         }
     };
 
@@ -1621,7 +1957,7 @@ const TradingApp = () => {
 
             const data = await res.json();
             if (res.ok) {
-                setSettingsAlert({ type: "success", text: "เชื่อมต่อบัญชี Exness สำเร็จแล้ว!" });
+                setSettingsAlert({ type: "success", text: "เชื่อมต่อบัญชี MT5 Trader สำเร็จแล้ว!" });
                 fetchStatus();
                 fetchAccount();
                 fetchPositions();
@@ -1639,9 +1975,9 @@ const TradingApp = () => {
         }
     };
 
-    // Disconnect Exness live and back to simulation mode
+    // Disconnect MT5 Trader live and back to simulation mode
     const handleDisconnectLive = async () => {
-        if (!confirm("คุณต้องการยกเลิกการเชื่อมบัญชี Exness และกลับเข้าสู่โหมดจำลอง (Simulation Mode) ใช่หรือไม่?")) return;
+        if (!confirm("คุณต้องการยกเลิกการเชื่อมบัญชี MT5 Trader และกลับเข้าสู่โหมดจำลอง (Simulation Mode) ใช่หรือไม่?")) return;
         try {
             const res = await fetch("/api/mt5/disconnect", { method: "POST" });
             if (res.ok) {
@@ -1721,7 +2057,7 @@ const TradingApp = () => {
             {
                 id: 'welcome',
                 sender: 'bot',
-                text: `สวัสดีครับ! ผมคือ **Giant Slayer AI Assistant** ผู้ช่วยเทรดอัจฉริยะส่วนตัวของคุณ 🤖📊\n\nผมสามารถช่วยเหลือคุณดึงข้อมูลแบบเรียลไทม์จาก Exness/MT5 และระบบบอทเทรดได้ครับ โดยคุณสามารถพิมพ์สอบถามผม หรือคลิกที่ตัวเลือกด่วนด้านล่างได้เลยครับ!`,
+                text: `สวัสดีครับ! ผมคือ **Giant Slayer AI Assistant** ผู้ช่วยเทรดอัจฉริยะส่วนตัวของคุณ 🤖📊\n\nผมสามารถช่วยเหลือคุณดึงข้อมูลแบบเรียลไทม์จาก MT5 Trader และระบบบอทเทรดได้ครับ โดยคุณสามารถพิมพ์สอบถามผม หรือคลิกที่ตัวเลือกด่วนด้านล่างได้เลยครับ!`,
                 timestamp: new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })
             }
         ]);
@@ -1836,7 +2172,12 @@ const TradingApp = () => {
             
             // Clean strategy suffix
             const cleanComment = t.comment ? t.comment.replace(/\s*\[.*?\]$/, '') : '';
-            const sourceName = cleanComment ? (cleanComment === 'Manual' || cleanComment === 'Simulation' || cleanComment === 'Exness Real Close' || cleanComment === 'Close via Antigravity MT5' ? 'เทรดเอง (Manual)' : cleanComment) : 'เทรดเอง (Manual)';
+            const isManualComment = (c) => {
+                if (!c) return true;
+                const lower = c.toLowerCase();
+                return lower === 'manual' || lower === 'simulation' || lower === 'เทรดเอง (manual)' || lower.includes('real close') || lower.includes('close via') || lower.includes('mt5 trader');
+            };
+            const sourceName = cleanComment ? (isManualComment(cleanComment) ? 'เทรดเอง (Manual)' : cleanComment) : 'เทรดเอง (Manual)';
             
             if (!botGroups[sourceName]) {
                 botGroups[sourceName] = { name: sourceName, totalTrades: 0, winCount: 0, loseCount: 0, totalProfit: 0.0 };
@@ -2589,104 +2930,245 @@ const TradingApp = () => {
 
                             {!backtestLoading && backtestResult && (
                                 <React.Fragment>
-                                    {/* Summary Stats Grid */}
-                                    <div className="backtest-stats-grid">
-                                        <div className="backtest-stat-card">
-                                            <span className="metric-label">กำไร/ขาดทุนสุทธิ (Net profit)</span>
-                                            <span className={`metric-value ${backtestResult.net_profit >= 0 ? 'price-up' : 'price-down'}`}>
-                                                {backtestResult.net_profit >= 0 ? '+' : ''}${backtestResult.net_profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                                            </span>
-                                        </div>
-                                        <div className="backtest-stat-card">
-                                            <span className="metric-label">อัตราการชนะ (Win Rate)</span>
-                                            <span className="metric-value" style={{ color: 'var(--accent-gold)' }}>
-                                                {backtestResult.win_rate}%
-                                            </span>
-                                            <span style={{ fontSize: '9px', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
-                                                ชนะ {backtestResult.wins_count} | แพ้ {backtestResult.losses_count}
-                                            </span>
-                                        </div>
-                                        <div className="backtest-stat-card">
-                                            <span className="metric-label">ออเดอร์ทั้งหมด (Total deals)</span>
-                                            <span className="metric-value" style={{ color: 'var(--text-primary)' }}>
-                                                {backtestResult.total_trades} ไม้
-                                            </span>
-                                        </div>
-                                        <div className="backtest-stat-card">
-                                            <span className="metric-label">บาลานซ์สุทธิ (Final Balance)</span>
-                                            <span className="metric-value" style={{ color: 'var(--bull-green)' }}>
-                                                ${backtestResult.final_balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                                            </span>
-                                        </div>
+                                    {/* Smart View Tabs inside Backtest */}
+                                    <div className="backtest-subtabs-bar">
+                                        <button
+                                            type="button"
+                                            className={`backtest-subtab-btn ${backtestSubTab === 'stats' ? 'active' : ''}`}
+                                            onClick={() => setBacktestSubTab('stats')}
+                                        >
+                                            <Icon name="trend-up" size={14} />
+                                            <span>📊 สรุปสถิติเชิงลึก (Performance Dashboard)</span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className={`backtest-subtab-btn ${backtestSubTab === 'price' ? 'active' : ''}`}
+                                            onClick={() => setBacktestSubTab('price')}
+                                        >
+                                            <Icon name="info" size={14} />
+                                            <span>🕯️ กราฟราคา & จุดเปิด-ปิด (Price & Trade Entries)</span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className={`backtest-subtab-btn ${backtestSubTab === 'equity' ? 'active' : ''}`}
+                                            onClick={() => setBacktestSubTab('equity')}
+                                        >
+                                            <Icon name="refresh" size={14} />
+                                            <span>📈 กราฟเงินทุน (Equity Curve)</span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className={`backtest-subtab-btn ${backtestSubTab === 'deals' ? 'active' : ''}`}
+                                            onClick={() => setBacktestSubTab('deals')}
+                                        >
+                                            <Icon name="history" size={14} />
+                                            <span>📜 บันทึกธุรกรรม (Deals Log Table)</span>
+                                        </button>
                                     </div>
 
-                                    {/* Equity Curve Chart Card */}
-                                    <div className="backtest-chart-card" style={{ height: '350px' }}>
-                                        <h4 style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                                            เส้นอัตราความเติบโตของเงินทุนพอร์ตจำลอง (Simulated Equity Growth Curve)
-                                        </h4>
-                                        <div ref={backtestChartContainerRef} className="backtest-chart-container"></div>
-                                    </div>
-
-                                    {/* Deals list table card */}
-                                    <div className="backtest-table-card">
-                                        <h4 style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                                            บันทึกประวัติธุรกรรมปิดการเทรดในการทดสอบย้อนหลัง (Backtest Deals History Log)
-                                        </h4>
-                                        
-                                        {backtestResult.trades.length === 0 ? (
-                                            <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '11.5px', padding: '20px 0' }}>
-                                                ไม่มีการเปิดธุรกรรมการเทรดใดๆ เกิดขึ้นในตลอดข้อมูลประวัติศาสตร์ lookback นี้
+                                    {/* Tab 1: Statistics Dashboard */}
+                                    {backtestSubTab === 'stats' && (
+                                        <React.Fragment>
+                                            {/* Summary Stats Grid */}
+                                            <div className="backtest-stats-grid">
+                                                <div className="backtest-stat-card">
+                                                    <span className="metric-label">กำไร/ขาดทุนสุทธิ (Net profit)</span>
+                                                    <span className={`metric-value ${backtestResult.net_profit >= 0 ? 'price-up' : 'price-down'}`}>
+                                                        {backtestResult.net_profit >= 0 ? '+' : ''}${backtestResult.net_profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                                    </span>
+                                                </div>
+                                                <div className="backtest-stat-card">
+                                                    <span className="metric-label">อัตราการชนะ (Win Rate)</span>
+                                                    <span className="metric-value" style={{ color: 'var(--accent-gold)' }}>
+                                                        {backtestResult.win_rate}%
+                                                    </span>
+                                                    <span style={{ fontSize: '9px', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
+                                                        ชนะ {backtestResult.wins_count} | แพ้ {backtestResult.losses_count}
+                                                    </span>
+                                                    <div className="winrate-gauge-container">
+                                                        <div className="winrate-gauge-bar">
+                                                            <div className="winrate-gauge-fill" style={{ width: `${backtestResult.win_rate}%` }}></div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="backtest-stat-card">
+                                                    <span className="metric-label">ออเดอร์ทั้งหมด (Total deals)</span>
+                                                    <span className="metric-value" style={{ color: 'var(--text-primary)' }}>
+                                                        {backtestResult.total_trades} ไม้
+                                                    </span>
+                                                </div>
+                                                <div className="backtest-stat-card">
+                                                    <span className="metric-label">บาลานซ์สุทธิ (Final Balance)</span>
+                                                    <span className="metric-value" style={{ color: 'var(--bull-green)' }}>
+                                                        ${backtestResult.final_balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                                    </span>
+                                                </div>
                                             </div>
-                                        ) : (
-                                            <div className="backtest-table-wrapper" style={{ maxHeight: '400px' }}>
-                                                <table className="trading-table">
-                                                    <thead>
-                                                        <tr>
-                                                            <th>Ticket</th>
-                                                            <th>ประเภท</th>
-                                                            <th>ขนาด Lot</th>
-                                                            <th>ราคาเปิด</th>
-                                                            <th>ราคาปิด</th>
-                                                            <th>เวลาเปิด</th>
-                                                            <th>เวลาปิด</th>
-                                                            <th>ผลลัพธ์</th>
-                                                            <th>กำไร (USD)</th>
-                                                            <th>เหตุผลปิดดีล</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody>
-                                                        {backtestResult.trades.map((t, idx) => (
-                                                            <tr key={`${t.ticket}-${idx}`}>
-                                                                <td style={{ fontFamily: 'monospace' }}>#{t.ticket}</td>
-                                                                <td>
-                                                                    <span className={t.type === 'buy' ? 'buy-badge' : 'sell-badge'}>
-                                                                        {t.type.toUpperCase()}
-                                                                    </span>
-                                                                </td>
-                                                                <td style={{ fontFamily: 'monospace' }}>{backtestForm.lot_size}</td>
-                                                                <td style={{ fontFamily: 'monospace' }}>{t.open_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-                                                                <td style={{ fontFamily: 'monospace' }}>{t.close_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-                                                                <td style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{t.open_time}</td>
-                                                                <td style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>{t.close_time}</td>
-                                                                <td>
-                                                                    <span className={t.result === 'win' ? 'result-win-badge' : 'result-loss-badge'}>
-                                                                        {t.result.toUpperCase()}
-                                                                    </span>
-                                                                </td>
-                                                                <td className={t.profit >= 0 ? 'price-up' : 'price-down'} style={{ fontWeight: 700, fontFamily: 'monospace' }}>
-                                                                    {t.profit >= 0 ? '+' : ''}${t.profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                                                                </td>
-                                                                <td style={{ fontWeight: 600, fontSize: '11px', color: t.reason === 'Take Profit' ? 'var(--bull-green)' : t.reason === 'Stop Loss' ? 'var(--bear-red)' : 'var(--text-secondary)' }}>
-                                                                    {t.reason}
-                                                                </td>
+
+                                            {/* Detailed breakdown dashboard cards */}
+                                            <div className="backtest-detailed-grid">
+                                                {/* Card 1: Returns Analysis */}
+                                                <div className="backtest-detail-card">
+                                                    <h5>📊 วิเคราะห์ผลตอบแทน (Returns Analysis)</h5>
+                                                    <div className="backtest-detail-row">
+                                                        <span className="backtest-detail-label">กำไรรวมทั้งหมด (Gross Profit)</span>
+                                                        <span className="backtest-detail-value price-up">+${backtestResult.gross_profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                                    </div>
+                                                    <div className="backtest-detail-row">
+                                                        <span className="backtest-detail-label">ขาดทุนรวมทั้งหมด (Gross Loss)</span>
+                                                        <span className="backtest-detail-value price-down">-${backtestResult.gross_loss.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                                    </div>
+                                                    <div className="backtest-detail-row">
+                                                        <span className="backtest-detail-label">ตัวประกอบกำไร (Profit Factor)</span>
+                                                        <span className="backtest-detail-value" style={{ 
+                                                            color: backtestResult.profit_factor >= 1.5 ? 'var(--bull-green)' : backtestResult.profit_factor >= 1.0 ? 'var(--accent-gold)' : 'var(--bear-red)',
+                                                            fontWeight: 'bold'
+                                                        }}>
+                                                            {backtestResult.profit_factor}
+                                                        </span>
+                                                    </div>
+                                                    <div className="backtest-detail-row">
+                                                        <span className="backtest-detail-label">ความคาดหวังดีลเฉลี่ย (Expectancy)</span>
+                                                        <span className={`backtest-detail-value ${backtestResult.expectancy >= 0 ? 'price-up' : 'price-down'}`}>
+                                                            {backtestResult.expectancy >= 0 ? '+' : ''}${backtestResult.expectancy.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                                        </span>
+                                                    </div>
+                                                </div>
+
+                                                {/* Card 2: Risk & Drawdown */}
+                                                <div className="backtest-detail-card">
+                                                    <h5>🛡️ การควบคุมความเสี่ยง (Risk & Drawdown)</h5>
+                                                    <div className="backtest-detail-row">
+                                                        <span className="backtest-detail-label">การย่อตัวลึกสุด (Max Drawdown)</span>
+                                                        <span className="backtest-detail-value price-down">-${backtestResult.max_drawdown.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                                    </div>
+                                                    <div className="backtest-detail-row">
+                                                        <span className="backtest-detail-label">เปอร์เซ็นต์ย่อตัวลึกสุด (Max Drawdown %)</span>
+                                                        <span className="backtest-detail-value price-down">-{backtestResult.max_drawdown_percent}%</span>
+                                                    </div>
+                                                    <div className="backtest-detail-row">
+                                                        <span className="backtest-detail-label">เงินตั้งต้นจำลอง (Initial Balance)</span>
+                                                        <span className="backtest-detail-value" style={{ color: 'var(--text-secondary)' }}>${backtestResult.initial_balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                                    </div>
+                                                    <div className="backtest-detail-row">
+                                                        <span className="backtest-detail-label">ระดับความเสี่ยงพอร์ต (Risk Rating)</span>
+                                                        <span className="backtest-detail-value" style={{ 
+                                                            color: backtestResult.max_drawdown_percent <= 10 ? 'var(--bull-green)' : backtestResult.max_drawdown_percent <= 20 ? 'var(--accent-gold)' : 'var(--bear-red)'
+                                                        }}>
+                                                            {backtestResult.max_drawdown_percent <= 10 ? 'ต่ำ (Low Risk)' : backtestResult.max_drawdown_percent <= 20 ? 'ปานกลาง (Medium Risk)' : 'สูง (High Drawdown!)'}
+                                                        </span>
+                                                    </div>
+                                                </div>
+
+                                                {/* Card 3: Trade Statistics */}
+                                                <div className="backtest-detail-card">
+                                                    <h5>🧬 พฤติกรรมดีลการเทรด (Trade Statistics)</h5>
+                                                    <div className="backtest-detail-row">
+                                                        <span className="backtest-detail-label">เฉลี่ยต่อดีลกำไร (Average Win)</span>
+                                                        <span className="backtest-detail-value price-up">+${backtestResult.avg_win.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                                    </div>
+                                                    <div className="backtest-detail-row">
+                                                        <span className="backtest-detail-label">เฉลี่ยต่อดีลขาดทุน (Average Loss)</span>
+                                                        <span className="backtest-detail-value price-down">-${backtestResult.avg_loss.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                                    </div>
+                                                    <div className="backtest-detail-row">
+                                                        <span className="backtest-detail-label">อัตราส่วนเฉลี่ย Win/Loss RR</span>
+                                                        <span className="backtest-detail-value">
+                                                            {backtestResult.avg_loss > 0 ? (backtestResult.avg_win / backtestResult.avg_loss).toFixed(2) : backtestResult.avg_win.toFixed(2)}
+                                                        </span>
+                                                    </div>
+                                                    <div className="backtest-detail-row">
+                                                        <span className="backtest-detail-label">สตรีคชนะ / แพ้ ต่อเนื่องสูงสุด</span>
+                                                        <span className="backtest-detail-value">
+                                                            <span className="price-up">{backtestResult.max_consecutive_wins} Wins</span> / <span className="price-down">{backtestResult.max_consecutive_losses} Losses</span>
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </React.Fragment>
+                                    )}
+
+                                    {/* Tab 2: Candlestick & Entries Chart */}
+                                    {backtestSubTab === 'price' && (
+                                        <div className="backtest-chart-card" style={{ height: '500px', display: 'flex', flexDirection: 'column' }}>
+                                            <h4 style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                                🕯️ กราฟราคาสินทรัพย์จำลองและจุดเข้าเทรดจริง (Asset Candlestick & Entries Chart)
+                                            </h4>
+                                            <div ref={backtestPriceChartContainerRef} className="backtest-chart-container" style={{ flex: 1, height: '100%' }}></div>
+                                        </div>
+                                    )}
+
+                                    {/* Tab 3: Equity Curve Chart */}
+                                    {backtestSubTab === 'equity' && (
+                                        <div className="backtest-chart-card" style={{ height: '500px', display: 'flex', flexDirection: 'column' }}>
+                                            <h4 style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                                📈 กราฟแสดงเส้นความเติบโตของทุนสำรองสุทธิ (Simulated Equity Growth Curve)
+                                            </h4>
+                                            <div ref={backtestChartContainerRef} className="backtest-chart-container" style={{ flex: 1, height: '100%' }}></div>
+                                        </div>
+                                    )}
+
+                                    {/* Tab 4: Deals list table card */}
+                                    {backtestSubTab === 'deals' && (
+                                        <div className="backtest-table-card" style={{ marginTop: '0' }}>
+                                            <h4 style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                                📜 บันทึกธุรกรรมประวัติศาสตร์การซื้อขายย้อนหลังอย่างละเอียด (Backtest Deals History Log)
+                                            </h4>
+                                            
+                                            {backtestResult.trades.length === 0 ? (
+                                                <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '11.5px', padding: '20px 0' }}>
+                                                    ไม่มีการเปิดธุรกรรมการเทรดใดๆ เกิดขึ้นในตลอดข้อมูลประวัติศาสตร์ lookback นี้
+                                                </div>
+                                            ) : (
+                                                <div className="backtest-table-wrapper" style={{ maxHeight: '450px' }}>
+                                                    <table className="trading-table">
+                                                        <thead>
+                                                            <tr>
+                                                                <th>Ticket</th>
+                                                                <th>ประเภท</th>
+                                                                <th>ขนาด Lot</th>
+                                                                <th>ราคาเปิด</th>
+                                                                <th>ราคาปิด</th>
+                                                                <th>เวลาเปิด</th>
+                                                                <th>เวลาปิด</th>
+                                                                <th>ผลลัพธ์</th>
+                                                                <th>กำไร (USD)</th>
+                                                                <th>เหตุผลปิดดีล</th>
                                                             </tr>
-                                                        ))}
-                                                    </tbody>
-                                                </table>
-                                            </div>
-                                        )}
-                                    </div>
+                                                        </thead>
+                                                        <tbody>
+                                                            {backtestResult.trades.map((t, idx) => (
+                                                                <tr key={`${t.ticket}-${idx}`}>
+                                                                    <td style={{ fontFamily: 'monospace' }}>#{t.ticket}</td>
+                                                                    <td>
+                                                                        <span className={t.type === 'buy' ? 'buy-badge' : 'sell-badge'}>
+                                                                            {t.type.toUpperCase()}
+                                                                        </span>
+                                                                    </td>
+                                                                    <td style={{ fontFamily: 'monospace' }}>{backtestForm.lot_size}</td>
+                                                                    <td style={{ fontFamily: 'monospace' }}>{t.open_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                                                                    <td style={{ fontFamily: 'monospace' }}>{t.close_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                                                                    <td style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{t.open_time}</td>
+                                                                    <td style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>{t.close_time}</td>
+                                                                    <td>
+                                                                        <span className={t.result === 'win' ? 'result-win-badge' : 'result-loss-badge'}>
+                                                                            {t.result.toUpperCase()}
+                                                                        </span>
+                                                                    </td>
+                                                                    <td className={t.profit >= 0 ? 'price-up' : 'price-down'} style={{ fontWeight: 700, fontFamily: 'monospace' }}>
+                                                                        {t.profit >= 0 ? '+' : ''}${t.profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                                                    </td>
+                                                                    <td style={{ fontWeight: 600, fontSize: '11px', color: t.reason === 'Take Profit' ? 'var(--bull-green)' : t.reason === 'Stop Loss' ? 'var(--bear-red)' : 'var(--text-secondary)' }}>
+                                                                        {t.reason}
+                                                                    </td>
+                                                                </tr>
+                                                            ))}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
                                 </React.Fragment>
                             )}
                         </div>
@@ -2704,7 +3186,7 @@ const TradingApp = () => {
                     <div className="brand-logo">G</div>
                     <div>
                         <h1 className="brand-title">GIANT SLAYER</h1>
-                        <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600 }}>MT5 EXNESS TRADING PRO</span>
+                        <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600 }}>MT5 TRADER PRO</span>
                     </div>
                 </div>
 
@@ -2800,10 +3282,107 @@ const TradingApp = () => {
                         transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
                     }}
                 >
-                    <div className="sidebar-header">
-                        <h3 style={{ fontSize: '14px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>ตลาดซื้อขาย (Markets)</h3>
-                        <Icon name="trend-up" size={16} style={{ color: 'var(--accent-gold)' }} />
+                    <div className="sidebar-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <h3 style={{ fontSize: '14px', textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>ตลาดซื้อขาย (Markets)</h3>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <button 
+                                onClick={() => setShowAddWatchlistForm(!showAddWatchlistForm)}
+                                style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    color: showAddWatchlistForm ? 'var(--accent-gold)' : 'var(--text-secondary)',
+                                    cursor: 'pointer',
+                                    padding: '4px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    transition: 'color 0.2s'
+                                }}
+                                title="เพิ่มสินค้าเทรด (Add Symbol)"
+                            >
+                                <Icon name="plus" size={16} />
+                            </button>
+                        </div>
                     </div>
+
+                    {showAddWatchlistForm && (
+                        <div style={{
+                            padding: '12px',
+                            background: 'rgba(255, 255, 255, 0.02)',
+                            borderBottom: '1px solid var(--border-color)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '8px'
+                        }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: '8px' }}>
+                                <input 
+                                    type="text" 
+                                    placeholder="เช่น GBPUSD" 
+                                    value={addWatchlistForm.symbol}
+                                    onChange={(e) => setAddWatchlistForm({ ...addWatchlistForm, symbol: e.target.value.toUpperCase() })}
+                                    style={{
+                                        background: 'rgba(0,0,0,0.2)',
+                                        border: '1px solid rgba(255,255,255,0.08)',
+                                        borderRadius: '4px',
+                                        color: '#fff',
+                                        padding: '6px 8px',
+                                        fontSize: '11px',
+                                        textTransform: 'uppercase'
+                                    }}
+                                />
+                                <input 
+                                    type="text" 
+                                    placeholder="ชื่อ เช่น Pound Sterling" 
+                                    value={addWatchlistForm.name}
+                                    onChange={(e) => setAddWatchlistForm({ ...addWatchlistForm, name: e.target.value })}
+                                    style={{
+                                        background: 'rgba(0,0,0,0.2)',
+                                        border: '1px solid rgba(255,255,255,0.08)',
+                                        borderRadius: '4px',
+                                        color: '#fff',
+                                        padding: '6px 8px',
+                                        fontSize: '11px'
+                                    }}
+                                />
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <select
+                                    value={addWatchlistForm.asset_type}
+                                    onChange={(e) => setAddWatchlistForm({ ...addWatchlistForm, asset_type: e.target.value })}
+                                    style={{
+                                        background: 'rgba(0,0,0,0.2)',
+                                        border: '1px solid rgba(255,255,255,0.08)',
+                                        borderRadius: '4px',
+                                        color: 'var(--text-secondary)',
+                                        padding: '4px 6px',
+                                        fontSize: '11px',
+                                        outline: 'none'
+                                    }}
+                                >
+                                    <option value="forex">Forex</option>
+                                    <option value="gold">Gold/Metal</option>
+                                    <option value="crypto">Crypto</option>
+                                    <option value="stock">Stock</option>
+                                </select>
+                                <div style={{ display: 'flex', gap: '6px' }}>
+                                    <button 
+                                        className="btn-secondary" 
+                                        onClick={() => setShowAddWatchlistForm(false)}
+                                        style={{ margin: 0, padding: '4px 10px', fontSize: '10px', height: 'fit-content' }}
+                                    >
+                                        ยกเลิก
+                                    </button>
+                                    <button 
+                                        className="btn-primary" 
+                                        onClick={handleAddWatchlist}
+                                        style={{ margin: 0, padding: '4px 12px', fontSize: '10px', background: 'var(--accent-gold)', color: '#000', fontWeight: 'bold', height: 'fit-content' }}
+                                    >
+                                        เพิ่ม
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                     
                     <div className="watchlist-items">
                         {watchlist.map((item) => {
@@ -2817,18 +3396,59 @@ const TradingApp = () => {
                                         setActiveSymbol(item.symbol);
                                         setActiveAsset(item);
                                     }}
+                                    style={{
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        alignItems: 'center',
+                                        position: 'relative'
+                                    }}
                                 >
-                                    <div className="asset-details">
-                                        <span className="asset-symbol">{item.symbol}</span>
+                                    <div className="asset-details" style={{ flex: 1, overflow: 'hidden' }}>
+                                        <span className="asset-symbol" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                            {item.symbol}
+                                        </span>
                                         <span className="asset-name">{item.name}</span>
                                     </div>
-                                    <div className="asset-price-box">
-                                        <span className={`asset-price ${changeColor}`}>
-                                            {pr.bid > 0 ? pr.bid.toLocaleString('en-US', { minimumFractionDigits: item.symbol === "EURUSD" ? 5 : 2 }) : '...'}
-                                        </span>
-                                        <span className={`asset-change ${changeColor}`}>
-                                            {parseFloat(pr.change) >= 0 ? '+' : ''}{pr.change}%
-                                        </span>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                        <div className="asset-price-box">
+                                            <span className={`asset-price ${changeColor}`}>
+                                                {pr.bid > 0 ? pr.bid.toLocaleString('en-US', { minimumFractionDigits: item.symbol === "EURUSD" ? 5 : 2 }) : '...'}
+                                            </span>
+                                            <span className={`asset-change ${changeColor}`}>
+                                                {parseFloat(pr.change) >= 0 ? '+' : ''}{pr.change}%
+                                            </span>
+                                        </div>
+                                        <button 
+                                            className="delete-watchlist-btn"
+                                            style={{
+                                                background: 'none',
+                                                border: 'none',
+                                                color: 'var(--text-muted)',
+                                                cursor: 'pointer',
+                                                padding: '4px',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                borderRadius: '4px',
+                                                transition: 'all 0.2s',
+                                                opacity: 0.5
+                                            }}
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleDeleteWatchlist(item.symbol);
+                                            }}
+                                            onMouseEnter={(e) => {
+                                                e.currentTarget.style.color = 'var(--bear-red)';
+                                                e.currentTarget.style.opacity = 1;
+                                            }}
+                                            onMouseLeave={(e) => {
+                                                e.currentTarget.style.color = 'var(--text-muted)';
+                                                e.currentTarget.style.opacity = 0.5;
+                                            }}
+                                            title={`ลบ ${item.symbol}`}
+                                        >
+                                            <Icon name="trash" size={13} />
+                                        </button>
                                     </div>
                                 </div>
                             );
@@ -3542,9 +4162,16 @@ const TradingApp = () => {
                                         </thead>
                                         <tbody>
                                             {tradeHistory.map((t, idx) => {
-                                                const isManual = !t.comment || t.comment === 'Manual' || t.comment === 'เทรดเอง (Manual)' || t.comment === 'Exness Real Close' || t.comment === 'Simulation' || t.comment === 'Close via Antigravity MT5';
+                                                const isManual = !t.comment || (() => {
+                                                    const l = t.comment.toLowerCase();
+                                                    return l === 'manual' || l === 'เทรดเอง (manual)' || l === 'simulation' || l.includes('real close') || l.includes('close via') || l.includes('mt5 trader');
+                                                })();
                                                 const cleanComment = t.comment ? t.comment.replace(/\s*\[.*?\]$/, '') : '';
-                                                const sourceName = cleanComment ? (cleanComment === 'Manual' || cleanComment === 'Simulation' || cleanComment === 'Exness Real Close' || cleanComment === 'Close via Antigravity MT5' ? 'เทรดเอง (Manual)' : cleanComment) : 'เทรดเอง (Manual)';
+                                                const sourceName = cleanComment ? (() => {
+                                                    const l = cleanComment.toLowerCase();
+                                                    const isManualComment = l === 'manual' || l === 'simulation' || l === 'เทรดเอง (manual)' || l.includes('real close') || l.includes('close via') || l.includes('mt5 trader');
+                                                    return isManualComment ? 'เทรดเอง (Manual)' : cleanComment;
+                                                })() : 'เทรดเอง (Manual)';
                                                 
                                                 const decimals = t.symbol && t.symbol.includes('EURUSD') ? 5 : 2;
                                                 const formatP = (val) => {
@@ -4166,104 +4793,245 @@ const TradingApp = () => {
 
                                         {!backtestLoading && backtestResult && (
                                             <React.Fragment>
-                                                {/* Summary Stats Grid */}
-                                                <div className="backtest-stats-grid">
-                                                    <div className="backtest-stat-card">
-                                                        <span className="metric-label">กำไร/ขาดทุนสุทธิ (Net profit)</span>
-                                                        <span className={`metric-value ${backtestResult.net_profit >= 0 ? 'price-up' : 'price-down'}`}>
-                                                            {backtestResult.net_profit >= 0 ? '+' : ''}${backtestResult.net_profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                                                        </span>
-                                                    </div>
-                                                    <div className="backtest-stat-card">
-                                                        <span className="metric-label">อัตราการชนะ (Win Rate)</span>
-                                                        <span className="metric-value" style={{ color: 'var(--accent-gold)' }}>
-                                                            {backtestResult.win_rate}%
-                                                        </span>
-                                                        <span style={{ fontSize: '9px', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
-                                                            ชนะ {backtestResult.wins_count} | แพ้ {backtestResult.losses_count}
-                                                        </span>
-                                                    </div>
-                                                    <div className="backtest-stat-card">
-                                                        <span className="metric-label">ออเดอร์ทั้งหมด (Total deals)</span>
-                                                        <span className="metric-value" style={{ color: 'var(--text-primary)' }}>
-                                                            {backtestResult.total_trades} ไม้
-                                                        </span>
-                                                    </div>
-                                                    <div className="backtest-stat-card">
-                                                        <span className="metric-label">บาลานซ์สุทธิ (Final Balance)</span>
-                                                        <span className="metric-value" style={{ color: 'var(--bull-green)' }}>
-                                                            ${backtestResult.final_balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                                                        </span>
-                                                    </div>
+                                                {/* Smart View Tabs inside Backtest */}
+                                                <div className="backtest-subtabs-bar">
+                                                    <button
+                                                        type="button"
+                                                        className={`backtest-subtab-btn ${backtestSubTab === 'stats' ? 'active' : ''}`}
+                                                        onClick={() => setBacktestSubTab('stats')}
+                                                    >
+                                                        <Icon name="trend-up" size={14} />
+                                                        <span>📊 สรุปสถิติเชิงลึก (Performance Dashboard)</span>
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        className={`backtest-subtab-btn ${backtestSubTab === 'price' ? 'active' : ''}`}
+                                                        onClick={() => setBacktestSubTab('price')}
+                                                    >
+                                                        <Icon name="info" size={14} />
+                                                        <span>🕯️ กราฟราคา & จุดเปิด-ปิด (Price & Trade Entries)</span>
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        className={`backtest-subtab-btn ${backtestSubTab === 'equity' ? 'active' : ''}`}
+                                                        onClick={() => setBacktestSubTab('equity')}
+                                                    >
+                                                        <Icon name="refresh" size={14} />
+                                                        <span>📈 กราฟเงินทุน (Equity Curve)</span>
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        className={`backtest-subtab-btn ${backtestSubTab === 'deals' ? 'active' : ''}`}
+                                                        onClick={() => setBacktestSubTab('deals')}
+                                                    >
+                                                        <Icon name="history" size={14} />
+                                                        <span>📜 บันทึกธุรกรรม (Deals Log Table)</span>
+                                                    </button>
                                                 </div>
 
-                                                {/* Equity Curve Chart Card */}
-                                                <div className="backtest-chart-card">
-                                                    <h4 style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                                                        เส้นอัตราความเติบโตของเงินทุนพอร์ตจำลอง (Simulated Equity Growth Curve)
-                                                    </h4>
-                                                    <div ref={backtestChartContainerRef} className="backtest-chart-container"></div>
-                                                </div>
-
-                                                {/* Deals list table card */}
-                                                <div className="backtest-table-card">
-                                                    <h4 style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                                                        บันทึกประวัติธุรกรรมปิดการเทรดในการทดสอบย้อนหลัง (Backtest Deals History Log)
-                                                    </h4>
-                                                    
-                                                    {backtestResult.trades.length === 0 ? (
-                                                        <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '11.5px', padding: '20px 0' }}>
-                                                            ไม่มีการเปิดธุรกรรมการเทรดใดๆ เกิดขึ้นในตลอดข้อมูลประวัติศาสตร์ lookback นี้
+                                                {/* Tab 1: Statistics Dashboard */}
+                                                {backtestSubTab === 'stats' && (
+                                                    <React.Fragment>
+                                                        {/* Summary Stats Grid */}
+                                                        <div className="backtest-stats-grid">
+                                                            <div className="backtest-stat-card">
+                                                                <span className="metric-label">กำไร/ขาดทุนสุทธิ (Net profit)</span>
+                                                                <span className={`metric-value ${backtestResult.net_profit >= 0 ? 'price-up' : 'price-down'}`}>
+                                                                    {backtestResult.net_profit >= 0 ? '+' : ''}${backtestResult.net_profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                                                </span>
+                                                            </div>
+                                                            <div className="backtest-stat-card">
+                                                                <span className="metric-label">อัตราการชนะ (Win Rate)</span>
+                                                                <span className="metric-value" style={{ color: 'var(--accent-gold)' }}>
+                                                                    {backtestResult.win_rate}%
+                                                                </span>
+                                                                <span style={{ fontSize: '9px', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
+                                                                    ชนะ {backtestResult.wins_count} | แพ้ {backtestResult.losses_count}
+                                                                </span>
+                                                                <div className="winrate-gauge-container">
+                                                                    <div className="winrate-gauge-bar">
+                                                                        <div className="winrate-gauge-fill" style={{ width: `${backtestResult.win_rate}%` }}></div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                            <div className="backtest-stat-card">
+                                                                <span className="metric-label">ออเดอร์ทั้งหมด (Total deals)</span>
+                                                                <span className="metric-value" style={{ color: 'var(--text-primary)' }}>
+                                                                    {backtestResult.total_trades} ไม้
+                                                                </span>
+                                                            </div>
+                                                            <div className="backtest-stat-card">
+                                                                <span className="metric-label">บาลานซ์สุทธิ (Final Balance)</span>
+                                                                <span className="metric-value" style={{ color: 'var(--bull-green)' }}>
+                                                                    ${backtestResult.final_balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                                                </span>
+                                                            </div>
                                                         </div>
-                                                    ) : (
-                                                        <div className="backtest-table-wrapper">
-                                                            <table className="trading-table">
-                                                                <thead>
-                                                                    <tr>
-                                                                        <th>Ticket</th>
-                                                                        <th>ประเภท</th>
-                                                                        <th>ขนาด Lot</th>
-                                                                        <th>ราคาเปิด</th>
-                                                                        <th>ราคาปิด</th>
-                                                                        <th>เวลาเปิด</th>
-                                                                        <th>เวลาปิด</th>
-                                                                        <th>ผลลัพธ์</th>
-                                                                        <th>กำไร (USD)</th>
-                                                                        <th>เหตุผลปิดดีล</th>
-                                                                    </tr>
-                                                                </thead>
-                                                                <tbody>
-                                                                    {backtestResult.trades.map((t, idx) => (
-                                                                        <tr key={`${t.ticket}-${idx}`}>
-                                                                            <td style={{ fontFamily: 'monospace' }}>#{t.ticket}</td>
-                                                                            <td>
-                                                                                <span className={t.type === 'buy' ? 'buy-badge' : 'sell-badge'}>
-                                                                                    {t.type.toUpperCase()}
-                                                                                </span>
-                                                                            </td>
-                                                                            <td style={{ fontFamily: 'monospace' }}>{backtestForm.lot_size}</td>
-                                                                            <td style={{ fontFamily: 'monospace' }}>{t.open_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-                                                                            <td style={{ fontFamily: 'monospace' }}>{t.close_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-                                                                            <td style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{t.open_time}</td>
-                                                                            <td style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>{t.close_time}</td>
-                                                                            <td>
-                                                                                <span className={t.result === 'win' ? 'result-win-badge' : 'result-loss-badge'}>
-                                                                                    {t.result.toUpperCase()}
-                                                                                </span>
-                                                                            </td>
-                                                                            <td className={t.profit >= 0 ? 'price-up' : 'price-down'} style={{ fontWeight: 700, fontFamily: 'monospace' }}>
-                                                                                {t.profit >= 0 ? '+' : ''}${t.profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                                                                            </td>
-                                                                            <td style={{ fontWeight: 600, fontSize: '11px', color: t.reason === 'Take Profit' ? 'var(--bull-green)' : t.reason === 'Stop Loss' ? 'var(--bear-red)' : 'var(--text-secondary)' }}>
-                                                                                {t.reason}
-                                                                            </td>
+
+                                                        {/* Detailed breakdown dashboard cards */}
+                                                        <div className="backtest-detailed-grid">
+                                                            {/* Card 1: Returns Analysis */}
+                                                            <div className="backtest-detail-card">
+                                                                <h5>📊 วิเคราะห์ผลตอบแทน (Returns Analysis)</h5>
+                                                                <div className="backtest-detail-row">
+                                                                    <span className="backtest-detail-label">กำไรรวมทั้งหมด (Gross Profit)</span>
+                                                                    <span className="backtest-detail-value price-up">+${backtestResult.gross_profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                                                </div>
+                                                                <div className="backtest-detail-row">
+                                                                    <span className="backtest-detail-label">ขาดทุนรวมทั้งหมด (Gross Loss)</span>
+                                                                    <span className="backtest-detail-value price-down">-${backtestResult.gross_loss.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                                                </div>
+                                                                <div className="backtest-detail-row">
+                                                                    <span className="backtest-detail-label">ตัวประกอบกำไร (Profit Factor)</span>
+                                                                    <span className="backtest-detail-value" style={{ 
+                                                                        color: backtestResult.profit_factor >= 1.5 ? 'var(--bull-green)' : backtestResult.profit_factor >= 1.0 ? 'var(--accent-gold)' : 'var(--bear-red)',
+                                                                        fontWeight: 'bold'
+                                                                    }}>
+                                                                        {backtestResult.profit_factor}
+                                                                    </span>
+                                                                </div>
+                                                                <div className="backtest-detail-row">
+                                                                    <span className="backtest-detail-label">ความคาดหวังดีลเฉลี่ย (Expectancy)</span>
+                                                                    <span className={`backtest-detail-value ${backtestResult.expectancy >= 0 ? 'price-up' : 'price-down'}`}>
+                                                                        {backtestResult.expectancy >= 0 ? '+' : ''}${backtestResult.expectancy.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+
+                                                             {/* Card 2: Risk & Drawdown */}
+                                                            <div className="backtest-detail-card">
+                                                                <h5>🛡️ การควบคุมความเสี่ยง (Risk & Drawdown)</h5>
+                                                                <div className="backtest-detail-row">
+                                                                    <span className="backtest-detail-label">การย่อตัวลึกสุด (Max Drawdown)</span>
+                                                                    <span className="backtest-detail-value price-down">-${backtestResult.max_drawdown.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                                                </div>
+                                                                <div className="backtest-detail-row">
+                                                                    <span className="backtest-detail-label">เปอร์เซ็นต์ย่อตัวลึกสุด (Max Drawdown %)</span>
+                                                                    <span className="backtest-detail-value price-down">-{backtestResult.max_drawdown_percent}%</span>
+                                                                </div>
+                                                                <div className="backtest-detail-row">
+                                                                    <span className="backtest-detail-label">เงินตั้งต้นจำลอง (Initial Balance)</span>
+                                                                    <span className="backtest-detail-value" style={{ color: 'var(--text-secondary)' }}>${backtestResult.initial_balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                                                </div>
+                                                                <div className="backtest-detail-row">
+                                                                    <span className="backtest-detail-label">ระดับความเสี่ยงพอร์ต (Risk Rating)</span>
+                                                                    <span className="backtest-detail-value" style={{ 
+                                                                        color: backtestResult.max_drawdown_percent <= 10 ? 'var(--bull-green)' : backtestResult.max_drawdown_percent <= 20 ? 'var(--accent-gold)' : 'var(--bear-red)'
+                                                                    }}>
+                                                                        {backtestResult.max_drawdown_percent <= 10 ? 'ต่ำ (Low Risk)' : backtestResult.max_drawdown_percent <= 20 ? 'ปานกลาง (Medium Risk)' : 'สูง (High Drawdown!)'}
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+
+                                                            {/* Card 3: Trade Statistics */}
+                                                            <div className="backtest-detail-card">
+                                                                <h5>🧬 พฤติกรรมดีลการเทรด (Trade Statistics)</h5>
+                                                                <div className="backtest-detail-row">
+                                                                    <span className="backtest-detail-label">เฉลี่ยต่อดีลกำไร (Average Win)</span>
+                                                                    <span className="backtest-detail-value price-up">+${backtestResult.avg_win.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                                                </div>
+                                                                <div className="backtest-detail-row">
+                                                                    <span className="backtest-detail-label">เฉลี่ยต่อดีลขาดทุน (Average Loss)</span>
+                                                                    <span className="backtest-detail-value price-down">-${backtestResult.avg_loss.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                                                </div>
+                                                                <div className="backtest-detail-row">
+                                                                    <span className="backtest-detail-label">อัตราส่วนเฉลี่ย Win/Loss RR</span>
+                                                                    <span className="backtest-detail-value">
+                                                                        {backtestResult.avg_loss > 0 ? (backtestResult.avg_win / backtestResult.avg_loss).toFixed(2) : backtestResult.avg_win.toFixed(2)}
+                                                                    </span>
+                                                                </div>
+                                                                <div className="backtest-detail-row">
+                                                                    <span className="backtest-detail-label">สตรีคชนะ / แพ้ ต่อเนื่องสูงสุด</span>
+                                                                    <span className="backtest-detail-value">
+                                                                        <span className="price-up">{backtestResult.max_consecutive_wins} Wins</span> / <span className="price-down">{backtestResult.max_consecutive_losses} Losses</span>
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </React.Fragment>
+                                                )}
+
+                                                {/* Tab 2: Candlestick & Entries Chart */}
+                                                {backtestSubTab === 'price' && (
+                                                    <div className="backtest-chart-card" style={{ height: '500px', display: 'flex', flexDirection: 'column' }}>
+                                                        <h4 style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                                            🕯️ กราฟราคาสินทรัพย์จำลองและจุดเข้าเทรดจริง (Asset Candlestick & Entries Chart)
+                                                        </h4>
+                                                        <div ref={backtestPriceChartContainerRef} className="backtest-chart-container" style={{ flex: 1, height: '100%' }}></div>
+                                                    </div>
+                                                )}
+
+                                                {/* Tab 3: Equity Curve Chart */}
+                                                {backtestSubTab === 'equity' && (
+                                                    <div className="backtest-chart-card" style={{ height: '500px', display: 'flex', flexDirection: 'column' }}>
+                                                        <h4 style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                                            📈 กราฟแสดงเส้นความเติบโตของทุนสำรองสุทธิ (Simulated Equity Growth Curve)
+                                                        </h4>
+                                                        <div ref={backtestChartContainerRef} className="backtest-chart-container" style={{ flex: 1, height: '100%' }}></div>
+                                                    </div>
+                                                )}
+
+                                                {/* Tab 4: Deals list table card */}
+                                                {backtestSubTab === 'deals' && (
+                                                    <div className="backtest-table-card" style={{ marginTop: '0' }}>
+                                                        <h4 style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                                            📜 บันทึกธุรกรรมประวัติศาสตร์การซื้อขายย้อนหลังอย่างละเอียด (Backtest Deals History Log)
+                                                        </h4>
+                                                        
+                                                        {backtestResult.trades.length === 0 ? (
+                                                            <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '11.5px', padding: '20px 0' }}>
+                                                                ไม่มีการเปิดธุรกรรมการเทรดใดๆ เกิดขึ้นในตลอดข้อมูลประวัติศาสตร์ lookback นี้
+                                                            </div>
+                                                        ) : (
+                                                            <div className="backtest-table-wrapper" style={{ maxHeight: '450px' }}>
+                                                                <table className="trading-table">
+                                                                    <thead>
+                                                                        <tr>
+                                                                            <th>Ticket</th>
+                                                                            <th>ประเภท</th>
+                                                                            <th>ขนาด Lot</th>
+                                                                            <th>ราคาเปิด</th>
+                                                                            <th>ราคาปิด</th>
+                                                                            <th>เวลาเปิด</th>
+                                                                            <th>เวลาปิด</th>
+                                                                            <th>ผลลัพธ์</th>
+                                                                            <th>กำไร (USD)</th>
+                                                                            <th>เหตุผลปิดดีล</th>
                                                                         </tr>
-                                                                    ))}
-                                                                </tbody>
-                                                            </table>
-                                                        </div>
-                                                    )}
-                                                </div>
+                                                                    </thead>
+                                                                    <tbody>
+                                                                        {backtestResult.trades.map((t, idx) => (
+                                                                            <tr key={`${t.ticket}-${idx}`}>
+                                                                                <td style={{ fontFamily: 'monospace' }}>#{t.ticket}</td>
+                                                                                <td>
+                                                                                    <span className={t.type === 'buy' ? 'buy-badge' : 'sell-badge'}>
+                                                                                        {t.type.toUpperCase()}
+                                                                                    </span>
+                                                                                </td>
+                                                                                <td style={{ fontFamily: 'monospace' }}>{backtestForm.lot_size}</td>
+                                                                                <td style={{ fontFamily: 'monospace' }}>{t.open_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                                                                                <td style={{ fontFamily: 'monospace' }}>{t.close_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                                                                                <td style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{t.open_time}</td>
+                                                                                <td style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>{t.close_time}</td>
+                                                                                <td>
+                                                                                    <span className={t.result === 'win' ? 'result-win-badge' : 'result-loss-badge'}>
+                                                                                        {t.result.toUpperCase()}
+                                                                                    </span>
+                                                                                </td>
+                                                                                <td className={t.profit >= 0 ? 'price-up' : 'price-down'} style={{ fontWeight: 700, fontFamily: 'monospace' }}>
+                                                                                    {t.profit >= 0 ? '+' : ''}${t.profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                                                                </td>
+                                                                                <td style={{ fontWeight: 600, fontSize: '11px', color: t.reason === 'Take Profit' ? 'var(--bull-green)' : t.reason === 'Stop Loss' ? 'var(--bear-red)' : 'var(--text-secondary)' }}>
+                                                                                    {t.reason}
+                                                                                </td>
+                                                                            </tr>
+                                                                        ))}
+                                                                    </tbody>
+                                                                </table>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
                                             </React.Fragment>
                                         )}
                                     </div>
@@ -4656,7 +5424,7 @@ const TradingApp = () => {
                                         ></div>
                                     </div>
                                     <span style={{ fontSize: '9px', color: 'var(--text-muted)', display: 'block', marginTop: '6px' }}>
-                                        * Margin Call อยู่ที่ระดับต่ำกว่า 60%, Stop Out อยู่ที่ระดับต่ำกว่า 30% ในเซิร์ฟเวอร์ Exness
+                                        * Margin Call อยู่ที่ระดับต่ำกว่า 60%, Stop Out อยู่ที่ระดับต่ำกว่า 30% ในเซิร์ฟเวอร์ MT5 Trader
                                     </span>
                                 </div>
                             )}
@@ -5050,18 +5818,18 @@ const TradingApp = () => {
 
             {/* --- SETTINGS / MT5 CONNECTION MODAL --- */}
             <div className={`modal-overlay ${settingsOpen ? 'active' : ''}`}>
-                <div className="modal-container">
+                <div className="modal-container" style={{ width: '680px', maxWidth: '95%' }}>
                     <div className="modal-header">
-                        <h3 style={{ fontSize: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <h3 style={{ fontSize: '15px', display: 'flex', alignItems: 'center', gap: '8px', fontFamily: 'Outfit' }}>
                             <Icon name="server" size={18} style={{ color: 'var(--accent-gold)' }} />
-                            <span>เชื่อมต่อบัญชี EXNESS METATRADER 5</span>
+                            <span>ระบบจัดการพอร์ต MT5 TRADER ความปลอดภัยสูง (Multi-Account Manager)</span>
                         </h3>
-                        <button className="modal-close-btn" onClick={() => setSettingsOpen(false)}>
+                        <button className="modal-close-btn" onClick={() => { setSettingsOpen(false); setAccountFormOpen(false); }}>
                             <Icon name="close" size={20} />
                         </button>
                     </div>
 
-                    <div className="modal-body">
+                    <div className="modal-body" style={{ maxHeight: '75vh', overflowY: 'auto' }}>
                         {settingsAlert && (
                             <div className={`form-alert ${settingsAlert.type}`}>
                                 <Icon name={settingsAlert.type === 'success' ? 'check' : 'alert'} size={16} />
@@ -5069,94 +5837,301 @@ const TradingApp = () => {
                             </div>
                         )}
 
-                        {!connectionStatus.is_simulated ? (
-                            <div style={{ textAlign: 'center', padding: '10px 0' }}>
-                                <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '16px' }}>
-                                    พอร์ตของคุณกำลังเชื่อมต่ออยู่กับเซิร์ฟเวอร์ Exness แบบ Real-time
-                                    <div style={{ marginTop: '10px', padding: '12px', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                                        <span style={{ display: 'block', fontSize: '11px', color: 'var(--text-muted)' }}>Exness Account ID</span>
-                                        <strong style={{ fontSize: '18px', color: 'var(--accent-gold)' }}>{connectionStatus.login}</strong>
-                                        <span style={{ display: 'block', fontSize: '11px', color: 'var(--text-muted)', marginTop: '8px' }}>Server Name</span>
-                                        <strong style={{ fontSize: '14px' }}>{connectionStatus.server}</strong>
-                                    </div>
+                        {/* Connection status summary widget */}
+                        <div style={{
+                            background: 'rgba(255,255,255,0.02)',
+                            border: '1px solid rgba(255,255,255,0.06)',
+                            borderRadius: '10px',
+                            padding: '14px',
+                            marginBottom: '18px',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center'
+                        }}>
+                            <div>
+                                <span style={{ display: 'block', fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600 }}>สถานะการเชื่อมต่อปัจจุบัน (Current Status)</span>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+                                    <div className={`pulse-dot ${!connectionStatus.is_simulated && connectionStatus.is_connected ? 'active' : ''}`} style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: !connectionStatus.is_simulated && connectionStatus.is_connected ? 'var(--bull-green)' : 'var(--text-muted)' }}></div>
+                                    <strong style={{ fontSize: '15px', color: !connectionStatus.is_simulated && connectionStatus.is_connected ? 'var(--bull-green)' : 'var(--text-primary)' }}>
+                                        {!connectionStatus.is_simulated && connectionStatus.is_connected 
+                                            ? `บัญชีจริง #${connectionStatus.login}` 
+                                            : 'โหมดจำลอง (Simulation Mode)'}
+                                    </strong>
                                 </div>
-
-                                <button className="btn-secondary" style={{ borderColor: 'var(--bear-red)', color: 'var(--bear-red)' }} onClick={handleDisconnectLive}>
-                                    ยกเลิกการเชื่อมโยงบัญชีจริง (กลับสู่ระบบจำลอง)
+                                {!connectionStatus.is_simulated && connectionStatus.is_connected && (
+                                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
+                                        Server: {connectionStatus.server}
+                                    </span>
+                                )}
+                            </div>
+                            
+                            {!connectionStatus.is_simulated && (
+                                <button 
+                                    className="btn-secondary" 
+                                    style={{ borderColor: 'var(--bear-red)', color: 'var(--bear-red)', fontSize: '11px', padding: '6px 12px', margin: 0, height: 'fit-content' }} 
+                                    onClick={handleDisconnectLive}
+                                >
+                                    ตัดการเชื่อมต่อ (กลับโหมดจำลอง)
                                 </button>
+                            )}
+                        </div>
+
+                        {/* Top Bar for Saved Accounts section */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                            <h4 style={{ fontSize: '11.5px', textTransform: 'uppercase', color: 'var(--text-secondary)', margin: 0, display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700 }}>
+                                <Icon name="lock" size={14} style={{ color: 'var(--accent-gold)' }} />
+                                <span>รายชื่อพอร์ตการเทรดที่บันทึกปลอดภัย ({accounts.length})</span>
+                            </h4>
+                            {!accountFormOpen && (
+                                <button 
+                                    className="btn-primary" 
+                                    style={{ 
+                                        margin: 0, 
+                                        padding: '6px 14px', 
+                                        fontSize: '11px', 
+                                        background: 'linear-gradient(135deg, var(--accent-gold), #f39c12)', 
+                                        color: '#000', 
+                                        fontWeight: 700,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                        boxShadow: 'var(--glow-gold)'
+                                    }}
+                                    onClick={() => {
+                                        setAccountForm({ id: null, login: "", password: "", server: "MT5-Real", auto_connect: true, is_active: false });
+                                        setAccountFormOpen(true);
+                                    }}
+                                >
+                                    <Icon name="plus" size={12} />
+                                    <span>เพิ่มบัญชีพอร์ตใหม่</span>
+                                </button>
+                            )}
+                        </div>
+
+                        {/* Sub-modal or Inline form for Add / Edit Account */}
+                        {accountFormOpen && (
+                            <div style={{
+                                background: 'rgba(255, 183, 3, 0.02)',
+                                border: '1px solid rgba(255, 183, 3, 0.15)',
+                                borderRadius: '10px',
+                                padding: '16px',
+                                marginBottom: '20px',
+                                boxShadow: '0 4px 20px rgba(0,0,0,0.2)'
+                            }}>
+                                <h5 style={{ margin: '0 0 12px 0', fontSize: '12px', color: 'var(--accent-gold)', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700 }}>
+                                    <Icon name="edit" size={14} />
+                                    <span>{accountForm.id ? `แก้ไขข้อมูลบัญชี #${accountForm.login}` : "กรอกข้อมูลบัญชี MT5 Trader ใหม่"}</span>
+                                </h5>
+
+                                <form onSubmit={handleSaveAccount}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: accountForm.id ? '1fr 1.2fr' : '1fr 1fr 1.2fr', gap: '12px' }}>
+                                        {!accountForm.id && (
+                                            <div className="input-group" style={{ margin: 0 }}>
+                                                <label style={{ fontSize: '11px', marginBottom: '4px' }}>เลขบัญชีเทรด (MT5 ID)</label>
+                                                <input 
+                                                    type="number" 
+                                                    className="numeric-input" 
+                                                    required 
+                                                    placeholder="เช่น 14234509"
+                                                    value={accountForm.login}
+                                                    onChange={(e) => setAccountForm({ ...accountForm, login: e.target.value })}
+                                                    style={{ height: '36px', fontSize: '12px' }}
+                                                />
+                                            </div>
+                                        )}
+
+                                        <div className="input-group" style={{ margin: 0 }}>
+                                            <label style={{ fontSize: '11px', marginBottom: '4px' }}>
+                                                {accountForm.id ? "รหัสผ่านใหม่ (ถ้าต้องการเปลี่ยน)" : "รหัสผ่านเทรด (Password)"}
+                                            </label>
+                                            <input 
+                                                type="password" 
+                                                className="numeric-input" 
+                                                required={!accountForm.id}
+                                                placeholder={accountForm.id ? "ปล่อยว่างไว้หากไม่แก้ไข" : "รหัสผ่าน MT5 ของท่าน"}
+                                                value={accountForm.password}
+                                                onChange={(e) => setAccountForm({ ...accountForm, password: e.target.value })}
+                                                style={{ height: '36px', fontSize: '12px' }}
+                                            />
+                                        </div>
+
+                                        <div className="input-group" style={{ margin: 0 }}>
+                                            <label style={{ fontSize: '11px', marginBottom: '4px' }}>MT5 Server Name</label>
+                                            <input 
+                                                type="text" 
+                                                className="numeric-input" 
+                                                required 
+                                                placeholder="เช่น MT5Trader-Trial7 หรือ MT5Trader-Real"
+                                                value={accountForm.server}
+                                                onChange={(e) => setAccountForm({ ...accountForm, server: e.target.value })}
+                                                style={{ height: '36px', fontSize: '12px' }}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div style={{ display: 'flex', gap: '15px', alignItems: 'center', marginTop: '12px' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                            <input 
+                                                type="checkbox" 
+                                                id="form-autoconnect"
+                                                checked={accountForm.auto_connect}
+                                                onChange={(e) => setAccountForm({ ...accountForm, auto_connect: e.target.checked })}
+                                                style={{ accentColor: 'var(--accent-gold)', cursor: 'pointer', width: '15px', height: '15px' }}
+                                            />
+                                            <label htmlFor="form-autoconnect" style={{ margin: 0, cursor: 'pointer', fontSize: '11px', textTransform: 'none', fontWeight: 500 }}>
+                                                เชื่อมต่ออัตโนมัติเมื่อสตาร์ท (Auto-Connect)
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '16px', borderTop: '1px dashed rgba(255,255,255,0.06)', paddingTop: '12px' }}>
+                                        <button 
+                                            type="button" 
+                                            className="btn-secondary" 
+                                            style={{ margin: 0, padding: '6px 14px', fontSize: '11px' }} 
+                                            onClick={() => setAccountFormOpen(false)}
+                                        >
+                                            ยกเลิก
+                                        </button>
+                                        <button 
+                                            type="submit" 
+                                            className="btn-primary" 
+                                            style={{ margin: 0, padding: '6px 20px', fontSize: '11px', background: 'var(--accent-gold)', color: '#000', fontWeight: 700 }}
+                                            disabled={accountFormLoading}
+                                        >
+                                            {accountFormLoading ? "กำลังประมวลผล..." : accountForm.id ? "บันทึกการแก้ไข" : "ยืนยันเพิ่มบัญชีและเข้ารหัสลับ"}
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        )}
+
+                        {/* List of accounts table */}
+                        {accounts.length === 0 ? (
+                            <div style={{
+                                border: '1px dashed rgba(255,255,255,0.1)',
+                                borderRadius: '10px',
+                                padding: '40px 20px',
+                                textAlign: 'center',
+                                color: 'var(--text-muted)',
+                                background: 'rgba(255,255,255,0.01)'
+                            }}>
+                                <Icon name="lock" size={36} style={{ color: 'rgba(255,255,255,0.2)', marginBottom: '10px' }} />
+                                <div style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--text-secondary)' }}>ยังไม่มีบัญชี MT5 Trader บันทึกในคลังความปลอดภัยฐานข้อมูล</div>
+                                <div style={{ fontSize: '10.5px', marginTop: '4px' }}>คลิกปุ่ม "เพิ่มบัญชีพอร์ตใหม่" ด้านขวาบนเพื่อเริ่มต้นการใช้งานพอร์ตแบบปลอดภัยสูงสุด</div>
                             </div>
                         ) : (
-                            <form onSubmit={handleSettingsSubmit}>
-                                <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '16px', lineHeight: '1.4' }}>
-                                    กรอกข้อมูลเข้าสู่ระบบ MetaTrader 5 ของ Exness เพื่อดึงพอร์ต บัญชีบาลานซ์ ประวัติการเทรด และควบคุมส่งคำสั่งซื้อขายจริง
-                                </div>
-
-                                <div className="input-group">
-                                    <label>เลขบัญชีเทรด (MT5 Login ID)</label>
-                                    <input 
-                                        type="number" 
-                                        className="numeric-input" 
-                                        required 
-                                        placeholder="เช่น 14234509"
-                                        value={settingsForm.login}
-                                        onChange={(e) => setSettingsForm({ ...settingsForm, login: e.target.value })}
-                                    />
-                                </div>
-
-                                <div className="input-group">
-                                    <label>รหัสผ่านเทรด (Trading Password)</label>
-                                    <input 
-                                        type="password" 
-                                        className="numeric-input" 
-                                        required 
-                                        placeholder="รหัสผ่านเข้าสู่ระบบ Exness ของคุณ"
-                                        value={settingsForm.password}
-                                        onChange={(e) => setSettingsForm({ ...settingsForm, password: e.target.value })}
-                                    />
-                                </div>
-
-                                <div className="input-group">
-                                    <label>ชื่อเซิร์ฟเวอร์ Exness (MT5 Server Name)</label>
-                                    <input 
-                                        type="text" 
-                                        className="numeric-input" 
-                                        required 
-                                        placeholder="เช่น Exness-MT5-Trial9 หรือ Exness-MT5-Real"
-                                        value={settingsForm.server}
-                                        onChange={(e) => setSettingsForm({ ...settingsForm, server: e.target.value })}
-                                    />
-                                </div>
-
-                                <div className="input-group" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px' }}>
-                                    <input 
-                                        type="checkbox" 
-                                        id="chk-autoconnect"
-                                        checked={settingsForm.auto_connect}
-                                        onChange={(e) => setSettingsForm({ ...settingsForm, auto_connect: e.target.checked })}
-                                        style={{ accentColor: 'var(--accent-gold)', width: '16px', height: '16px', cursor: 'pointer' }}
-                                    />
-                                    <label htmlFor="chk-autoconnect" style={{ margin: 0, cursor: 'pointer', textTransform: 'none' }}>
-                                        จำค่าข้อมูลบัญชีและล็อกอินอัตโนมัติเมื่อเปิดเซิร์ฟเวอร์
-                                    </label>
-                                </div>
-
-                                <button 
-                                    type="submit" 
-                                    className="btn-primary" 
-                                    style={{ marginTop: '20px' }}
-                                    disabled={settingsLoading}
-                                >
-                                    {settingsLoading ? 'กำลังตรวจสอบสิทธิ์เชื่อมต่อ...' : 'เชื่อมต่อบัญชีเทรดจริง'}
-                                </button>
-                                
-                                <button 
-                                    type="button" 
-                                    className="btn-secondary" 
-                                    onClick={() => setSettingsOpen(false)}
-                                >
-                                    ใช้งานโหมดจำลอง (Simulation Mode) ต่อไป
-                                </button>
-                            </form>
+                            <div className="backtest-table-wrapper" style={{ maxHeight: '350px', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '8px', overflowY: 'auto' }}>
+                                <table className="trading-table">
+                                    <thead>
+                                        <tr>
+                                            <th>เลขบัญชีเทรด (MT5 ID)</th>
+                                            <th>Server</th>
+                                            <th style={{ textAlign: 'center' }}>สถานะพอร์ต</th>
+                                            <th style={{ textAlign: 'center' }}>Auto-Connect</th>
+                                            <th style={{ textAlign: 'center' }}>จัดการคำสั่ง</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {accounts.map((acc) => (
+                                            <tr key={acc.id} style={{ 
+                                                background: acc.is_active ? 'rgba(255,183,3,0.03)' : 'transparent',
+                                                borderLeft: acc.is_active ? '3px solid var(--accent-gold)' : 'none'
+                                            }}>
+                                                <td style={{ fontFamily: 'monospace', fontWeight: 700, color: acc.is_active ? 'var(--accent-gold)' : 'var(--text-primary)', paddingLeft: acc.is_active ? '9px' : '12px' }}>
+                                                    #{acc.login}
+                                                </td>
+                                                <td style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                                                    {acc.server}
+                                                </td>
+                                                <td style={{ textAlign: 'center' }}>
+                                                    {acc.is_active ? (
+                                                        <span style={{
+                                                            fontSize: '9px',
+                                                            background: 'rgba(46, 204, 113, 0.08)',
+                                                            color: 'var(--bull-green)',
+                                                            border: '1px solid rgba(46, 204, 113, 0.25)',
+                                                            padding: '2px 8px',
+                                                            borderRadius: '10px',
+                                                            fontWeight: 'bold',
+                                                            display: 'inline-flex',
+                                                            alignItems: 'center',
+                                                            gap: '4px'
+                                                        }}>
+                                                            <span style={{ width: '4px', height: '4px', borderRadius: '50%', backgroundColor: 'var(--bull-green)', display: 'inline-block' }}></span>
+                                                            ACTIVE
+                                                        </span>
+                                                    ) : (
+                                                        <button
+                                                            className="chatbot-chip"
+                                                            style={{ 
+                                                                margin: 0, 
+                                                                padding: '2px 8px', 
+                                                                fontSize: '9.5px', 
+                                                                borderColor: 'rgba(255,255,255,0.15)',
+                                                                color: 'var(--text-secondary)',
+                                                                background: 'rgba(255,255,255,0.02)',
+                                                                cursor: settingsLoading ? 'not-allowed' : 'pointer'
+                                                            }}
+                                                            disabled={settingsLoading}
+                                                            onClick={() => handleActivateAccount(acc.id, acc.login)}
+                                                        >
+                                                            {settingsLoading ? "กำลังเชื่อมต่อ..." : "สลับเข้าใช้งาน"}
+                                                        </button>
+                                                    )}
+                                                </td>
+                                                <td style={{ textAlign: 'center' }}>
+                                                    <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                        <div 
+                                                            className={`toggle-switch-container ${acc.auto_connect ? 'active' : ''}`}
+                                                            style={{ transform: 'scale(0.8)', cursor: 'pointer' }}
+                                                            onClick={async () => {
+                                                                try {
+                                                                    const res = await fetch(`/api/mt5/accounts/${acc.id}`, {
+                                                                        method: "PUT",
+                                                                        headers: { "Content-Type": "application/json" },
+                                                                        body: JSON.stringify({ auto_connect: !acc.auto_connect })
+                                                                    });
+                                                                    if (res.ok) {
+                                                                        fetchAccounts();
+                                                                    }
+                                                                } catch (err) {
+                                                                    console.error("Failed to toggle auto_connect:", err);
+                                                                }
+                                                            }}
+                                                        >
+                                                            <div className="toggle-switch"></div>
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                                <td style={{ textAlign: 'center' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                                                        <button 
+                                                            className="btn-edit-bot-icon"
+                                                            style={{ width: '24px', height: '24px', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                                            onClick={() => {
+                                                                setAccountForm({ id: acc.id, login: acc.login, password: "", server: acc.server, auto_connect: acc.auto_connect, is_active: acc.is_active });
+                                                                setAccountFormOpen(true);
+                                                            }}
+                                                            title="แก้ไขพอร์ตนี้"
+                                                        >
+                                                            <Icon name="edit" size={12} />
+                                                        </button>
+                                                        <button 
+                                                            className="btn-delete-bot-icon"
+                                                            style={{ width: '24px', height: '24px', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                                            onClick={() => handleDeleteAccount(acc.id, acc.login)}
+                                                            title="ลบพอร์ตนี้"
+                                                        >
+                                                            <Icon name="trash" size={12} />
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
                         )}
                     </div>
                 </div>
