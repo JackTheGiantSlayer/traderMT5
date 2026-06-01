@@ -1778,22 +1778,61 @@ const TradingApp = () => {
     // --- On-the-fly Analytics calculations ---
     const calculateAnalytics = () => {
         if (tradeHistory.length === 0) {
-            return { totalProfit: 0, winRate: 0, winCount: 0, loseCount: 0, totalTrades: 0, best: 0, worst: 0, botStats: [] };
+            return { 
+                totalProfit: "0.00", winRate: "0.0", winCount: 0, loseCount: 0, totalTrades: 0, best: "0.00", worst: "0.00", 
+                todayProfit: "0.00", todayTrades: 0, todayWins: 0, todayWinRate: "0.0",
+                monthProfit: "0.00", profitFactor: "0.00", avgWin: "0.00", avgLoss: "0.00", riskRewardRatio: "1.00",
+                maxConWins: 0, maxConLosses: 0, botStats: [] 
+            };
         }
+
+        const todayStr = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD local timezone
+        const currentMonthStr = todayStr.substring(0, 7); // YYYY-MM
 
         let total = 0.0;
         let wins = 0;
         let best = -999999.0;
         let worst = 999999.0;
         
+        let todayProfit = 0.0;
+        let todayTradesCount = 0;
+        let todayWinsCount = 0;
+        let monthProfit = 0.0;
+
+        let grossProfit = 0.0;
+        let grossLoss = 0.0;
+        
+        let totalWinAmt = 0.0;
+        let totalLossAmt = 0.0;
+
         // Group by bot
         const botGroups = {};
 
         for (const t of tradeHistory) {
             total += t.profit;
-            if (t.profit > 0) wins++;
+            if (t.profit > 0) {
+                wins++;
+                grossProfit += t.profit;
+                totalWinAmt += t.profit;
+            } else {
+                grossLoss += Math.abs(t.profit);
+                totalLossAmt += Math.abs(t.profit);
+            }
+
             if (t.profit > best) best = t.profit;
             if (t.profit < worst) worst = t.profit;
+
+            // Check if closed today
+            if (t.close_time && t.close_time.startsWith(todayStr)) {
+                todayProfit += t.profit;
+                todayTradesCount++;
+                if (t.profit > 0) todayWinsCount++;
+            }
+
+            // Check if closed this month
+            if (t.close_time && t.close_time.startsWith(currentMonthStr)) {
+                monthProfit += t.profit;
+            }
             
             // Clean strategy suffix
             const cleanComment = t.comment ? t.comment.replace(/\s*\[.*?\]$/, '') : '';
@@ -1813,13 +1852,43 @@ const TradingApp = () => {
         }
 
         const winRate = (wins / tradeHistory.length) * 100;
+        const todayWinRate = todayTradesCount > 0 ? ((todayWinsCount / todayTradesCount) * 100).toFixed(1) : "0.0";
+        const profitFactor = grossLoss > 0 ? (grossProfit / grossLoss).toFixed(2) : grossProfit > 0 ? "Max" : "0.00";
+        
+        const avgWin = wins > 0 ? (totalWinAmt / wins).toFixed(2) : "0.00";
+        const losses = tradeHistory.length - wins;
+        const avgLoss = losses > 0 ? (totalLossAmt / losses).toFixed(2) : "0.00";
+        const riskRewardRatio = parseFloat(avgLoss) > 0 ? (parseFloat(avgWin) / parseFloat(avgLoss)).toFixed(2) : "1.00";
+
+        // Calculate consecutive win/loss streaks (sort chronologically first)
+        const sortedTrades = [...tradeHistory].sort((a, b) => new Date(a.close_time) - new Date(b.close_time));
+        let maxConWins = 0;
+        let maxConLosses = 0;
+        let currentConWins = 0;
+        let currentConLosses = 0;
+
+        for (const t of sortedTrades) {
+            if (t.profit >= 0) {
+                currentConWins++;
+                if (currentConWins > maxConWins) maxConWins = currentConWins;
+                currentConLosses = 0;
+            } else {
+                currentConLosses++;
+                if (currentConLosses > maxConLosses) maxConLosses = currentConLosses;
+                currentConWins = 0;
+            }
+        }
         
         const botStats = Object.values(botGroups).map(bot => {
             const botWinRate = bot.totalTrades > 0 ? (bot.winCount / bot.totalTrades * 100).toFixed(1) : '0.0';
             return {
                 ...bot,
                 winRate: botWinRate,
-                totalProfit: bot.totalProfit.toFixed(2)
+                totalProfit: bot.totalProfit.toFixed(2),
+                profit: bot.totalProfit.toFixed(2), // compatibility with old keys
+                count: bot.totalTrades, // compatibility with old keys
+                wins: bot.winCount, // compatibility with old keys
+                losses: bot.loseCount // compatibility with old keys
             };
         }).sort((a, b) => parseFloat(b.totalProfit) - parseFloat(a.totalProfit));
 
@@ -1831,6 +1900,17 @@ const TradingApp = () => {
             totalTrades: tradeHistory.length,
             best: best.toFixed(2),
             worst: worst.toFixed(2),
+            todayProfit: todayProfit.toFixed(2),
+            todayTrades: todayTradesCount,
+            todayWins: todayWinsCount,
+            todayWinRate: todayWinRate,
+            monthProfit: monthProfit.toFixed(2),
+            profitFactor: profitFactor,
+            avgWin: avgWin,
+            avgLoss: avgLoss,
+            riskRewardRatio: riskRewardRatio,
+            maxConWins: maxConWins,
+            maxConLosses: maxConLosses,
             botStats: botStats
         };
     };
@@ -2038,10 +2118,33 @@ const TradingApp = () => {
                             <h4 className={parseFloat(analytics.totalProfit) >= 0 ? 'price-up' : 'price-down'} style={{ fontSize: '24px', marginTop: '6px', fontFamily: 'monospace' }}>
                                 {parseFloat(analytics.totalProfit) >= 0 ? '+' : ''}${analytics.totalProfit}
                             </h4>
+                            <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', marginTop: '4px' }}>
+                                สูงสุด: <span className="price-up">+${analytics.best}</span> | ต่ำสุด: <span className="price-down">${analytics.worst}</span>
+                            </span>
                         </div>
                         
+                        <div className="sidebar-panel-card" style={{ padding: '16px', textAlign: 'center', borderLeft: '3px solid ' + (parseFloat(analytics.todayProfit) >= 0 ? 'var(--bull-green)' : 'var(--bear-red)') }}>
+                            <span className="metric-label" style={{ fontSize: '10px' }}>กำไร/ขาดทุน วันนี้</span>
+                            <h4 className={parseFloat(analytics.todayProfit) >= 0 ? 'price-up' : 'price-down'} style={{ fontSize: '24px', marginTop: '6px', fontFamily: 'monospace' }}>
+                                {parseFloat(analytics.todayProfit) >= 0 ? '+' : ''}${analytics.todayProfit}
+                            </h4>
+                            <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', marginTop: '4px' }}>
+                                วันนี้: ชนะ {analytics.todayWins}/{analytics.todayTrades} ออเดอร์ ({analytics.todayWinRate}%)
+                            </span>
+                        </div>
+
                         <div className="sidebar-panel-card" style={{ padding: '16px', textAlign: 'center' }}>
-                            <span className="metric-label" style={{ fontSize: '10px' }}>อัตราการชนะ (Win Rate)</span>
+                            <span className="metric-label" style={{ fontSize: '10px' }}>กำไรรวมเดือนปัจจุบัน</span>
+                            <h4 className={parseFloat(analytics.monthProfit) >= 0 ? 'price-up' : 'price-down'} style={{ fontSize: '24px', marginTop: '6px', fontFamily: 'monospace' }}>
+                                {parseFloat(analytics.monthProfit) >= 0 ? '+' : ''}${analytics.monthProfit}
+                            </h4>
+                            <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', marginTop: '4px' }}>
+                                ภาพรวมรอบเดือน {new Date().toLocaleString('th-TH', { month: 'long' })}
+                            </span>
+                        </div>
+
+                        <div className="sidebar-panel-card" style={{ padding: '16px', textAlign: 'center' }}>
+                            <span className="metric-label" style={{ fontSize: '10px' }}>อัตราการชนะรวม (Win Rate)</span>
                             <h4 style={{ fontSize: '24px', marginTop: '6px', color: 'var(--accent-gold)', fontFamily: 'monospace' }}>
                                 {analytics.winRate}%
                             </h4>
@@ -2049,19 +2152,44 @@ const TradingApp = () => {
                                 ชนะ {analytics.winCount} | แพ้ {analytics.loseCount} จากทั้งหมด {analytics.totalTrades} ออเดอร์
                             </span>
                         </div>
+                    </div>
 
-                        <div className="sidebar-panel-card" style={{ padding: '16px', textAlign: 'center' }}>
-                            <span className="metric-label" style={{ fontSize: '10px' }}>กำไรต่อออเดอร์สูงสุด</span>
-                            <h4 className="price-up" style={{ fontSize: '22px', marginTop: '6px', fontFamily: 'monospace' }}>
-                                +${analytics.best}
-                            </h4>
-                        </div>
+                    {/* Institutional Performance Analytics Card */}
+                    <div className="sidebar-panel-card" style={{ padding: '20px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                        <h3 style={{ fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.5px', margin: '0 0 16px 0', color: 'var(--text-secondary)' }}>
+                            สถิติวินัยและการวิเคราะห์ความแม่นยำระดับสถาบัน (Institutional Metrics)
+                        </h3>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
+                            <div style={{ textAlign: 'center', borderRight: '1px solid rgba(255,255,255,0.06)', paddingRight: '10px' }}>
+                                <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>อัตราสัดส่วนกำไรต่อขาดทุน (Profit Factor)</span>
+                                <h4 style={{ fontSize: '20px', margin: 0, fontFamily: 'monospace', color: analytics.profitFactor === 'Max' || parseFloat(analytics.profitFactor) >= 1.5 ? 'var(--bull-green)' : parseFloat(analytics.profitFactor) >= 1.0 ? 'var(--accent-gold)' : 'var(--bear-red)' }}>
+                                    {analytics.profitFactor}
+                                </h4>
+                                <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', marginTop: '6px' }}>
+                                    {analytics.profitFactor === 'Max' || parseFloat(analytics.profitFactor) >= 1.5 ? '🟢 ประสิทธิภาพยอดเยี่ยม (Excellent)' : parseFloat(analytics.profitFactor) >= 1.0 ? '🟡 ประสิทธิภาพระดับปลอดภัย (Good)' : '🔴 ขาดทุนมากกว่ากำไร (High Risk)'}
+                                </span>
+                            </div>
+                            
+                            <div style={{ textAlign: 'center', borderRight: '1px solid rgba(255,255,255,0.06)', paddingRight: '10px' }}>
+                                <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>สถิติการชนะ/แพ้ต่อเนื่องสูงสุด (Streak Record)</span>
+                                <div style={{ fontSize: '13px', fontWeight: 'bold', margin: '6px 0', color: 'var(--text-secondary)' }}>
+                                    ชนะติดกันสูงสุด: <span style={{ color: 'var(--bull-green)', fontFamily: 'monospace', fontSize: '15px' }}>{analytics.maxConWins}</span> ไม้
+                                    <br />
+                                    แพ้ติดกันสูงสุด: <span style={{ color: 'var(--bear-red)', fontFamily: 'monospace', fontSize: '15px' }}>{analytics.maxConLosses}</span> ไม้
+                                </div>
+                            </div>
 
-                        <div className="sidebar-panel-card" style={{ padding: '16px', textAlign: 'center' }}>
-                            <span className="metric-label" style={{ fontSize: '10px' }}>ขาดทุนต่อออเดอร์สูงสุด</span>
-                            <h4 className="price-down" style={{ fontSize: '22px', marginTop: '6px', fontFamily: 'monospace' }}>
-                                ${analytics.worst}
-                            </h4>
+                            <div style={{ textAlign: 'center' }}>
+                                <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>กำไร-ขาดทุนเฉลี่ย / สัดส่วน Risk to Reward (R:R)</span>
+                                <div style={{ fontSize: '11px', color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>
+                                    กำไรเฉลี่ยไม้ชนะ: <span className="price-up" style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>+${analytics.avgWin}</span>
+                                    <br />
+                                    ขาดทุนเฉลี่ยไม้แพ้: <span className="price-down" style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>-${analytics.avgLoss}</span>
+                                </div>
+                                <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', marginTop: '4px' }}>
+                                    R:R จริงเฉลี่ย: <strong style={{ color: 'var(--accent-gold)', fontFamily: 'monospace' }}>1 : {analytics.riskRewardRatio}</strong>
+                                </span>
+                            </div>
                         </div>
                     </div>
 
@@ -2098,7 +2226,7 @@ const TradingApp = () => {
                                         if (winRateVal >= 60) winRateColor = 'var(--bull-green)';
                                         else if (winRateVal >= 45) winRateColor = 'var(--accent-gold)';
                                         else if (winRateVal > 0) winRateColor = 'var(--bear-red)';
-
+ 
                                         return (
                                             <tr key={index}>
                                                 <td style={{ 
@@ -2107,14 +2235,14 @@ const TradingApp = () => {
                                                 }}>
                                                     {bot.name}
                                                 </td>
-                                                <td style={{ textAlign: 'center', fontFamily: 'monospace' }}>{bot.count}</td>
-                                                <td style={{ textAlign: 'center', fontFamily: 'monospace', color: 'var(--bull-green)' }}>{bot.wins}</td>
-                                                <td style={{ textAlign: 'center', fontFamily: 'monospace', color: 'var(--bear-red)' }}>{bot.losses}</td>
+                                                <td style={{ textAlign: 'center', fontFamily: 'monospace' }}>{bot.totalTrades}</td>
+                                                <td style={{ textAlign: 'center', fontFamily: 'monospace', color: 'var(--bull-green)' }}>{bot.winCount}</td>
+                                                <td style={{ textAlign: 'center', fontFamily: 'monospace', color: 'var(--bear-red)' }}>{bot.loseCount}</td>
                                                 <td style={{ textAlign: 'center', fontFamily: 'monospace', fontWeight: 'bold', color: winRateColor }}>
                                                     {bot.winRate}%
                                                 </td>
-                                                <td className={parseFloat(bot.profit) >= 0 ? 'price-up' : 'price-down'} style={{ textAlign: 'right', fontWeight: 700, fontFamily: 'monospace' }}>
-                                                    {parseFloat(bot.profit) >= 0 ? '+' : ''}${bot.profit}
+                                                <td className={parseFloat(bot.totalProfit) >= 0 ? 'price-up' : 'price-down'} style={{ textAlign: 'right', fontWeight: 700, fontFamily: 'monospace' }}>
+                                                    {parseFloat(bot.totalProfit) >= 0 ? '+' : ''}${bot.totalProfit}
                                                 </td>
                                             </tr>
                                         );
@@ -3496,10 +3624,33 @@ const TradingApp = () => {
                                             <h4 className={parseFloat(analytics.totalProfit) >= 0 ? 'price-up' : 'price-down'} style={{ fontSize: '24px', marginTop: '6px', fontFamily: 'monospace' }}>
                                                 {parseFloat(analytics.totalProfit) >= 0 ? '+' : ''}${analytics.totalProfit}
                                             </h4>
+                                            <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', marginTop: '4px' }}>
+                                                สูงสุด: <span className="price-up">+${analytics.best}</span> | ต่ำสุด: <span className="price-down">${analytics.worst}</span>
+                                            </span>
                                         </div>
                                         
+                                        <div className="sidebar-panel-card" style={{ padding: '16px', textAlign: 'center', borderLeft: '3px solid ' + (parseFloat(analytics.todayProfit) >= 0 ? 'var(--bull-green)' : 'var(--bear-red)') }}>
+                                            <span className="metric-label" style={{ fontSize: '10px' }}>กำไร/ขาดทุน วันนี้</span>
+                                            <h4 className={parseFloat(analytics.todayProfit) >= 0 ? 'price-up' : 'price-down'} style={{ fontSize: '24px', marginTop: '6px', fontFamily: 'monospace' }}>
+                                                {parseFloat(analytics.todayProfit) >= 0 ? '+' : ''}${analytics.todayProfit}
+                                            </h4>
+                                            <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', marginTop: '4px' }}>
+                                                วันนี้: ชนะ {analytics.todayWins}/{analytics.todayTrades} ออเดอร์ ({analytics.todayWinRate}%)
+                                            </span>
+                                        </div>
+
                                         <div className="sidebar-panel-card" style={{ padding: '16px', textAlign: 'center' }}>
-                                            <span className="metric-label" style={{ fontSize: '10px' }}>อัตราการชนะ (Win Rate)</span>
+                                            <span className="metric-label" style={{ fontSize: '10px' }}>กำไรรวมเดือนปัจจุบัน</span>
+                                            <h4 className={parseFloat(analytics.monthProfit) >= 0 ? 'price-up' : 'price-down'} style={{ fontSize: '24px', marginTop: '6px', fontFamily: 'monospace' }}>
+                                                {parseFloat(analytics.monthProfit) >= 0 ? '+' : ''}${analytics.monthProfit}
+                                            </h4>
+                                            <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', marginTop: '4px' }}>
+                                                ภาพรวมรอบเดือน {new Date().toLocaleString('th-TH', { month: 'long' })}
+                                            </span>
+                                        </div>
+
+                                        <div className="sidebar-panel-card" style={{ padding: '16px', textAlign: 'center' }}>
+                                            <span className="metric-label" style={{ fontSize: '10px' }}>อัตราการชนะรวม (Win Rate)</span>
                                             <h4 style={{ fontSize: '24px', marginTop: '6px', color: 'var(--accent-gold)', fontFamily: 'monospace' }}>
                                                 {analytics.winRate}%
                                             </h4>
@@ -3507,19 +3658,44 @@ const TradingApp = () => {
                                                 ชนะ {analytics.winCount} | แพ้ {analytics.loseCount} จากทั้งหมด {analytics.totalTrades} ออเดอร์
                                             </span>
                                         </div>
+                                    </div>
 
-                                        <div className="sidebar-panel-card" style={{ padding: '16px', textAlign: 'center' }}>
-                                            <span className="metric-label" style={{ fontSize: '10px' }}>กำไรต่อออเดอร์สูงสุด</span>
-                                            <h4 className="price-up" style={{ fontSize: '22px', marginTop: '6px', fontFamily: 'monospace' }}>
-                                                +${analytics.best}
-                                            </h4>
-                                        </div>
+                                    {/* Institutional Performance Analytics Card */}
+                                    <div className="sidebar-panel-card" style={{ padding: '20px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                                        <h3 style={{ fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.5px', margin: '0 0 16px 0', color: 'var(--text-secondary)' }}>
+                                            สถิติวินัยและการวิเคราะห์ความแม่นยำระดับสถาบัน (Institutional Metrics)
+                                        </h3>
+                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
+                                            <div style={{ textAlign: 'center', borderRight: '1px solid rgba(255,255,255,0.06)', paddingRight: '10px' }}>
+                                                <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>อัตราสัดส่วนกำไรต่อขาดทุน (Profit Factor)</span>
+                                                <h4 style={{ fontSize: '20px', margin: 0, fontFamily: 'monospace', color: analytics.profitFactor === 'Max' || parseFloat(analytics.profitFactor) >= 1.5 ? 'var(--bull-green)' : parseFloat(analytics.profitFactor) >= 1.0 ? 'var(--accent-gold)' : 'var(--bear-red)' }}>
+                                                    {analytics.profitFactor}
+                                                </h4>
+                                                <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', marginTop: '6px' }}>
+                                                    {analytics.profitFactor === 'Max' || parseFloat(analytics.profitFactor) >= 1.5 ? '🟢 ประสิทธิภาพยอดเยี่ยม (Excellent)' : parseFloat(analytics.profitFactor) >= 1.0 ? '🟡 ประสิทธิภาพระดับปลอดภัย (Good)' : '🔴 ขาดทุนมากกว่ากำไร (High Risk)'}
+                                                </span>
+                                            </div>
+                                            
+                                            <div style={{ textAlign: 'center', borderRight: '1px solid rgba(255,255,255,0.06)', paddingRight: '10px' }}>
+                                                <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>สถิติการชนะ/แพ้ต่อเนื่องสูงสุด (Streak Record)</span>
+                                                <div style={{ fontSize: '13px', fontWeight: 'bold', margin: '6px 0', color: 'var(--text-secondary)' }}>
+                                                    ชนะติดกันสูงสุด: <span style={{ color: 'var(--bull-green)', fontFamily: 'monospace', fontSize: '15px' }}>{analytics.maxConWins}</span> ไม้
+                                                    <br />
+                                                    แพ้ติดกันสูงสุด: <span style={{ color: 'var(--bear-red)', fontFamily: 'monospace', fontSize: '15px' }}>{analytics.maxConLosses}</span> ไม้
+                                                </div>
+                                            </div>
 
-                                        <div className="sidebar-panel-card" style={{ padding: '16px', textAlign: 'center' }}>
-                                            <span className="metric-label" style={{ fontSize: '10px' }}>ขาดทุนต่อออเดอร์สูงสุด</span>
-                                            <h4 className="price-down" style={{ fontSize: '22px', marginTop: '6px', fontFamily: 'monospace' }}>
-                                                ${analytics.worst}
-                                            </h4>
+                                            <div style={{ textAlign: 'center' }}>
+                                                <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>กำไร-ขาดทุนเฉลี่ย / สัดส่วน Risk to Reward (R:R)</span>
+                                                <div style={{ fontSize: '11px', color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>
+                                                    กำไรเฉลี่ยไม้ชนะ: <span className="price-up" style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>+${analytics.avgWin}</span>
+                                                    <br />
+                                                    ขาดทุนเฉลี่ยไม้แพ้: <span className="price-down" style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>-${analytics.avgLoss}</span>
+                                                </div>
+                                                <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', marginTop: '4px' }}>
+                                                    R:R จริงเฉลี่ย: <strong style={{ color: 'var(--accent-gold)', fontFamily: 'monospace' }}>1 : {analytics.riskRewardRatio}</strong>
+                                                </span>
+                                            </div>
                                         </div>
                                     </div>
 
