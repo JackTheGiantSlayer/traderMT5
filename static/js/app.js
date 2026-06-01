@@ -4487,21 +4487,26 @@ const TradingApp = () => {
                                 <button 
                                     onClick={openStochRsiSettings}
                                     style={{ 
-                                        background: 'transparent', 
-                                        border: 'none', 
-                                        color: 'var(--text-secondary)', 
+                                        background: 'rgba(255, 183, 3, 0.08)', 
+                                        border: '1px solid rgba(255, 183, 3, 0.25)', 
+                                        color: 'var(--accent-gold)', 
                                         cursor: 'pointer', 
-                                        display: 'flex', 
+                                        display: 'inline-flex', 
                                         alignItems: 'center', 
-                                        padding: '4px',
-                                        borderRadius: '4px',
+                                        gap: '4px',
+                                        padding: '2px 8px',
+                                        borderRadius: '12px',
+                                        fontSize: '10.5px',
+                                        fontWeight: 600,
                                         transition: 'all 0.2s ease',
+                                        boxShadow: '0 0 6px rgba(255, 183, 3, 0.05)'
                                     }}
-                                    onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent-gold)'; e.currentTarget.style.backgroundColor = 'rgba(255, 183, 3, 0.08)'; }}
-                                    onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.backgroundColor = 'transparent'; }}
-                                    title="ตั้งค่า Stoch RSI"
+                                    onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255, 183, 3, 0.15)'; e.currentTarget.style.boxShadow = '0 0 8px rgba(255, 183, 3, 0.2)'; }}
+                                    onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255, 183, 3, 0.08)'; e.currentTarget.style.boxShadow = '0 0 6px rgba(255, 183, 3, 0.05)'; }}
+                                    title="ตั้งค่า Stochastic RSI"
                                 >
-                                    <Icon name="settings" size={14} />
+                                    <Icon name="settings" size={12} />
+                                    <span>ตั้งค่า</span>
                                 </button>
                             </div>
                             <span style={{ fontSize: '10px', background: 'rgba(255, 183, 3, 0.1)', color: 'var(--accent-gold)', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold', fontFamily: 'monospace' }}>
@@ -4601,10 +4606,31 @@ const TradingApp = () => {
                         )}
                         
                         {/* Explanation Help Link */}
-                        <div style={{ marginTop: '12px', borderTop: '1px solid rgba(255,255,255,0.04)', paddingTop: '8px', textAlign: 'right' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '12px', borderTop: '1px solid rgba(255,255,255,0.04)', paddingTop: '8px' }}>
+                            <button 
+                                onClick={openStochRsiSettings}
+                                style={{ 
+                                    background: 'rgba(255, 183, 3, 0.06)', 
+                                    border: '1px solid rgba(255, 183, 3, 0.15)', 
+                                    color: 'var(--accent-gold)', 
+                                    fontSize: '10.5px', 
+                                    cursor: 'pointer', 
+                                    fontWeight: 600, 
+                                    display: 'inline-flex', 
+                                    alignItems: 'center', 
+                                    gap: '4px',
+                                    padding: '4px 10px',
+                                    borderRadius: '6px',
+                                    transition: 'all 0.2s'
+                                }}
+                                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 183, 3, 0.12)'}
+                                onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255, 183, 3, 0.06)'}
+                            >
+                                <span>⚙️ ตั้งค่าอินดิเคเตอร์ (K/D)</span>
+                            </button>
                             <button 
                                 onClick={() => alert('Stochastic RSI (StochRSI) คือ ออสซิลเลเตอร์ที่คำนวณซ้ำบนค่า RSI (Relative Strength Index) อีกชั้นหนึ่ง แทนการคำนวณบนราคาโดยตรง ส่งผลให้มีความรวดเร็วและจับสภาวะกลับตัว Overbought (>80) และ Oversold (<20) ได้ไวกว่าปกติ ช่วยให้เทรดเดอร์ Day Trading สังเกตสัญญาณจุดสปริงตัวของราคาได้อย่างแม่นยำยิ่งขึ้น')}
-                                style={{ background: 'transparent', border: 'none', color: 'var(--accent-gold)', fontSize: '10px', cursor: 'pointer', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                                style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', fontSize: '10.5px', cursor: 'pointer', fontWeight: 500, display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                             >
                                 <span>💡 StochRSI คืออะไร?</span>
                             </button>
@@ -4621,21 +4647,26 @@ const TradingApp = () => {
                                 <button 
                                     onClick={openMacdSettings}
                                     style={{ 
-                                        background: 'transparent', 
-                                        border: 'none', 
-                                        color: 'var(--text-secondary)', 
+                                        background: 'rgba(46, 204, 113, 0.08)', 
+                                        border: '1px solid rgba(46, 204, 113, 0.25)', 
+                                        color: 'var(--bull-green)', 
                                         cursor: 'pointer', 
-                                        display: 'flex', 
+                                        display: 'inline-flex', 
                                         alignItems: 'center', 
-                                        padding: '4px',
-                                        borderRadius: '4px',
+                                        gap: '4px',
+                                        padding: '2px 8px',
+                                        borderRadius: '12px',
+                                        fontSize: '10.5px',
+                                        fontWeight: 600,
                                         transition: 'all 0.2s ease',
+                                        boxShadow: '0 0 6px rgba(46, 204, 113, 0.05)'
                                     }}
-                                    onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--bull-green)'; e.currentTarget.style.backgroundColor = 'rgba(46, 204, 113, 0.08)'; }}
-                                    onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.backgroundColor = 'transparent'; }}
+                                    onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(46, 204, 113, 0.15)'; e.currentTarget.style.boxShadow = '0 0 8px rgba(46, 204, 113, 0.2)'; }}
+                                    onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(46, 204, 113, 0.08)'; e.currentTarget.style.boxShadow = '0 0 6px rgba(46, 204, 113, 0.05)'; }}
                                     title="ตั้งค่า MACD 4C"
                                 >
-                                    <Icon name="settings" size={14} />
+                                    <Icon name="settings" size={12} />
+                                    <span>ตั้งค่า</span>
                                 </button>
                             </div>
                             <span style={{ fontSize: '10px', background: 'rgba(46, 204, 113, 0.1)', color: 'var(--bull-green)', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold', fontFamily: 'monospace' }}>
@@ -4798,10 +4829,31 @@ const TradingApp = () => {
                         )}
 
                         {/* Explanation Help Link */}
-                        <div style={{ marginTop: '12px', borderTop: '1px solid rgba(255,255,255,0.04)', paddingTop: '8px', textAlign: 'right' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '12px', borderTop: '1px solid rgba(255,255,255,0.04)', paddingTop: '8px' }}>
+                            <button 
+                                onClick={openMacdSettings}
+                                style={{ 
+                                    background: 'rgba(46, 204, 113, 0.06)', 
+                                    border: '1px solid rgba(46, 204, 113, 0.15)', 
+                                    color: 'var(--bull-green)', 
+                                    fontSize: '10.5px', 
+                                    cursor: 'pointer', 
+                                    fontWeight: 600, 
+                                    display: 'inline-flex', 
+                                    alignItems: 'center', 
+                                    gap: '4px',
+                                    padding: '4px 10px',
+                                    borderRadius: '6px',
+                                    transition: 'all 0.2s'
+                                }}
+                                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(46, 204, 113, 0.12)'}
+                                onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(46, 204, 113, 0.06)'}
+                            >
+                                <span>⚙️ ตั้งค่าอินดิเคเตอร์ (Fast/Slow)</span>
+                            </button>
                             <button 
                                 onClick={() => alert('4-Color MACD (MACD 4C) คือ ออสซิลเลเตอร์ที่ปรับปรุงการแสดงผลโมเมนตัมแบบ 4 สีมิติ โดยแท่งเหนือ Zero (สีเขียวสว่าง/สีเขียวเข้ม) และใต้ Zero (สีแดงเข้ม/สีแดงสว่าง) จะช่วยแยกแยะว่าทิศทางคลื่นอยู่ในช่วงเร่งความเร็วหรือเริ่มชะลอตัว ช่วยให้เข้าต้นเทรนได้เร็วและออกได้คมกว่า MACD ทั่วไป')}
-                                style={{ background: 'transparent', border: 'none', color: 'var(--bull-green)', fontSize: '10px', cursor: 'pointer', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                                style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', fontSize: '10.5px', cursor: 'pointer', fontWeight: 500, display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                             >
                                 <span>📊 MACD 4C คืออะไร?</span>
                             </button>
