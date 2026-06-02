@@ -250,7 +250,7 @@ const TradingApp = () => {
         const timers = intervals.map(ms => setTimeout(resizeCharts, ms));
         
         return () => timers.forEach(clearTimeout);
-    }, [isWatchlistCollapsed, isExecutionCollapsed, chartLayout, isTerminalExpanded]);
+    }, [isWatchlistCollapsed, isExecutionCollapsed, chartLayout, isTerminalExpanded, isTerminalCollapsed]);
 
     // Interactive Graph Drawing states & refs
     const [drawingTool, setDrawingToolState] = useState(null); // null | 'trendline' | 'horizontal'
@@ -420,6 +420,7 @@ const TradingApp = () => {
     // Terminal Tabs
     const [activeTab, setActiveTab] = useState(isPopout ? "backtest" : "positions"); // 'positions' | 'history' | 'analytics' | 'bots' | 'backtest'
     const [isTerminalExpanded, setIsTerminalExpanded] = useState(false);
+    const [isTerminalCollapsed, setIsTerminalCollapsed] = useState(false);
     const [openPositions, setOpenPositions] = useState([]);
     const [tradeHistory, setTradeHistory] = useState([]);
 
@@ -1430,7 +1431,7 @@ const TradingApp = () => {
         const timers = intervals.map(ms => setTimeout(resizeBacktestCharts, ms));
         
         return () => timers.forEach(clearTimeout);
-    }, [isWatchlistCollapsed, isExecutionCollapsed, activeTab, isTerminalExpanded, backtestSubTab, backtestResult]);
+    }, [isWatchlistCollapsed, isExecutionCollapsed, activeTab, isTerminalExpanded, isTerminalCollapsed, backtestSubTab, backtestResult]);
 
     // --- API Interactions ---
 
@@ -3234,7 +3235,7 @@ const TradingApp = () => {
 
             {/* --- BREAKING NEWS TICKER BAR --- */}
             {newsData && newsData.news && newsData.news.length > 0 && (
-                <div className="breaking-news-ticker-bar" onClick={() => setActiveTab("news")}>
+                <div className="breaking-news-ticker-bar" onClick={() => { setActiveTab("news"); setIsTerminalCollapsed(false); }}>
                     <div className="ticker-label">
                         <span>⚡ BREAKING NEWS</span>
                     </div>
@@ -3460,7 +3461,7 @@ const TradingApp = () => {
                 <div 
                     className="center-content"
                     style={{ 
-                        gridTemplateRows: isTerminalExpanded ? '150px 1fr' : '1fr 380px',
+                        gridTemplateRows: isTerminalExpanded ? '150px 1fr' : isTerminalCollapsed ? '1fr 40px' : '1fr 380px',
                         transition: 'grid-template-rows 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
                     }}
                 >
@@ -3913,21 +3914,21 @@ const TradingApp = () => {
                         <div className="terminal-header-tabs">
                             <button 
                                 className={`tab-btn ${activeTab === 'positions' ? 'active' : ''}`}
-                                onClick={() => setActiveTab('positions')}
+                                onClick={() => { setActiveTab('positions'); setIsTerminalCollapsed(false); }}
                             >
                                 <Icon name="wallet" size={14} />
                                 <span>โพสิชันที่เปิด ({openPositions.length})</span>
                             </button>
                             <button 
                                 className={`tab-btn ${activeTab === 'history' ? 'active' : ''}`}
-                                onClick={() => setActiveTab('history')}
+                                onClick={() => { setActiveTab('history'); setIsTerminalCollapsed(false); }}
                             >
                                 <Icon name="history" size={14} />
                                 <span>ประวัติการเทรด ({tradeHistory.length})</span>
                             </button>
                             <div 
                                 className={`tab-btn ${activeTab === 'analytics' ? 'active' : ''}`}
-                                onClick={() => setActiveTab('analytics')}
+                                onClick={() => { setActiveTab('analytics'); setIsTerminalCollapsed(false); }}
                                 style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
                             >
                                 <Icon name="trend-up" size={14} />
@@ -3966,7 +3967,7 @@ const TradingApp = () => {
                             </div>
                             <button 
                                 className={`tab-btn ${activeTab === 'bots' ? 'active' : ''}`}
-                                onClick={() => setActiveTab('bots')}
+                                onClick={() => { setActiveTab('bots'); setIsTerminalCollapsed(false); }}
                                 style={{ position: 'relative' }}
                             >
                                 <Icon name="settings" size={14} style={{ color: activeRunningBotsCount > 0 ? 'var(--bull-green)' : 'inherit' }} />
@@ -3986,14 +3987,14 @@ const TradingApp = () => {
                             </button>
                             <button 
                                 className={`tab-btn ${activeTab === 'backtest' ? 'active' : ''}`}
-                                onClick={() => setActiveTab('backtest')}
+                                onClick={() => { setActiveTab('backtest'); setIsTerminalCollapsed(false); }}
                             >
                                 <Icon name="refresh" size={14} />
                                 <span>ทดสอบย้อนหลัง (Backtest)</span>
                             </button>
                             <div 
                                 className={`tab-btn ${activeTab === 'news' ? 'active' : ''}`}
-                                onClick={() => setActiveTab('news')}
+                                onClick={() => { setActiveTab('news'); setIsTerminalCollapsed(false); }}
                                 style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
                             >
                                 <Icon name="info" size={14} />
@@ -4031,12 +4032,50 @@ const TradingApp = () => {
                                  </span>
                             </div>
 
+                            {/* Collapse/Expand Terminal Toggle Button */}
+                            <button 
+                                className="tab-btn"
+                                onClick={() => {
+                                    const nextState = !isTerminalCollapsed;
+                                    setIsTerminalCollapsed(nextState);
+                                    if (nextState && isTerminalExpanded) {
+                                        setIsTerminalExpanded(false);
+                                    }
+                                }}
+                                style={{ 
+                                    marginLeft: 'auto', 
+                                    display: 'flex', 
+                                    alignItems: 'center', 
+                                    gap: '6px', 
+                                    color: isTerminalCollapsed ? 'var(--accent-gold)' : 'var(--text-secondary)', 
+                                    padding: '0 16px',
+                                    borderLeft: '1px solid var(--border-color)'
+                                }}
+                                title={isTerminalCollapsed ? "แสดงข้อมูลเทอร์มินัล (Expand)" : "ซ่อนข้อมูลเทอร์มินัล (Collapse)"}
+                            >
+                                {isTerminalCollapsed ? (
+                                    <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+                                        <polyline points="18 15 12 9 6 15" />
+                                    </svg>
+                                ) : (
+                                    <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+                                        <polyline points="6 9 12 15 18 9" />
+                                    </svg>
+                                )}
+                                <span>{isTerminalCollapsed ? "แสดงพาเนล" : "ซ่อนพาเนล"}</span>
+                            </button>
+
                             {/* Maximize/Minimize Terminal Toggle Button */}
                             <button 
                                 className="tab-btn"
-                                onClick={() => setIsTerminalExpanded(!isTerminalExpanded)}
+                                onClick={() => {
+                                    const nextState = !isTerminalExpanded;
+                                    setIsTerminalExpanded(nextState);
+                                    if (nextState && isTerminalCollapsed) {
+                                        setIsTerminalCollapsed(false);
+                                    }
+                                }}
                                 style={{ 
-                                    marginLeft: 'auto', 
                                     display: 'flex', 
                                     alignItems: 'center', 
                                     gap: '6px', 
