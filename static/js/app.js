@@ -1785,15 +1785,15 @@ const TradingApp = () => {
         setSelectedHistoryOrder(order);
     };
 
-    // Draw order TP, SL, Open, and Close price lines when selectedHistoryOrder changes
+    // Draw order TP, SL, Open, and Close price points when selectedHistoryOrder changes
     useEffect(() => {
-        // Clear existing history price lines from all panes
-        Object.entries(historyPriceLinesRef.current).forEach(([pId, lines]) => {
-            const series = candlestickSeriesesRef.current[pId];
-            if (series && lines) {
-                lines.forEach(line => {
+        // Clear existing history price points from all panes
+        Object.entries(historyPriceLinesRef.current).forEach(([pId, seriesList]) => {
+            const chart = chartsRef.current[pId];
+            if (chart && seriesList) {
+                seriesList.forEach(series => {
                      try {
-                         series.removePriceLine(line);
+                         chart.removeSeries(series);
                      } catch (e) {}
                 });
             }
@@ -1806,61 +1806,126 @@ const TradingApp = () => {
         const decimals = selectedHistoryOrder.symbol.includes('EURUSD') ? 5 : 2;
         const formatP = (val) => Number(val).toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 
+        // Helper to parse time string YYYY-MM-DD HH:MM:SS to Unix timestamp
+        const parseToUnix = (dateStr) => {
+            if (!dateStr) return null;
+            const parsed = new Date(dateStr.replace(/-/g, '/'));
+            return Math.floor(parsed.getTime() / 1000);
+        };
+
+        // Helper to align Unix timestamp to timeframe boundaries
+        const alignTimeToTimeframe = (timestamp, tf) => {
+            const spacingMap = {
+                "M1": 60,
+                "M5": 300,
+                "M15": 900,
+                "M30": 1800,
+                "H1": 3600,
+                "H4": 14400,
+                "D1": 86400
+            };
+            const seconds = spacingMap[tf] || 3600;
+            return Math.floor(timestamp / seconds) * seconds;
+        };
+
+        const openTimeUnix = parseToUnix(selectedHistoryOrder.open_time);
+        const closeTimeUnix = parseToUnix(selectedHistoryOrder.close_time);
+
         activePaneIds.forEach(pId => {
-            const series = candlestickSeriesesRef.current[pId];
-            if (!series) return;
+            const chart = chartsRef.current[pId];
+            if (!chart) return;
 
-            const lines = [];
+            const paneTf = paneTimeframes[pId] || 'H1';
+            const alignedOpenTime = openTimeUnix ? alignTimeToTimeframe(openTimeUnix, paneTf) : null;
+            const alignedCloseTime = closeTimeUnix ? alignTimeToTimeframe(closeTimeUnix, paneTf) : null;
 
-            if (selectedHistoryOrder.open_price) {
-                const openLine = series.createPriceLine({
-                    price: selectedHistoryOrder.open_price,
-                    color: '#00b4d8', // Cyan/Blue
-                    lineWidth: 2,
-                    lineStyle: 0, // Solid
-                    axisLabelVisible: true,
-                    title: `Open: ${formatP(selectedHistoryOrder.open_price)}`
+            const seriesList = [];
+
+            // 1. Open Point (plotted at open time and open price)
+            if (selectedHistoryOrder.open_price && alignedOpenTime) {
+                const openSeries = chart.addLineSeries({
+                    color: '#00b4d8',
+                    lineWidth: 0,
+                    priceLineVisible: false,
+                    lastValueVisible: false,
+                    crosshairMarkerVisible: false
                 });
-                lines.push(openLine);
+                openSeries.setData([{ time: alignedOpenTime, value: selectedHistoryOrder.open_price }]);
+                openSeries.setMarkers([{
+                    time: alignedOpenTime,
+                    position: 'inBar',
+                    color: '#00b4d8',
+                    shape: 'circle',
+                    size: 1.5,
+                    text: `Open: ${formatP(selectedHistoryOrder.open_price)}`
+                }]);
+                seriesList.push(openSeries);
             }
 
-            if (selectedHistoryOrder.close_price) {
-                const closeLine = series.createPriceLine({
-                    price: selectedHistoryOrder.close_price,
-                    color: '#ffb703', // Gold/Yellow
-                    lineWidth: 2,
-                    lineStyle: 0, // Solid
-                    axisLabelVisible: true,
-                    title: `Close: ${formatP(selectedHistoryOrder.close_price)}`
+            // 2. Close Point (plotted at close time and close price)
+            if (selectedHistoryOrder.close_price && alignedCloseTime) {
+                const closeSeries = chart.addLineSeries({
+                    color: '#ffb703',
+                    lineWidth: 0,
+                    priceLineVisible: false,
+                    lastValueVisible: false,
+                    crosshairMarkerVisible: false
                 });
-                lines.push(closeLine);
+                closeSeries.setData([{ time: alignedCloseTime, value: selectedHistoryOrder.close_price }]);
+                closeSeries.setMarkers([{
+                    time: alignedCloseTime,
+                    position: 'inBar',
+                    color: '#ffb703',
+                    shape: 'circle',
+                    size: 1.5,
+                    text: `Close: ${formatP(selectedHistoryOrder.close_price)}`
+                }]);
+                seriesList.push(closeSeries);
             }
 
-            if (selectedHistoryOrder.sl && selectedHistoryOrder.sl > 0) {
-                const slLine = series.createPriceLine({
-                    price: selectedHistoryOrder.sl,
-                    color: '#e74c3c', // Red
-                    lineWidth: 2,
-                    lineStyle: 2, // Dashed
-                    axisLabelVisible: true,
-                    title: `SL: ${formatP(selectedHistoryOrder.sl)}`
+            // 3. SL Point (plotted at open time and SL price)
+            if (selectedHistoryOrder.sl && selectedHistoryOrder.sl > 0 && alignedOpenTime) {
+                const slSeries = chart.addLineSeries({
+                    color: '#e74c3c',
+                    lineWidth: 0,
+                    priceLineVisible: false,
+                    lastValueVisible: false,
+                    crosshairMarkerVisible: false
                 });
-                lines.push(slLine);
+                slSeries.setData([{ time: alignedOpenTime, value: selectedHistoryOrder.sl }]);
+                slSeries.setMarkers([{
+                    time: alignedOpenTime,
+                    position: 'inBar',
+                    color: '#e74c3c',
+                    shape: 'circle',
+                    size: 1.2,
+                    text: `SL: ${formatP(selectedHistoryOrder.sl)}`
+                }]);
+                seriesList.push(slSeries);
             }
 
-            if (selectedHistoryOrder.tp && selectedHistoryOrder.tp > 0) {
-                const tpLine = series.createPriceLine({
-                    price: selectedHistoryOrder.tp,
-                    color: '#2ecc71', // Green
-                    lineWidth: 2,
-                    lineStyle: 2, // Dashed
-                    axisLabelVisible: true,
-                    title: `TP: ${formatP(selectedHistoryOrder.tp)}`
+            // 4. TP Point (plotted at open time and TP price)
+            if (selectedHistoryOrder.tp && selectedHistoryOrder.tp > 0 && alignedOpenTime) {
+                const tpSeries = chart.addLineSeries({
+                    color: '#2ecc71',
+                    lineWidth: 0,
+                    priceLineVisible: false,
+                    lastValueVisible: false,
+                    crosshairMarkerVisible: false
                 });
-                lines.push(tpLine);
+                tpSeries.setData([{ time: alignedOpenTime, value: selectedHistoryOrder.tp }]);
+                tpSeries.setMarkers([{
+                    time: alignedOpenTime,
+                    position: 'inBar',
+                    color: '#2ecc71',
+                    shape: 'circle',
+                    size: 1.2,
+                    text: `TP: ${formatP(selectedHistoryOrder.tp)}`
+                }]);
+                seriesList.push(tpSeries);
             }
 
-            historyPriceLinesRef.current[pId] = lines;
+            historyPriceLinesRef.current[pId] = seriesList;
         });
     }, [selectedHistoryOrder, activeSymbol, chartLayout, JSON.stringify(paneTimeframes)]);
 
