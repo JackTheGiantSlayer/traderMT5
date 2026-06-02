@@ -299,6 +299,7 @@ const TradingApp = () => {
         });
         drawnLinesRef.current = drawnLinesRef.current.filter(line => line.symbol !== activeSymbol);
         setDrawingTool(null);
+        setSelectedHistoryOrder(null);
     };
 
     const autoDrawSMC = async () => {
@@ -424,6 +425,7 @@ const TradingApp = () => {
     const [showChartPatterns, setShowChartPatterns] = useState(false);
     const [openPositions, setOpenPositions] = useState([]);
     const [tradeHistory, setTradeHistory] = useState([]);
+    const [selectedHistoryOrder, setSelectedHistoryOrder] = useState(null);
 
     // Market Intelligence News States
     const [newsData, setNewsData] = useState({
@@ -583,6 +585,7 @@ const TradingApp = () => {
     const swingSeriesesRef = useRef({});
     const chatbotEndRef = useRef(null);
     const watchlistRef = useRef([]);
+    const historyPriceLinesRef = useRef({});
 
     // Keep watchlistRef in sync with watchlist state
     useEffect(() => {
@@ -1747,6 +1750,119 @@ const TradingApp = () => {
             console.error("Error fetching history:", err);
         }
     };
+
+    const handleHistoryOrderClick = (order) => {
+        if (selectedHistoryOrder && selectedHistoryOrder.ticket === order.ticket) {
+            setSelectedHistoryOrder(null);
+            return;
+        }
+
+        // Resolve timeframe
+        let resolvedTimeframe = null;
+        if (order.comment) {
+            const cleanComment = order.comment.replace(/\s*\[.*?\]$/, '').trim();
+            const matchingBot = bots.find(b => 
+                b.name.trim().toLowerCase() === cleanComment.toLowerCase() ||
+                cleanComment.toLowerCase().includes(b.name.trim().toLowerCase())
+            );
+            if (matchingBot && matchingBot.timeframe) {
+                resolvedTimeframe = matchingBot.timeframe;
+            } else {
+                const match = order.comment.match(/\b(M1|M5|M15|M30|H1|H4|D1)\b/i);
+                if (match) {
+                    resolvedTimeframe = match[1].toUpperCase();
+                }
+            }
+        }
+
+        const finalTf = resolvedTimeframe || paneTimeframes[activePaneId] || 'H1';
+
+        setActiveSymbol(order.symbol);
+        setPaneTimeframes(prev => ({
+            ...prev,
+            [activePaneId]: finalTf
+        }));
+        setSelectedHistoryOrder(order);
+    };
+
+    // Draw order TP, SL, Open, and Close price lines when selectedHistoryOrder changes
+    useEffect(() => {
+        // Clear existing history price lines from all panes
+        Object.entries(historyPriceLinesRef.current).forEach(([pId, lines]) => {
+            const series = candlestickSeriesesRef.current[pId];
+            if (series && lines) {
+                lines.forEach(line => {
+                     try {
+                         series.removePriceLine(line);
+                     } catch (e) {}
+                });
+            }
+        });
+        historyPriceLinesRef.current = {};
+
+        if (!selectedHistoryOrder || selectedHistoryOrder.symbol !== activeSymbol) return;
+
+        const activePaneIds = chartLayout === 'single' ? [0] : chartLayout === 'dual' ? [0, 1] : [0, 1, 2, 3];
+        const decimals = selectedHistoryOrder.symbol.includes('EURUSD') ? 5 : 2;
+        const formatP = (val) => Number(val).toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+
+        activePaneIds.forEach(pId => {
+            const series = candlestickSeriesesRef.current[pId];
+            if (!series) return;
+
+            const lines = [];
+
+            if (selectedHistoryOrder.open_price) {
+                const openLine = series.createPriceLine({
+                    price: selectedHistoryOrder.open_price,
+                    color: '#00b4d8', // Cyan/Blue
+                    lineWidth: 2,
+                    lineStyle: 0, // Solid
+                    axisLabelVisible: true,
+                    title: `Open: ${formatP(selectedHistoryOrder.open_price)}`
+                });
+                lines.push(openLine);
+            }
+
+            if (selectedHistoryOrder.close_price) {
+                const closeLine = series.createPriceLine({
+                    price: selectedHistoryOrder.close_price,
+                    color: '#ffb703', // Gold/Yellow
+                    lineWidth: 2,
+                    lineStyle: 0, // Solid
+                    axisLabelVisible: true,
+                    title: `Close: ${formatP(selectedHistoryOrder.close_price)}`
+                });
+                lines.push(closeLine);
+            }
+
+            if (selectedHistoryOrder.sl && selectedHistoryOrder.sl > 0) {
+                const slLine = series.createPriceLine({
+                    price: selectedHistoryOrder.sl,
+                    color: '#e74c3c', // Red
+                    lineWidth: 2,
+                    lineStyle: 2, // Dashed
+                    axisLabelVisible: true,
+                    title: `SL: ${formatP(selectedHistoryOrder.sl)}`
+                });
+                lines.push(slLine);
+            }
+
+            if (selectedHistoryOrder.tp && selectedHistoryOrder.tp > 0) {
+                const tpLine = series.createPriceLine({
+                    price: selectedHistoryOrder.tp,
+                    color: '#2ecc71', // Green
+                    lineWidth: 2,
+                    lineStyle: 2, // Dashed
+                    axisLabelVisible: true,
+                    title: `TP: ${formatP(selectedHistoryOrder.tp)}`
+                });
+                lines.push(tpLine);
+            }
+
+            historyPriceLinesRef.current[pId] = lines;
+        });
+    }, [selectedHistoryOrder, activeSymbol, chartLayout, JSON.stringify(paneTimeframes)]);
 
     const fetchBots = async () => {
         try {
@@ -3399,6 +3515,7 @@ const TradingApp = () => {
                                     onClick={() => {
                                         setActiveSymbol(item.symbol);
                                         setActiveAsset(item);
+                                        setSelectedHistoryOrder(null);
                                     }}
                                     style={{
                                         display: 'flex',
@@ -4206,8 +4323,14 @@ const TradingApp = () => {
                                                     return Number(val).toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
                                                 };
                                                 
+                                                const isSelected = selectedHistoryOrder && selectedHistoryOrder.ticket === t.ticket;
                                                 return (
-                                                    <tr key={`${t.ticket}-${idx}`}>
+                                                    <tr 
+                                                        key={`${t.ticket}-${idx}`}
+                                                        onClick={() => handleHistoryOrderClick(t)}
+                                                        className={isSelected ? 'selected-history-row' : ''}
+                                                        style={{ cursor: 'pointer' }}
+                                                    >
                                                         <td style={{ fontFamily: 'monospace' }}>#{t.ticket}</td>
                                                         <td style={{ 
                                                             fontWeight: 600, 

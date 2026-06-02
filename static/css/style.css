@@ -2259,4 +2259,15 @@ header {
     border-radius: 50%;
     animation: spin 1s linear infinite;
     box-shadow: var(--glow-gold);
+}
+
+/* Selected History Order Row Highlight */
+.trading-table tbody tr.selected-history-row {
+    background-color: rgba(255, 183, 3, 0.08) !important;
+    border-left: 3px solid var(--accent-gold);
+}
+
+.trading-table tbody tr.selected-history-row td {
+    color: var(--text-primary) !important;
+    font-weight: 600;
 }
