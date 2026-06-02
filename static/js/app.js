@@ -3528,54 +3528,6 @@ const TradingApp = () => {
                                     </button>
 
                                     <button 
-                                        className={`drawing-btn ${drawingTool === 'bos' ? 'active' : ''}`}
-                                        onClick={() => setDrawingTool(drawingTool === 'bos' ? null : 'bos')}
-                                        title="🔹 วาดเส้นแนวระดับ BOS (Break of Structure - คลิก 1 จุด, สีฟ้า)"
-                                        style={{
-                                            display: 'inline-flex',
-                                            alignItems: 'center',
-                                            gap: '6px',
-                                            padding: '4px 10px',
-                                            borderRadius: '4px',
-                                            border: '1px solid rgba(255,255,255,0.08)',
-                                            background: drawingTool === 'bos' ? 'rgba(0, 180, 216, 0.2)' : 'rgba(255,255,255,0.03)',
-                                            borderColor: drawingTool === 'bos' ? '#00b4d8' : 'rgba(255,255,255,0.08)',
-                                            color: drawingTool === 'bos' ? '#00b4d8' : 'var(--text-secondary)',
-                                            cursor: 'pointer',
-                                            fontSize: '11px',
-                                            fontWeight: 600,
-                                            transition: 'all 0.2s'
-                                        }}
-                                    >
-                                        <Icon name="minus" size={12} />
-                                        <span style={{ color: drawingTool === 'bos' ? '#00b4d8' : 'var(--text-secondary)' }}>BOS</span>
-                                    </button>
-
-                                    <button 
-                                        className={`drawing-btn ${drawingTool === 'choch' ? 'active' : ''}`}
-                                        onClick={() => setDrawingTool(drawingTool === 'choch' ? null : 'choch')}
-                                        title="🔸 วาดเส้นแนวระดับ CHoCH (Change of Character - คลิก 1 จุด, สีชมพู)"
-                                        style={{
-                                            display: 'inline-flex',
-                                            alignItems: 'center',
-                                            gap: '6px',
-                                            padding: '4px 10px',
-                                            borderRadius: '4px',
-                                            border: '1px solid rgba(255,255,255,0.08)',
-                                            background: drawingTool === 'choch' ? 'rgba(255, 71, 126, 0.2)' : 'rgba(255,255,255,0.03)',
-                                            borderColor: drawingTool === 'choch' ? '#ff477e' : 'rgba(255,255,255,0.08)',
-                                            color: drawingTool === 'choch' ? '#ff477e' : 'var(--text-secondary)',
-                                            cursor: 'pointer',
-                                            fontSize: '11px',
-                                            fontWeight: 600,
-                                            transition: 'all 0.2s'
-                                        }}
-                                    >
-                                        <Icon name="minus" size={12} />
-                                        <span style={{ color: drawingTool === 'choch' ? '#ff477e' : 'var(--text-secondary)' }}>CHoCH</span>
-                                    </button>
-
-                                    <button 
                                         className="drawing-btn"
                                         onClick={autoDrawSMC}
                                         title="🤖 ตีเส้น BOS และ CHoCH อัตโนมัติ (SMC Smart Market Structure)"
@@ -3597,6 +3549,39 @@ const TradingApp = () => {
                                     >
                                         <Icon name="server" size={12} />
                                         <span>Auto BOS/CHoCH</span>
+                                    </button>
+
+                                    <button
+                                        onClick={() => setShowChartPatterns(!showChartPatterns)}
+                                        title={showChartPatterns ? "ซ่อน Elliott Wave บนกราฟ" : "แสดง Elliott Wave บนกราฟ"}
+                                        style={{
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '6px',
+                                            padding: '4px 10px',
+                                            borderRadius: '4px',
+                                            border: '1px solid rgba(255,255,255,0.08)',
+                                            background: showChartPatterns ? 'rgba(0, 180, 216, 0.15)' : 'rgba(255,255,255,0.03)',
+                                            borderColor: showChartPatterns ? '#00b4d8' : 'rgba(255,255,255,0.08)',
+                                            color: showChartPatterns ? '#00b4d8' : 'var(--text-secondary)',
+                                            cursor: 'pointer',
+                                            fontSize: '11px',
+                                            fontWeight: 600,
+                                            transition: 'all 0.2s'
+                                        }}
+                                    >
+                                        {showChartPatterns ? (
+                                            <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+                                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                                                <circle cx="12" cy="12" r="3" />
+                                            </svg>
+                                        ) : (
+                                            <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+                                                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                                                <line x1="1" y1="1" x2="23" y2="23" />
+                                            </svg>
+                                        )}
+                                        <span>Elliott Wave</span>
                                     </button>
 
                                     {drawnLinesRef.current.some(line => line.symbol === activeSymbol) && (
@@ -3669,39 +3654,6 @@ const TradingApp = () => {
                                         }}
                                     >
                                         {isExecutionCollapsed ? "📂 แสดงส่งคำสั่ง" : "📁 ซ่อนส่งคำสั่ง"}
-                                    </button>
-
-                                    <button
-                                        onClick={() => setShowChartPatterns(!showChartPatterns)}
-                                        title={showChartPatterns ? "ซ่อน Elliott Wave บนกราฟ" : "แสดง Elliott Wave บนกราฟ"}
-                                        style={{
-                                            display: 'inline-flex',
-                                            alignItems: 'center',
-                                            gap: '6px',
-                                            padding: '4px 10px',
-                                            borderRadius: '6px',
-                                            border: '1px solid rgba(255,255,255,0.08)',
-                                            background: showChartPatterns ? 'rgba(0, 180, 216, 0.15)' : 'rgba(255,255,255,0.03)',
-                                            borderColor: showChartPatterns ? '#00b4d8' : 'rgba(255,255,255,0.08)',
-                                            color: showChartPatterns ? '#00b4d8' : 'var(--text-secondary)',
-                                            cursor: 'pointer',
-                                            fontSize: '11px',
-                                            fontWeight: 600,
-                                            transition: 'all 0.2s'
-                                        }}
-                                    >
-                                        {showChartPatterns ? (
-                                            <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
-                                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                                                <circle cx="12" cy="12" r="3" />
-                                            </svg>
-                                        ) : (
-                                            <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
-                                                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
-                                                <line x1="1" y1="1" x2="23" y2="23" />
-                                            </svg>
-                                        )}
-                                        <span>Elliott Wave</span>
                                     </button>
                                 </div>
                             </div>
