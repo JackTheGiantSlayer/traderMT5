@@ -5306,15 +5306,17 @@ const TradingApp = () => {
                     style={{
                         width: isExecutionCollapsed ? '0px' : '340px',
                         minWidth: isExecutionCollapsed ? '0px' : '340px',
-                        overflow: 'hidden',
+                        overflowX: 'hidden',
+                        overflowY: isExecutionCollapsed ? 'hidden' : 'auto',
                         opacity: isExecutionCollapsed ? 0 : 1,
                         borderLeft: isExecutionCollapsed ? 'none' : '1px solid var(--border-color)',
                         padding: isExecutionCollapsed ? '0px' : '20px',
+                        height: '100%',
                         transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
                     }}
                 >
                     {/* Execution Card */}
-                    <div className="sidebar-panel-card">
+                    <div className="sidebar-panel-card" style={{ flexShrink: 0 }}>
                         <h3>ส่งคำสั่งซื้อขาย (Order Execution)</h3>
                         
                         <div className="order-type-tabs">
@@ -5392,7 +5394,7 @@ const TradingApp = () => {
                     </div>
 
                     {/* Account Health Summary Card */}
-                    <div className="sidebar-panel-card">
+                    <div className="sidebar-panel-card" style={{ flexShrink: 0 }}>
                         <h3>ระดับความปลอดภัยบัญชี</h3>
                         <div style={{ marginTop: '10px' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
@@ -5432,7 +5434,7 @@ const TradingApp = () => {
                     </div>
 
                     {/* Stochastic RSI Live Widget */}
-                    <div className="sidebar-panel-card" style={{ marginTop: '16px', position: 'relative', overflow: 'hidden' }}>
+                    <div className="sidebar-panel-card" style={{ marginTop: '16px', position: 'relative', overflow: 'hidden', flexShrink: 0 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 <h3 style={{ margin: 0, borderLeft: '3px solid var(--accent-gold)', paddingLeft: '8px', fontSize: '15px' }}>
@@ -5592,7 +5594,7 @@ const TradingApp = () => {
                     </div>
 
                     {/* MACD 4C Live Momentum Widget */}
-                    <div className="sidebar-panel-card" style={{ marginTop: '16px', position: 'relative', overflow: 'hidden' }}>
+                    <div className="sidebar-panel-card" style={{ marginTop: '16px', position: 'relative', overflow: 'hidden', flexShrink: 0 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 <h3 style={{ margin: 0, borderLeft: '3px solid var(--bull-green)', paddingLeft: '8px', fontSize: '15px' }}>
