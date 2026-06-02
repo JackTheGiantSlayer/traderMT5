@@ -421,6 +421,7 @@ const TradingApp = () => {
     const [activeTab, setActiveTab] = useState(isPopout ? "backtest" : "positions"); // 'positions' | 'history' | 'analytics' | 'bots' | 'backtest'
     const [isTerminalExpanded, setIsTerminalExpanded] = useState(false);
     const [isTerminalCollapsed, setIsTerminalCollapsed] = useState(false);
+    const [showChartPatterns, setShowChartPatterns] = useState(false);
     const [openPositions, setOpenPositions] = useState([]);
     const [tradeHistory, setTradeHistory] = useState([]);
 
@@ -733,7 +734,7 @@ const TradingApp = () => {
                 const series = candlestickSeriesesRef.current[paneId];
                 
                 // 1. Draw ZigZag Line if we have swings
-                if (data.swings && data.swings.length > 0 && swingSeries) {
+                if (showChartPatterns && data.swings && data.swings.length > 0 && swingSeries) {
                     const lineData = data.swings.map(s => ({
                         time: s.time,
                         value: s.price
@@ -748,62 +749,64 @@ const TradingApp = () => {
                 if (series) {
                     const markers = [];
                     
-                    if (data.swings) {
-                        data.swings.forEach(s => {
-                            markers.push({
-                                time: s.time,
-                                position: s.type === 'high' ? 'aboveBar' : 'belowBar',
-                                color: s.type === 'high' ? '#e74c3c' : '#2ecc71',
-                                shape: 'circle',
-                                size: 0.5,
-                                text: ''
+                    if (showChartPatterns) {
+                        if (data.swings) {
+                            data.swings.forEach(s => {
+                                markers.push({
+                                    time: s.time,
+                                    position: s.type === 'high' ? 'aboveBar' : 'belowBar',
+                                    color: s.type === 'high' ? '#e74c3c' : '#2ecc71',
+                                    shape: 'circle',
+                                    size: 0.5,
+                                    text: ''
+                                });
                             });
-                        });
-                    }
-                    
-                    if (data.harmonic && data.harmonic.points) {
-                        const pts = data.harmonic.points;
-                        const labels = ['X', 'A', 'B', 'C', 'D'];
-                        pts.forEach((pt, idx) => {
-                            markers.push({
-                                time: pt.time,
-                                position: pt.type === 'high' ? 'aboveBar' : 'belowBar',
-                                color: '#ffb703',
-                                shape: idx === 4 ? 'pin' : 'square',
-                                text: labels[idx]
-                            });
-                        });
+                        }
                         
-                        const D = pts[4];
-                        markers.push({
-                            time: D.time,
-                            position: D.type === 'high' ? 'aboveBar' : 'belowBar',
-                            color: data.harmonic.signal === 'buy' ? '#2ecc71' : '#e74c3c',
-                            shape: data.harmonic.signal === 'buy' ? 'arrowUp' : 'arrowDown',
-                            text: `🎯 ${data.harmonic.pattern} (${data.harmonic.signal.toUpperCase()})`
-                        });
-                    }
-                    
-                    if (data.elliott && data.elliott.points) {
-                        const pts = data.elliott.points;
-                        pts.forEach((pt, idx) => {
-                            markers.push({
-                                time: pt.time,
-                                position: pt.type === 'high' ? 'aboveBar' : 'belowBar',
-                                color: '#00b4d8',
-                                shape: 'circle',
-                                text: `${idx}`
+                        if (data.harmonic && data.harmonic.points) {
+                            const pts = data.harmonic.points;
+                            const labels = ['X', 'A', 'B', 'C', 'D'];
+                            pts.forEach((pt, idx) => {
+                                markers.push({
+                                    time: pt.time,
+                                    position: pt.type === 'high' ? 'aboveBar' : 'belowBar',
+                                    color: '#ffb703',
+                                    shape: idx === 4 ? 'pin' : 'square',
+                                    text: labels[idx]
+                                });
                             });
-                        });
+                            
+                            const D = pts[4];
+                            markers.push({
+                                time: D.time,
+                                position: D.type === 'high' ? 'aboveBar' : 'belowBar',
+                                color: data.harmonic.signal === 'buy' ? '#2ecc71' : '#e74c3c',
+                                shape: data.harmonic.signal === 'buy' ? 'arrowUp' : 'arrowDown',
+                                text: `🎯 ${data.harmonic.pattern} (${data.harmonic.signal.toUpperCase()})`
+                            });
+                        }
                         
-                        const lastPt = pts[pts.length - 1];
-                        markers.push({
-                            time: lastPt.time,
-                            position: lastPt.type === 'high' ? 'aboveBar' : 'belowBar',
-                            color: data.elliott.signal === 'buy' ? '#2ecc71' : '#e74c3c',
-                            shape: data.elliott.signal === 'buy' ? 'arrowUp' : 'arrowDown',
-                            text: `🌊 ${data.elliott.pattern} (${data.elliott.signal.toUpperCase()})`
-                        });
+                        if (data.elliott && data.elliott.points) {
+                            const pts = data.elliott.points;
+                            pts.forEach((pt, idx) => {
+                                markers.push({
+                                    time: pt.time,
+                                    position: pt.type === 'high' ? 'aboveBar' : 'belowBar',
+                                    color: '#00b4d8',
+                                    shape: 'circle',
+                                    text: `${idx}`
+                                });
+                            });
+                            
+                            const lastPt = pts[pts.length - 1];
+                            markers.push({
+                                time: lastPt.time,
+                                position: lastPt.type === 'high' ? 'aboveBar' : 'belowBar',
+                                color: data.elliott.signal === 'buy' ? '#2ecc71' : '#e74c3c',
+                                shape: data.elliott.signal === 'buy' ? 'arrowUp' : 'arrowDown',
+                                text: `🌊 ${data.elliott.pattern} (${data.elliott.signal.toUpperCase()})`
+                            });
+                        }
                     }
                     
                     markers.sort((a, b) => a.time - b.time);
@@ -1155,7 +1158,7 @@ const TradingApp = () => {
         updateAllPatterns();
         const patternsInterval = setInterval(updateAllPatterns, 5000);
         return () => clearInterval(patternsInterval);
-    }, [activeSymbol, chartLayout, JSON.stringify(paneTimeframes), activePaneId, JSON.stringify(stochRsiSettings), JSON.stringify(macdSettings)]);
+    }, [activeSymbol, chartLayout, JSON.stringify(paneTimeframes), activePaneId, JSON.stringify(stochRsiSettings), JSON.stringify(macdSettings), showChartPatterns]);
 
     // --- Backtesting Equity Curve Chart Initializer ---
     useEffect(() => {
@@ -3666,6 +3669,39 @@ const TradingApp = () => {
                                         }}
                                     >
                                         {isExecutionCollapsed ? "📂 แสดงส่งคำสั่ง" : "📁 ซ่อนส่งคำสั่ง"}
+                                    </button>
+
+                                    <button
+                                        onClick={() => setShowChartPatterns(!showChartPatterns)}
+                                        title={showChartPatterns ? "ซ่อนรูปแบบแพทเทิร์นและการวิเคราะห์คลื่นบนกราฟ" : "แสดงรูปแบบแพทเทิร์นและการวิเคราะห์คลื่นบนกราฟ"}
+                                        style={{
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '6px',
+                                            padding: '4px 10px',
+                                            borderRadius: '6px',
+                                            border: '1px solid rgba(255,255,255,0.08)',
+                                            background: showChartPatterns ? 'rgba(0, 180, 216, 0.15)' : 'rgba(255,255,255,0.03)',
+                                            borderColor: showChartPatterns ? '#00b4d8' : 'rgba(255,255,255,0.08)',
+                                            color: showChartPatterns ? '#00b4d8' : 'var(--text-secondary)',
+                                            cursor: 'pointer',
+                                            fontSize: '11px',
+                                            fontWeight: 600,
+                                            transition: 'all 0.2s'
+                                        }}
+                                    >
+                                        {showChartPatterns ? (
+                                            <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+                                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                                                <circle cx="12" cy="12" r="3" />
+                                            </svg>
+                                        ) : (
+                                            <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+                                                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                                                <line x1="1" y1="1" x2="23" y2="23" />
+                                            </svg>
+                                        )}
+                                        <span>{showChartPatterns ? "ซ่อนแพทเทิร์น" : "แสดงแพทเทิร์น"}</span>
                                     </button>
                                 </div>
                             </div>
