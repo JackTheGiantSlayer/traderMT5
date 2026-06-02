@@ -3673,7 +3673,7 @@ const TradingApp = () => {
 
                                     <button
                                         onClick={() => setShowChartPatterns(!showChartPatterns)}
-                                        title={showChartPatterns ? "ซ่อนรูปแบบแพทเทิร์นและการวิเคราะห์คลื่นบนกราฟ" : "แสดงรูปแบบแพทเทิร์นและการวิเคราะห์คลื่นบนกราฟ"}
+                                        title={showChartPatterns ? "ซ่อน Elliott Wave บนกราฟ" : "แสดง Elliott Wave บนกราฟ"}
                                         style={{
                                             display: 'inline-flex',
                                             alignItems: 'center',
@@ -3701,7 +3701,7 @@ const TradingApp = () => {
                                                 <line x1="1" y1="1" x2="23" y2="23" />
                                             </svg>
                                         )}
-                                        <span>{showChartPatterns ? "ซ่อนแพทเทิร์น" : "แสดงแพทเทิร์น"}</span>
+                                        <span>Elliott Wave</span>
                                     </button>
                                 </div>
                             </div>
