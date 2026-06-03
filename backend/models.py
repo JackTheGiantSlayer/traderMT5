@@ -59,6 +59,7 @@ class BotSettings(Base):
     use_news_filter = Column(Boolean, default=False)
     risk_percent = Column(Float, default=1.0)
     allowed_sessions = Column(String(50), default="all")
+    last_traded_pattern_time = Column(Integer, default=0, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class BotLog(Base):

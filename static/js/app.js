@@ -300,6 +300,7 @@ const TradingApp = () => {
         drawnLinesRef.current = drawnLinesRef.current.filter(line => line.symbol !== activeSymbol);
         setDrawingTool(null);
         setSelectedHistoryOrder(null);
+        setSelectedBacktestTrade(null);
     };
 
     const autoDrawSMC = async () => {
@@ -462,8 +463,10 @@ const TradingApp = () => {
     const [backtestResult, setBacktestResult] = useState(null);
     const [backtestLoading, setBacktestLoading] = useState(false);
     const [backtestSubTab, setBacktestSubTab] = useState("stats"); // 'stats' | 'price' | 'equity' | 'deals'
+    const [selectedBacktestTrade, setSelectedBacktestTrade] = useState(null);
 
     const backtestChartContainerRef = useRef(null);
+    const backtestPriceLinesRef = useRef([]);
     const backtestChartRef = useRef(null);
     const backtestAreaSeriesRef = useRef(null);
 
@@ -586,6 +589,7 @@ const TradingApp = () => {
     const chatbotEndRef = useRef(null);
     const watchlistRef = useRef([]);
     const historyPriceLinesRef = useRef({});
+    const baseMarkersRef = useRef({});
 
     // Keep watchlistRef in sync with watchlist state
     useEffect(() => {
@@ -703,6 +707,82 @@ const TradingApp = () => {
         }
     };
 
+    // Helper to consolidate base patterns markers and selected order markers
+    const updateChartMarkers = (paneId) => {
+        const series = candlestickSeriesesRef.current[paneId];
+        if (!series) return;
+
+        let markers = [...(baseMarkersRef.current[paneId] || [])];
+
+        // If a history order is selected, align and add its markers
+        if (selectedHistoryOrder && selectedHistoryOrder.symbol === activeSymbol) {
+            const paneTf = paneTimeframes[paneId] || 'H1';
+            const decimals = selectedHistoryOrder.symbol.includes('EURUSD') ? 5 : 2;
+            const formatP = (val) => Number(val).toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+
+            const parseToUnix = (dateStr) => {
+                if (!dateStr) return null;
+                const parts = dateStr.split(/[- :\/]/);
+                if (parts.length >= 6) {
+                    const y = parseInt(parts[0], 10);
+                    const m = parseInt(parts[1], 10) - 1; // 0-based month
+                    const d = parseInt(parts[2], 10);
+                    const hr = parseInt(parts[3], 10);
+                    const min = parseInt(parts[4], 10);
+                    const sec = parseInt(parts[5], 10);
+                    return Math.floor(Date.UTC(y, m, d, hr, min, sec) / 1000);
+                }
+                const parsed = new Date(dateStr.replace(/-/g, '/'));
+                return Math.floor(parsed.getTime() / 1000);
+            };
+
+            const alignTimeToTimeframe = (timestamp, tf) => {
+                const spacingMap = {
+                    "M1": 60,
+                    "M5": 300,
+                    "M15": 900,
+                    "M30": 1800,
+                    "H1": 3600,
+                    "H4": 14400,
+                    "D1": 86400
+                };
+                const seconds = spacingMap[tf] || 3600;
+                return Math.floor(timestamp / seconds) * seconds;
+            };
+
+            const openTimeUnix = parseToUnix(selectedHistoryOrder.open_time);
+            const closeTimeUnix = parseToUnix(selectedHistoryOrder.close_time);
+            const alignedOpenTime = openTimeUnix ? alignTimeToTimeframe(openTimeUnix, paneTf) : null;
+            const alignedCloseTime = closeTimeUnix ? alignTimeToTimeframe(closeTimeUnix, paneTf) : null;
+
+            if (selectedHistoryOrder.open_price && alignedOpenTime) {
+                markers.push({
+                    time: alignedOpenTime,
+                    position: selectedHistoryOrder.type === 'buy' ? 'belowBar' : 'aboveBar',
+                    color: selectedHistoryOrder.type === 'buy' ? '#2ecc71' : '#e74c3c',
+                    shape: selectedHistoryOrder.type === 'buy' ? 'arrowUp' : 'arrowDown',
+                    size: 1.5,
+                    text: `${selectedHistoryOrder.type.toUpperCase()} #${selectedHistoryOrder.ticket} @ ${formatP(selectedHistoryOrder.open_price)}`
+                });
+            }
+
+            if (selectedHistoryOrder.close_price && alignedCloseTime) {
+                markers.push({
+                    time: alignedCloseTime,
+                    position: selectedHistoryOrder.type === 'buy' ? 'aboveBar' : 'belowBar',
+                    color: selectedHistoryOrder.profit >= 0 ? '#2ecc71' : '#e74c3c',
+                    shape: 'pin',
+                    size: 1.5,
+                    text: `CLOSE #${selectedHistoryOrder.ticket} @ ${formatP(selectedHistoryOrder.close_price)} (${selectedHistoryOrder.profit >= 0 ? '+' : ''}${Number(selectedHistoryOrder.profit).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD)`
+                });
+            }
+        }
+
+        // Sort markers chronologically to avoid lightweight-charts warnings/errors
+        markers.sort((a, b) => a.time - b.time);
+        series.setMarkers(markers);
+    };
+
     // Helper to load patterns and swing ZigZag lines for a specific chart pane
     const loadPatternsForPane = async (paneId, symbol, tf) => {
         try {
@@ -813,7 +893,8 @@ const TradingApp = () => {
                     }
                     
                     markers.sort((a, b) => a.time - b.time);
-                    series.setMarkers(markers);
+                    baseMarkersRef.current[paneId] = markers;
+                    updateChartMarkers(paneId);
                 }
             }
         } catch (err) {
@@ -848,9 +929,9 @@ const TradingApp = () => {
             const chart = LightweightCharts.createChart(container, {
                 layout: {
                     background: { type: LightweightCharts.ColorType.Solid, color: '#0c1220' },
-                    textColor: '#94a3b8',
-                    fontSize: 11,
-                    fontFamily: 'Inter',
+                    textColor: '#cbd5e1',
+                    fontSize: 12,
+                    fontFamily: 'Inter, Outfit, sans-serif',
                 },
                 grid: {
                     vertLines: { color: 'rgba(38, 50, 80, 0.2)' },
@@ -1191,9 +1272,9 @@ const TradingApp = () => {
         const chart = LightweightCharts.createChart(container, {
             layout: {
                 background: { type: LightweightCharts.ColorType.Solid, color: '#0c1220' },
-                textColor: '#94a3b8',
-                fontSize: 11,
-                fontFamily: 'Inter',
+                textColor: '#cbd5e1',
+                fontSize: 12,
+                fontFamily: 'Inter, Outfit, sans-serif',
             },
             grid: {
                 vertLines: { color: 'rgba(38, 50, 80, 0.2)' },
@@ -1247,23 +1328,18 @@ const TradingApp = () => {
         backtestChartRef.current = chart;
         backtestAreaSeriesRef.current = areaSeries;
 
-        const handleResize = () => {
+        const resizeObserver = new ResizeObserver(() => {
             if (chart && container) {
                 chart.applyOptions({
                     width: container.clientWidth,
                     height: container.clientHeight
                 });
             }
-        };
-
-        window.addEventListener('resize', handleResize);
-        
-        // Fire resize slightly after mount to fit properly
-        const resizeTimeout = setTimeout(handleResize, 150);
+        });
+        resizeObserver.observe(container);
 
         return () => {
-            window.removeEventListener('resize', handleResize);
-            clearTimeout(resizeTimeout);
+            resizeObserver.disconnect();
             if (chart) {
                 try {
                     chart.remove();
@@ -1302,9 +1378,9 @@ const TradingApp = () => {
         const chart = LightweightCharts.createChart(container, {
             layout: {
                 background: { type: LightweightCharts.ColorType.Solid, color: '#0c1220' },
-                textColor: '#94a3b8',
-                fontSize: 11,
-                fontFamily: 'Inter',
+                textColor: '#cbd5e1',
+                fontSize: 12,
+                fontFamily: 'Inter, Outfit, sans-serif',
             },
             grid: {
                 vertLines: { color: 'rgba(38, 50, 80, 0.2)' },
@@ -1350,57 +1426,26 @@ const TradingApp = () => {
         candleData.sort((a, b) => a.time - b.time);
         candlestickSeries.setData(candleData);
 
-        // Generate buy/sell markers overlay
-        const markers = [];
-        if (backtestResult.trades && backtestResult.trades.length > 0) {
-            backtestResult.trades.forEach(trade => {
-                // Entry Marker
-                if (trade.open_timestamp) {
-                    markers.push({
-                        time: trade.open_timestamp,
-                        position: trade.type === 'buy' ? 'belowBar' : 'aboveBar',
-                        color: trade.type === 'buy' ? '#2ecc71' : '#e74c3c',
-                        shape: trade.type === 'buy' ? 'arrowUp' : 'arrowDown',
-                        text: `${trade.type.toUpperCase()} (#${trade.ticket}) @ ${trade.open_price}`
-                    });
-                }
-                // Exit Marker
-                if (trade.close_timestamp) {
-                    markers.push({
-                        time: trade.close_timestamp,
-                        position: trade.type === 'buy' ? 'aboveBar' : 'belowBar',
-                        color: trade.profit >= 0 ? '#2ecc71' : '#e74c3c',
-                        shape: 'pin',
-                        text: `CLOSE (#${trade.ticket}) $${trade.profit >= 0 ? '+' : ''}${trade.profit}`
-                    });
-                }
-            });
-        }
-
-        // Sort markers by time chronologically
-        markers.sort((a, b) => a.time - b.time);
-        candlestickSeries.setMarkers(markers);
+        // Do not generate buy/sell markers overlay by default to keep the graph empty
+        candlestickSeries.setMarkers([]);
 
         chart.timeScale().fitContent();
 
         backtestPriceChartRef.current = chart;
         backtestCandlestickSeriesRef.current = candlestickSeries;
 
-        const handleResize = () => {
+        const resizeObserver = new ResizeObserver(() => {
             if (chart && container) {
                 chart.applyOptions({
                     width: container.clientWidth,
                     height: container.clientHeight
                 });
             }
-        };
-
-        window.addEventListener('resize', handleResize);
-        const resizeTimeout = setTimeout(handleResize, 150);
+        });
+        resizeObserver.observe(container);
 
         return () => {
-            window.removeEventListener('resize', handleResize);
-            clearTimeout(resizeTimeout);
+            resizeObserver.disconnect();
             if (chart) {
                 try {
                     chart.remove();
@@ -1410,6 +1455,153 @@ const TradingApp = () => {
             backtestCandlestickSeriesRef.current = null;
         };
     }, [activeTab, backtestSubTab, backtestResult, backtestLoading]);
+
+    // Draw backtest trade TP, SL, Open, Close price points, and PnL when selectedBacktestTrade changes
+    useEffect(() => {
+        let oldSeries = [];
+        let oldPriceLines = [];
+        if (backtestPriceLinesRef.current) {
+            if (Array.isArray(backtestPriceLinesRef.current)) {
+                oldSeries = backtestPriceLinesRef.current;
+            } else {
+                oldSeries = backtestPriceLinesRef.current.series || [];
+                oldPriceLines = backtestPriceLinesRef.current.priceLines || [];
+            }
+        }
+
+        oldSeries.forEach(series => {
+            if (backtestPriceChartRef.current) {
+                try {
+                    backtestPriceChartRef.current.removeSeries(series);
+                } catch (e) {}
+            }
+        });
+
+        if (backtestCandlestickSeriesRef.current) {
+            // Remove previous price lines
+            oldPriceLines.forEach(pl => {
+                try {
+                    backtestCandlestickSeriesRef.current.removePriceLine(pl);
+                } catch (e) {}
+            });
+            // Clear markers on the main candlestick series
+            backtestCandlestickSeriesRef.current.setMarkers([]);
+        }
+        backtestPriceLinesRef.current = { series: [], priceLines: [] };
+
+        if (!selectedBacktestTrade || !backtestPriceChartRef.current) return;
+
+        const chart = backtestPriceChartRef.current;
+        const decimals = (backtestForm.symbol && backtestForm.symbol.includes('EURUSD')) ? 5 : 2;
+        const formatP = (val) => Number(val).toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+
+        const openTime = selectedBacktestTrade.open_timestamp;
+        const closeTime = selectedBacktestTrade.close_timestamp;
+        
+        const seriesList = [];
+        const priceLinesList = [];
+        const markersList = [];
+
+        // 1. Open Marker
+        if (selectedBacktestTrade.open_price && openTime) {
+            markersList.push({
+                time: openTime,
+                position: selectedBacktestTrade.type === 'buy' ? 'belowBar' : 'aboveBar',
+                color: selectedBacktestTrade.type === 'buy' ? '#2ecc71' : '#e74c3c',
+                shape: selectedBacktestTrade.type === 'buy' ? 'arrowUp' : 'arrowDown',
+                size: 1.5,
+                text: `${selectedBacktestTrade.type.toUpperCase()} #${selectedBacktestTrade.ticket} @ ${formatP(selectedBacktestTrade.open_price)}`
+            });
+        }
+
+        // 2. Close Marker
+        if (selectedBacktestTrade.close_price && closeTime) {
+            markersList.push({
+                time: closeTime,
+                position: selectedBacktestTrade.type === 'buy' ? 'aboveBar' : 'belowBar',
+                color: selectedBacktestTrade.profit >= 0 ? '#2ecc71' : '#e74c3c',
+                shape: 'pin',
+                size: 1.5,
+                text: `CLOSE #${selectedBacktestTrade.ticket} @ ${formatP(selectedBacktestTrade.close_price)} (${selectedBacktestTrade.profit >= 0 ? '+' : ''}${formatP(selectedBacktestTrade.profit)} USD)`
+            });
+        }
+
+        if (backtestCandlestickSeriesRef.current && markersList.length > 0) {
+            markersList.sort((a, b) => a.time - b.time);
+            backtestCandlestickSeriesRef.current.setMarkers(markersList);
+        }
+
+        // 3. SL Price Line
+        if (selectedBacktestTrade.sl && selectedBacktestTrade.sl > 0 && backtestCandlestickSeriesRef.current) {
+            const slPriceLine = backtestCandlestickSeriesRef.current.createPriceLine({
+                price: selectedBacktestTrade.sl,
+                color: '#e74c3c',
+                lineWidth: 1.5,
+                lineStyle: LightweightCharts.LineStyle.Dashed,
+                axisLabelVisible: true,
+                title: `SL: ${formatP(selectedBacktestTrade.sl)}`
+            });
+            priceLinesList.push(slPriceLine);
+        }
+
+        // 4. TP Price Line
+        if (selectedBacktestTrade.tp && selectedBacktestTrade.tp > 0 && backtestCandlestickSeriesRef.current) {
+            const tpPriceLine = backtestCandlestickSeriesRef.current.createPriceLine({
+                price: selectedBacktestTrade.tp,
+                color: '#2ecc71',
+                lineWidth: 1.5,
+                lineStyle: LightweightCharts.LineStyle.Dashed,
+                axisLabelVisible: true,
+                title: `TP: ${formatP(selectedBacktestTrade.tp)}`
+            });
+            priceLinesList.push(tpPriceLine);
+        }
+
+        // 4.1 Entry Price Line
+        if (selectedBacktestTrade.open_price && backtestCandlestickSeriesRef.current) {
+            const openPriceLine = backtestCandlestickSeriesRef.current.createPriceLine({
+                price: selectedBacktestTrade.open_price,
+                color: '#00b4d8',
+                lineWidth: 1.5,
+                lineStyle: LightweightCharts.LineStyle.Dotted,
+                axisLabelVisible: true,
+                title: `Entry: ${formatP(selectedBacktestTrade.open_price)}`
+            });
+            priceLinesList.push(openPriceLine);
+        }
+
+        // 4.2 Close Price Line (with PnL)
+        if (selectedBacktestTrade.close_price && backtestCandlestickSeriesRef.current) {
+            const closePriceLine = backtestCandlestickSeriesRef.current.createPriceLine({
+                price: selectedBacktestTrade.close_price,
+                color: selectedBacktestTrade.profit >= 0 ? '#2ecc71' : '#e74c3c',
+                lineWidth: 1.5,
+                lineStyle: LightweightCharts.LineStyle.Dotted,
+                axisLabelVisible: true,
+                title: `Close: ${formatP(selectedBacktestTrade.close_price)} (PnL: ${selectedBacktestTrade.profit >= 0 ? '+' : ''}${formatP(selectedBacktestTrade.profit)} USD)`
+            });
+            priceLinesList.push(closePriceLine);
+        }
+
+        // 5. Connect Open & Close with a dashed line (green/red based on win/loss)
+        if (selectedBacktestTrade.open_price && selectedBacktestTrade.close_price && openTime && closeTime) {
+            const pathSeries = chart.addLineSeries({
+                color: selectedBacktestTrade.profit >= 0 ? '#2ecc71' : '#e74c3c',
+                lineWidth: 2,
+                lineStyle: LightweightCharts.LineStyle.Dashed,
+                priceLineVisible: false,
+                lastValueVisible: false,
+                crosshairMarkerVisible: false
+            });
+            pathSeries.setData([
+                { time: openTime, value: selectedBacktestTrade.open_price },
+                { time: closeTime, value: selectedBacktestTrade.close_price }
+            ]);
+            seriesList.push(pathSeries);
+        }
+
+        backtestPriceLinesRef.current = { series: seriesList, priceLines: priceLinesList };
+    }, [selectedBacktestTrade, activeTab, backtestSubTab, backtestResult, backtestLoading]);
 
     // Resizing trigger for backtest chart on sidebars animation toggles
     useEffect(() => {
@@ -1451,6 +1643,7 @@ const TradingApp = () => {
 
         setBacktestLoading(true);
         setBacktestResult(null);
+        setSelectedBacktestTrade(null);
 
         try {
             const res = await fetch("/api/backtest", {
@@ -1785,30 +1978,144 @@ const TradingApp = () => {
         setSelectedHistoryOrder(order);
     };
 
+    // Render backtest history deals log table
+    const renderBacktestDealsTable = (maxHeight = '450px', showTitle = true) => {
+        if (!backtestResult || !backtestResult.trades) return null;
+        
+        const decimals = (backtestForm.symbol && backtestForm.symbol.includes('EURUSD')) ? 5 : 2;
+        
+        return (
+            <div className="backtest-table-card" style={{ marginTop: '16px' }}>
+                {showTitle && (
+                    <h4 style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        📜 บันทึกธุรกรรมประวัติศาสตร์การซื้อขายย้อนหลังอย่างละเอียด (คลิกที่แถวเพื่อแสดงรายละเอียด TP, SL บนกราฟ)
+                    </h4>
+                )}
+                
+                {backtestResult.trades.length === 0 ? (
+                    <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '11.5px', padding: '20px 0' }}>
+                        ไม่มีการเปิดธุรกรรมการเทรดใดๆ เกิดขึ้นในตลอดข้อมูลประวัติศาสตร์ lookback นี้
+                    </div>
+                ) : (
+                    <div className="backtest-table-wrapper" style={{ maxHeight: maxHeight }}>
+                        <table className="trading-table">
+                            <thead>
+                                <tr>
+                                    <th>Ticket</th>
+                                    <th>ประเภท</th>
+                                    <th>ขนาด Lot</th>
+                                    <th>ราคาเปิด</th>
+                                    <th>ราคาปิด</th>
+                                    <th>เวลาเปิด</th>
+                                    <th>เวลาปิด</th>
+                                    <th>ผลลัพธ์</th>
+                                    <th>กำไร (USD)</th>
+                                    <th>เหตุผลปิดดีล</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {backtestResult.trades.map((t, idx) => {
+                                    const isSelected = selectedBacktestTrade && selectedBacktestTrade.ticket === t.ticket;
+                                    return (
+                                        <tr 
+                                            key={`${t.ticket}-${idx}`}
+                                            onClick={() => setSelectedBacktestTrade(selectedBacktestTrade && selectedBacktestTrade.ticket === t.ticket ? null : t)}
+                                            className={isSelected ? 'selected-history-row' : ''}
+                                            style={{ cursor: 'pointer' }}
+                                        >
+                                            <td style={{ fontFamily: 'monospace' }}>#{t.ticket}</td>
+                                            <td>
+                                                <span className={t.type === 'buy' ? 'buy-badge' : 'sell-badge'}>
+                                                    {t.type.toUpperCase()}
+                                                </span>
+                                            </td>
+                                            <td style={{ fontFamily: 'monospace' }}>{backtestForm.lot_size}</td>
+                                            <td style={{ fontFamily: 'monospace' }}>{t.open_price.toLocaleString('en-US', { minimumFractionDigits: decimals })}</td>
+                                            <td style={{ fontFamily: 'monospace' }}>{t.close_price.toLocaleString('en-US', { minimumFractionDigits: decimals })}</td>
+                                            <td style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{t.open_time}</td>
+                                            <td style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>{t.close_time}</td>
+                                            <td>
+                                                <span className={t.result === 'win' ? 'result-win-badge' : 'result-loss-badge'}>
+                                                    {t.result.toUpperCase()}
+                                                </span>
+                                            </td>
+                                            <td className={t.profit >= 0 ? 'price-up' : 'price-down'} style={{ fontWeight: 700, fontFamily: 'monospace' }}>
+                                                {t.profit >= 0 ? '+' : ''}${t.profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                            </td>
+                                            <td style={{ fontWeight: 600, fontSize: '11px', color: t.reason === 'Take Profit' ? 'var(--bull-green)' : t.reason === 'Stop Loss' ? 'var(--bear-red)' : 'var(--text-secondary)' }}>
+                                                {t.reason}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </div>
+        );
+    };
+
     // Draw order TP, SL, Open, and Close price points when selectedHistoryOrder changes
     useEffect(() => {
-        // Clear existing history price points from all panes
-        Object.entries(historyPriceLinesRef.current).forEach(([pId, seriesList]) => {
-            const chart = chartsRef.current[pId];
-            if (chart && seriesList) {
-                seriesList.forEach(series => {
-                     try {
-                         chart.removeSeries(series);
-                     } catch (e) {}
-                });
-            }
-        });
+        // Clear existing history price points and price lines from all panes
+        if (historyPriceLinesRef.current) {
+            Object.entries(historyPriceLinesRef.current).forEach(([pId, data]) => {
+                const chart = chartsRef.current[pId];
+                const candlestickSeries = candlestickSeriesesRef.current[pId];
+                if (data) {
+                    let oldSeries = [];
+                    let oldPriceLines = [];
+                    if (Array.isArray(data)) {
+                        oldSeries = data;
+                    } else {
+                        oldSeries = data.series || [];
+                        oldPriceLines = data.priceLines || [];
+                    }
+                    
+                    if (chart) {
+                        oldSeries.forEach(s => {
+                            try {
+                                chart.removeSeries(s);
+                            } catch (e) {}
+                        });
+                    }
+                    if (candlestickSeries) {
+                        oldPriceLines.forEach(pl => {
+                            try {
+                                candlestickSeries.removePriceLine(pl);
+                            } catch (e) {}
+                        });
+                    }
+                }
+            });
+        }
         historyPriceLinesRef.current = {};
+
+        // Update all active panes' markers to reflect current selection state (or lack thereof)
+        const activePaneIds = chartLayout === 'single' ? [0] : chartLayout === 'dual' ? [0, 1] : [0, 1, 2, 3];
+        activePaneIds.forEach(pId => {
+            updateChartMarkers(pId);
+        });
 
         if (!selectedHistoryOrder || selectedHistoryOrder.symbol !== activeSymbol) return;
 
-        const activePaneIds = chartLayout === 'single' ? [0] : chartLayout === 'dual' ? [0, 1] : [0, 1, 2, 3];
         const decimals = selectedHistoryOrder.symbol.includes('EURUSD') ? 5 : 2;
         const formatP = (val) => Number(val).toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 
         // Helper to parse time string YYYY-MM-DD HH:MM:SS to Unix timestamp
         const parseToUnix = (dateStr) => {
             if (!dateStr) return null;
+            const parts = dateStr.split(/[- :\/]/);
+            if (parts.length >= 6) {
+                const y = parseInt(parts[0], 10);
+                const m = parseInt(parts[1], 10) - 1; // 0-based month
+                const d = parseInt(parts[2], 10);
+                const hr = parseInt(parts[3], 10);
+                const min = parseInt(parts[4], 10);
+                const sec = parseInt(parts[5], 10);
+                return Math.floor(Date.UTC(y, m, d, hr, min, sec) / 1000);
+            }
             const parsed = new Date(dateStr.replace(/-/g, '/'));
             return Math.floor(parsed.getTime() / 1000);
         };
@@ -1833,6 +2140,7 @@ const TradingApp = () => {
 
         activePaneIds.forEach(pId => {
             const chart = chartsRef.current[pId];
+            const candlestickSeries = candlestickSeriesesRef.current[pId];
             if (!chart) return;
 
             const paneTf = paneTimeframes[pId] || 'H1';
@@ -1840,92 +2148,91 @@ const TradingApp = () => {
             const alignedCloseTime = closeTimeUnix ? alignTimeToTimeframe(closeTimeUnix, paneTf) : null;
 
             const seriesList = [];
+            const priceLinesList = [];
 
-            // 1. Open Point (plotted at open time and open price)
-            if (selectedHistoryOrder.open_price && alignedOpenTime) {
-                const openSeries = chart.addLineSeries({
-                    color: '#00b4d8',
-                    lineWidth: 0,
-                    priceLineVisible: false,
-                    lastValueVisible: false,
-                    crosshairMarkerVisible: false
-                });
-                openSeries.setData([{ time: alignedOpenTime, value: selectedHistoryOrder.open_price }]);
-                openSeries.setMarkers([{
-                    time: alignedOpenTime,
-                    position: 'inBar',
-                    color: '#00b4d8',
-                    shape: 'circle',
-                    size: 1.5,
-                    text: `Open: ${formatP(selectedHistoryOrder.open_price)}`
-                }]);
-                seriesList.push(openSeries);
-            }
-
-            // 2. Close Point (plotted at close time and close price)
-            if (selectedHistoryOrder.close_price && alignedCloseTime) {
-                const closeSeries = chart.addLineSeries({
-                    color: '#ffb703',
-                    lineWidth: 0,
-                    priceLineVisible: false,
-                    lastValueVisible: false,
-                    crosshairMarkerVisible: false
-                });
-                closeSeries.setData([{ time: alignedCloseTime, value: selectedHistoryOrder.close_price }]);
-                closeSeries.setMarkers([{
-                    time: alignedCloseTime,
-                    position: 'inBar',
-                    color: '#ffb703',
-                    shape: 'circle',
-                    size: 1.5,
-                    text: `Close: ${formatP(selectedHistoryOrder.close_price)}`
-                }]);
-                seriesList.push(closeSeries);
-            }
-
-            // 3. SL Point (plotted at open time and SL price)
-            if (selectedHistoryOrder.sl && selectedHistoryOrder.sl > 0 && alignedOpenTime) {
-                const slSeries = chart.addLineSeries({
+            // 1. SL Price Line
+            if (candlestickSeries && selectedHistoryOrder.sl && selectedHistoryOrder.sl > 0) {
+                const slPriceLine = candlestickSeries.createPriceLine({
+                    price: selectedHistoryOrder.sl,
                     color: '#e74c3c',
-                    lineWidth: 0,
+                    lineWidth: 1.5,
+                    lineStyle: LightweightCharts.LineStyle.Dashed,
+                    axisLabelVisible: true,
+                    title: `SL: ${formatP(selectedHistoryOrder.sl)}`
+                });
+                priceLinesList.push(slPriceLine);
+            }
+
+            // 2. TP Price Line
+            if (candlestickSeries && selectedHistoryOrder.tp && selectedHistoryOrder.tp > 0) {
+                const tpPriceLine = candlestickSeries.createPriceLine({
+                    price: selectedHistoryOrder.tp,
+                    color: '#2ecc71',
+                    lineWidth: 1.5,
+                    lineStyle: LightweightCharts.LineStyle.Dashed,
+                    axisLabelVisible: true,
+                    title: `TP: ${formatP(selectedHistoryOrder.tp)}`
+                });
+                priceLinesList.push(tpPriceLine);
+            }
+
+            // 2.1 Entry Price Line
+            if (candlestickSeries && selectedHistoryOrder.open_price) {
+                const openPriceLine = candlestickSeries.createPriceLine({
+                    price: selectedHistoryOrder.open_price,
+                    color: '#00b4d8',
+                    lineWidth: 1.5,
+                    lineStyle: LightweightCharts.LineStyle.Dotted,
+                    axisLabelVisible: true,
+                    title: `Entry: ${formatP(selectedHistoryOrder.open_price)}`
+                });
+                priceLinesList.push(openPriceLine);
+            }
+
+            // 2.2 Close Price Line (if closed)
+            if (candlestickSeries && selectedHistoryOrder.close_price) {
+                const closePriceLine = candlestickSeries.createPriceLine({
+                    price: selectedHistoryOrder.close_price,
+                    color: selectedHistoryOrder.profit >= 0 ? '#2ecc71' : '#e74c3c',
+                    lineWidth: 1.5,
+                    lineStyle: LightweightCharts.LineStyle.Dotted,
+                    axisLabelVisible: true,
+                    title: `Close: ${formatP(selectedHistoryOrder.close_price)} (PnL: ${selectedHistoryOrder.profit >= 0 ? '+' : ''}${Number(selectedHistoryOrder.profit).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD)`
+                });
+                priceLinesList.push(closePriceLine);
+            }
+
+            // 2.3 Current Price Line (if open position)
+            if (candlestickSeries && !selectedHistoryOrder.close_price && selectedHistoryOrder.current_price) {
+                const currentPriceLine = candlestickSeries.createPriceLine({
+                    price: selectedHistoryOrder.current_price,
+                    color: selectedHistoryOrder.profit >= 0 ? '#2ecc71' : '#e74c3c',
+                    lineWidth: 1.5,
+                    lineStyle: LightweightCharts.LineStyle.Dotted,
+                    axisLabelVisible: true,
+                    title: `Current: ${formatP(selectedHistoryOrder.current_price)} (PnL: ${selectedHistoryOrder.profit >= 0 ? '+' : ''}${Number(selectedHistoryOrder.profit).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD)`
+                });
+                priceLinesList.push(currentPriceLine);
+            }
+
+            // 3. Connect Open & Close with a dashed line (green/red based on win/loss)
+            if (selectedHistoryOrder.open_price && selectedHistoryOrder.close_price && alignedOpenTime && alignedCloseTime) {
+                const pathSeries = chart.addLineSeries({
+                    color: selectedHistoryOrder.profit >= 0 ? '#2ecc71' : '#e74c3c',
+                    lineWidth: 2,
+                    lineStyle: LightweightCharts.LineStyle.Dashed,
                     priceLineVisible: false,
                     lastValueVisible: false,
                     crosshairMarkerVisible: false
                 });
-                slSeries.setData([{ time: alignedOpenTime, value: selectedHistoryOrder.sl }]);
-                slSeries.setMarkers([{
-                    time: alignedOpenTime,
-                    position: 'inBar',
-                    color: '#e74c3c',
-                    shape: 'circle',
-                    size: 1.2,
-                    text: `SL: ${formatP(selectedHistoryOrder.sl)}`
-                }]);
-                seriesList.push(slSeries);
+                pathSeries.setData([
+                    { time: alignedOpenTime, value: selectedHistoryOrder.open_price },
+                    { time: alignedCloseTime, value: selectedHistoryOrder.close_price }
+                ]);
+                seriesList.push(pathSeries);
             }
 
-            // 4. TP Point (plotted at open time and TP price)
-            if (selectedHistoryOrder.tp && selectedHistoryOrder.tp > 0 && alignedOpenTime) {
-                const tpSeries = chart.addLineSeries({
-                    color: '#2ecc71',
-                    lineWidth: 0,
-                    priceLineVisible: false,
-                    lastValueVisible: false,
-                    crosshairMarkerVisible: false
-                });
-                tpSeries.setData([{ time: alignedOpenTime, value: selectedHistoryOrder.tp }]);
-                tpSeries.setMarkers([{
-                    time: alignedOpenTime,
-                    position: 'inBar',
-                    color: '#2ecc71',
-                    shape: 'circle',
-                    size: 1.2,
-                    text: `TP: ${formatP(selectedHistoryOrder.tp)}`
-                }]);
-                seriesList.push(tpSeries);
-            }
-
-            historyPriceLinesRef.current[pId] = seriesList;
+            historyPriceLinesRef.current[pId] = { series: seriesList, priceLines: priceLinesList };
         });
     }, [selectedHistoryOrder, activeSymbol, chartLayout, JSON.stringify(paneTimeframes)]);
 
@@ -3141,14 +3448,6 @@ const TradingApp = () => {
                                             <Icon name="refresh" size={14} />
                                             <span>📈 กราฟเงินทุน (Equity Curve)</span>
                                         </button>
-                                        <button
-                                            type="button"
-                                            className={`backtest-subtab-btn ${backtestSubTab === 'deals' ? 'active' : ''}`}
-                                            onClick={() => setBacktestSubTab('deals')}
-                                        >
-                                            <Icon name="history" size={14} />
-                                            <span>📜 บันทึกธุรกรรม (Deals Log Table)</span>
-                                        </button>
                                     </div>
 
                                     {/* Tab 1: Statistics Dashboard */}
@@ -3275,12 +3574,15 @@ const TradingApp = () => {
 
                                     {/* Tab 2: Candlestick & Entries Chart */}
                                     {backtestSubTab === 'price' && (
-                                        <div className="backtest-chart-card" style={{ height: '500px', display: 'flex', flexDirection: 'column' }}>
-                                            <h4 style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                                                🕯️ กราฟราคาสินทรัพย์จำลองและจุดเข้าเทรดจริง (Asset Candlestick & Entries Chart)
-                                            </h4>
-                                            <div ref={backtestPriceChartContainerRef} className="backtest-chart-container" style={{ flex: 1, height: '100%' }}></div>
-                                        </div>
+                                        <React.Fragment>
+                                            <div className="backtest-chart-card" style={{ height: '500px', display: 'flex', flexDirection: 'column' }}>
+                                                <h4 style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                                    🕯️ กราฟราคาสินทรัพย์จำลองและจุดเข้าเทรดจริง (Asset Candlestick & Entries Chart)
+                                                </h4>
+                                                <div ref={backtestPriceChartContainerRef} className="backtest-chart-container" style={{ flex: 1, height: '100%' }}></div>
+                                            </div>
+                                            {renderBacktestDealsTable('450px', true)}
+                                        </React.Fragment>
                                     )}
 
                                     {/* Tab 3: Equity Curve Chart */}
@@ -3290,68 +3592,6 @@ const TradingApp = () => {
                                                 📈 กราฟแสดงเส้นความเติบโตของทุนสำรองสุทธิ (Simulated Equity Growth Curve)
                                             </h4>
                                             <div ref={backtestChartContainerRef} className="backtest-chart-container" style={{ flex: 1, height: '100%' }}></div>
-                                        </div>
-                                    )}
-
-                                    {/* Tab 4: Deals list table card */}
-                                    {backtestSubTab === 'deals' && (
-                                        <div className="backtest-table-card" style={{ marginTop: '0' }}>
-                                            <h4 style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                                                📜 บันทึกธุรกรรมประวัติศาสตร์การซื้อขายย้อนหลังอย่างละเอียด (Backtest Deals History Log)
-                                            </h4>
-                                            
-                                            {backtestResult.trades.length === 0 ? (
-                                                <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '11.5px', padding: '20px 0' }}>
-                                                    ไม่มีการเปิดธุรกรรมการเทรดใดๆ เกิดขึ้นในตลอดข้อมูลประวัติศาสตร์ lookback นี้
-                                                </div>
-                                            ) : (
-                                                <div className="backtest-table-wrapper" style={{ maxHeight: '450px' }}>
-                                                    <table className="trading-table">
-                                                        <thead>
-                                                            <tr>
-                                                                <th>Ticket</th>
-                                                                <th>ประเภท</th>
-                                                                <th>ขนาด Lot</th>
-                                                                <th>ราคาเปิด</th>
-                                                                <th>ราคาปิด</th>
-                                                                <th>เวลาเปิด</th>
-                                                                <th>เวลาปิด</th>
-                                                                <th>ผลลัพธ์</th>
-                                                                <th>กำไร (USD)</th>
-                                                                <th>เหตุผลปิดดีล</th>
-                                                            </tr>
-                                                        </thead>
-                                                        <tbody>
-                                                            {backtestResult.trades.map((t, idx) => (
-                                                                <tr key={`${t.ticket}-${idx}`}>
-                                                                    <td style={{ fontFamily: 'monospace' }}>#{t.ticket}</td>
-                                                                    <td>
-                                                                        <span className={t.type === 'buy' ? 'buy-badge' : 'sell-badge'}>
-                                                                            {t.type.toUpperCase()}
-                                                                        </span>
-                                                                    </td>
-                                                                    <td style={{ fontFamily: 'monospace' }}>{backtestForm.lot_size}</td>
-                                                                    <td style={{ fontFamily: 'monospace' }}>{t.open_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-                                                                    <td style={{ fontFamily: 'monospace' }}>{t.close_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-                                                                    <td style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{t.open_time}</td>
-                                                                    <td style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>{t.close_time}</td>
-                                                                    <td>
-                                                                        <span className={t.result === 'win' ? 'result-win-badge' : 'result-loss-badge'}>
-                                                                            {t.result.toUpperCase()}
-                                                                        </span>
-                                                                    </td>
-                                                                    <td className={t.profit >= 0 ? 'price-up' : 'price-down'} style={{ fontWeight: 700, fontFamily: 'monospace' }}>
-                                                                        {t.profit >= 0 ? '+' : ''}${t.profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                                                                    </td>
-                                                                    <td style={{ fontWeight: 600, fontSize: '11px', color: t.reason === 'Take Profit' ? 'var(--bull-green)' : t.reason === 'Stop Loss' ? 'var(--bear-red)' : 'var(--text-secondary)' }}>
-                                                                        {t.reason}
-                                                                    </td>
-                                                                </tr>
-                                                            ))}
-                                                        </tbody>
-                                                    </table>
-                                                </div>
-                                            )}
                                         </div>
                                     )}
                                 </React.Fragment>
@@ -3581,6 +3821,7 @@ const TradingApp = () => {
                                         setActiveSymbol(item.symbol);
                                         setActiveAsset(item);
                                         setSelectedHistoryOrder(null);
+                                        setSelectedBacktestTrade(null);
                                     }}
                                     style={{
                                         display: 'flex',
@@ -4301,44 +4542,55 @@ const TradingApp = () => {
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {openPositions.map((pos) => (
-                                                <tr key={pos.ticket}>
-                                                    <td style={{ fontFamily: 'monospace' }}>#{pos.ticket}</td>
-                                                    <td style={{ 
-                                                        fontWeight: 600, 
-                                                        fontSize: '11px',
-                                                        color: (!pos.bot_name || pos.bot_name === 'เทรดเอง (Manual)' || pos.bot_name === 'Manual' || pos.bot_name === 'Simulation') ? 'var(--text-muted)' : 'var(--accent-gold)'
-                                                    }}>
-                                                        {pos.bot_name || 'เทรดเอง (Manual)'}
-                                                    </td>
-                                                    <td style={{ color: 'var(--text-secondary)' }}>{pos.time}</td>
-                                                    <td style={{ fontWeight: 700 }}>{pos.symbol}</td>
-                                                    <td>
-                                                        <span className={pos.type === 'buy' ? 'buy-badge' : 'sell-badge'}>
-                                                            {pos.type}
-                                                        </span>
-                                                    </td>
-                                                    <td style={{ fontFamily: 'monospace' }}>{pos.volume}</td>
-                                                    <td style={{ fontFamily: 'monospace' }}>{pos.open_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-                                                    <td style={{ fontFamily: 'monospace', color: 'var(--accent-gold)' }}>{pos.current_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-                                                    <td style={{ fontFamily: 'monospace', color: pos.sl > 0 ? 'var(--bear-red)' : 'var(--text-muted)' }}>{pos.sl > 0 ? pos.sl.toFixed(2) : '-'}</td>
-                                                    <td style={{ fontFamily: 'monospace', color: pos.tp > 0 ? 'var(--bull-green)' : 'var(--text-muted)' }}>{pos.tp > 0 ? pos.tp.toFixed(2) : '-'}</td>
-                                                    <td 
-                                                        className={pos.profit >= 0 ? 'price-up' : 'price-down'}
-                                                        style={{ fontWeight: 700, fontFamily: 'monospace', fontSize: '13px' }}
+                                            {openPositions.map((pos) => {
+                                                const isSelected = selectedHistoryOrder && selectedHistoryOrder.ticket === pos.ticket;
+                                                return (
+                                                    <tr 
+                                                        key={pos.ticket}
+                                                        onClick={() => handleHistoryOrderClick(pos)}
+                                                        className={isSelected ? 'selected-history-row' : ''}
+                                                        style={{ cursor: 'pointer' }}
                                                     >
-                                                        {pos.profit >= 0 ? '+' : ''}${pos.profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                                                    </td>
-                                                    <td>
-                                                        <button 
-                                                            className="btn-close-position"
-                                                            onClick={() => handleClosePosition(pos.ticket)}
+                                                        <td style={{ fontFamily: 'monospace' }}>#{pos.ticket}</td>
+                                                        <td style={{ 
+                                                            fontWeight: 600, 
+                                                            fontSize: '11px',
+                                                            color: (!pos.bot_name || pos.bot_name === 'เทรดเอง (Manual)' || pos.bot_name === 'Manual' || pos.bot_name === 'Simulation') ? 'var(--text-muted)' : 'var(--accent-gold)'
+                                                        }}>
+                                                            {pos.bot_name || 'เทรดเอง (Manual)'}
+                                                        </td>
+                                                        <td style={{ color: 'var(--text-secondary)' }}>{pos.time}</td>
+                                                        <td style={{ fontWeight: 700 }}>{pos.symbol}</td>
+                                                        <td>
+                                                            <span className={pos.type === 'buy' ? 'buy-badge' : 'sell-badge'}>
+                                                                {pos.type}
+                                                            </span>
+                                                        </td>
+                                                        <td style={{ fontFamily: 'monospace' }}>{pos.volume}</td>
+                                                        <td style={{ fontFamily: 'monospace' }}>{pos.open_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                                                        <td style={{ fontFamily: 'monospace', color: 'var(--accent-gold)' }}>{pos.current_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                                                        <td style={{ fontFamily: 'monospace', color: pos.sl > 0 ? 'var(--bear-red)' : 'var(--text-muted)' }}>{pos.sl > 0 ? pos.sl.toFixed(2) : '-'}</td>
+                                                        <td style={{ fontFamily: 'monospace', color: pos.tp > 0 ? 'var(--bull-green)' : 'var(--text-muted)' }}>{pos.tp > 0 ? pos.tp.toFixed(2) : '-'}</td>
+                                                        <td 
+                                                            className={pos.profit >= 0 ? 'price-up' : 'price-down'}
+                                                            style={{ fontWeight: 700, fontFamily: 'monospace', fontSize: '13px' }}
                                                         >
-                                                            ปิดออเดอร์
-                                                        </button>
-                                                    </td>
-                                                </tr>
-                                            ))}
+                                                            {pos.profit >= 0 ? '+' : ''}${pos.profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                                        </td>
+                                                        <td>
+                                                            <button 
+                                                                className="btn-close-position"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    handleClosePosition(pos.ticket);
+                                                                }}
+                                                            >
+                                                                ปิดออเดอร์
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
                                         </tbody>
                                     </table>
                                 )
@@ -5034,14 +5286,6 @@ const TradingApp = () => {
                                                         <Icon name="refresh" size={14} />
                                                         <span>📈 กราฟเงินทุน (Equity Curve)</span>
                                                     </button>
-                                                    <button
-                                                        type="button"
-                                                        className={`backtest-subtab-btn ${backtestSubTab === 'deals' ? 'active' : ''}`}
-                                                        onClick={() => setBacktestSubTab('deals')}
-                                                    >
-                                                        <Icon name="history" size={14} />
-                                                        <span>📜 บันทึกธุรกรรม (Deals Log Table)</span>
-                                                    </button>
                                                 </div>
 
                                                 {/* Tab 1: Statistics Dashboard */}
@@ -5168,12 +5412,15 @@ const TradingApp = () => {
 
                                                 {/* Tab 2: Candlestick & Entries Chart */}
                                                 {backtestSubTab === 'price' && (
-                                                    <div className="backtest-chart-card" style={{ height: '500px', display: 'flex', flexDirection: 'column' }}>
-                                                        <h4 style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                                                            🕯️ กราฟราคาสินทรัพย์จำลองและจุดเข้าเทรดจริง (Asset Candlestick & Entries Chart)
-                                                        </h4>
-                                                        <div ref={backtestPriceChartContainerRef} className="backtest-chart-container" style={{ flex: 1, height: '100%' }}></div>
-                                                    </div>
+                                                    <React.Fragment>
+                                                        <div className="backtest-chart-card" style={{ height: '500px', display: 'flex', flexDirection: 'column' }}>
+                                                            <h4 style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                                                🕯️ กราฟราคาสินทรัพย์จำลองและจุดเข้าเทรดจริง (Asset Candlestick & Entries Chart)
+                                                            </h4>
+                                                            <div ref={backtestPriceChartContainerRef} className="backtest-chart-container" style={{ flex: 1, height: '100%' }}></div>
+                                                        </div>
+                                                        {renderBacktestDealsTable('450px', true)}
+                                                    </React.Fragment>
                                                 )}
 
                                                 {/* Tab 3: Equity Curve Chart */}
@@ -5183,68 +5430,6 @@ const TradingApp = () => {
                                                             📈 กราฟแสดงเส้นความเติบโตของทุนสำรองสุทธิ (Simulated Equity Growth Curve)
                                                         </h4>
                                                         <div ref={backtestChartContainerRef} className="backtest-chart-container" style={{ flex: 1, height: '100%' }}></div>
-                                                    </div>
-                                                )}
-
-                                                {/* Tab 4: Deals list table card */}
-                                                {backtestSubTab === 'deals' && (
-                                                    <div className="backtest-table-card" style={{ marginTop: '0' }}>
-                                                        <h4 style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                                                            📜 บันทึกธุรกรรมประวัติศาสตร์การซื้อขายย้อนหลังอย่างละเอียด (Backtest Deals History Log)
-                                                        </h4>
-                                                        
-                                                        {backtestResult.trades.length === 0 ? (
-                                                            <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '11.5px', padding: '20px 0' }}>
-                                                                ไม่มีการเปิดธุรกรรมการเทรดใดๆ เกิดขึ้นในตลอดข้อมูลประวัติศาสตร์ lookback นี้
-                                                            </div>
-                                                        ) : (
-                                                            <div className="backtest-table-wrapper" style={{ maxHeight: '450px' }}>
-                                                                <table className="trading-table">
-                                                                    <thead>
-                                                                        <tr>
-                                                                            <th>Ticket</th>
-                                                                            <th>ประเภท</th>
-                                                                            <th>ขนาด Lot</th>
-                                                                            <th>ราคาเปิด</th>
-                                                                            <th>ราคาปิด</th>
-                                                                            <th>เวลาเปิด</th>
-                                                                            <th>เวลาปิด</th>
-                                                                            <th>ผลลัพธ์</th>
-                                                                            <th>กำไร (USD)</th>
-                                                                            <th>เหตุผลปิดดีล</th>
-                                                                        </tr>
-                                                                    </thead>
-                                                                    <tbody>
-                                                                        {backtestResult.trades.map((t, idx) => (
-                                                                            <tr key={`${t.ticket}-${idx}`}>
-                                                                                <td style={{ fontFamily: 'monospace' }}>#{t.ticket}</td>
-                                                                                <td>
-                                                                                    <span className={t.type === 'buy' ? 'buy-badge' : 'sell-badge'}>
-                                                                                        {t.type.toUpperCase()}
-                                                                                    </span>
-                                                                                </td>
-                                                                                <td style={{ fontFamily: 'monospace' }}>{backtestForm.lot_size}</td>
-                                                                                <td style={{ fontFamily: 'monospace' }}>{t.open_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-                                                                                <td style={{ fontFamily: 'monospace' }}>{t.close_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-                                                                                <td style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{t.open_time}</td>
-                                                                                <td style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>{t.close_time}</td>
-                                                                                <td>
-                                                                                    <span className={t.result === 'win' ? 'result-win-badge' : 'result-loss-badge'}>
-                                                                                        {t.result.toUpperCase()}
-                                                                                    </span>
-                                                                                </td>
-                                                                                <td className={t.profit >= 0 ? 'price-up' : 'price-down'} style={{ fontWeight: 700, fontFamily: 'monospace' }}>
-                                                                                    {t.profit >= 0 ? '+' : ''}${t.profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                                                                                </td>
-                                                                                <td style={{ fontWeight: 600, fontSize: '11px', color: t.reason === 'Take Profit' ? 'var(--bull-green)' : t.reason === 'Stop Loss' ? 'var(--bear-red)' : 'var(--text-secondary)' }}>
-                                                                                    {t.reason}
-                                                                                </td>
-                                                                            </tr>
-                                                                        ))}
-                                                                    </tbody>
-                                                                </table>
-                                                            </div>
-                                                        )}
                                                     </div>
                                                 )}
                                             </React.Fragment>

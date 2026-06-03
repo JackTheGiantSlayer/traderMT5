@@ -1761,6 +1761,7 @@ header {
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    flex-shrink: 0;
 }
 
 .backtest-chart-container {
@@ -1778,6 +1779,7 @@ header {
     display: flex;
     flex-direction: column;
     min-height: 200px;
+    flex-shrink: 0;
 }
 
 .backtest-table-wrapper {

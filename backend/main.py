@@ -5,7 +5,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from backend.config import HOST, PORT, STATIC_DIR, MT5_LOGIN, MT5_PASSWORD, MT5_SERVER, ENCRYPTION_KEY, encrypt_password, decrypt_password
 from backend.database import engine, Base, get_db
@@ -51,6 +51,10 @@ try:
         if "allowed_sessions" not in columns:
             conn.execute(text("ALTER TABLE bot_settings ADD COLUMN allowed_sessions VARCHAR(50) DEFAULT 'all'"))
             print("Database Migration: Successfully added 'allowed_sessions' column.")
+            
+        if "last_traded_pattern_time" not in columns:
+            conn.execute(text("ALTER TABLE bot_settings ADD COLUMN last_traded_pattern_time INTEGER DEFAULT 0"))
+            print("Database Migration: Successfully added 'last_traded_pattern_time' column.")
             
     # NewsRecord self-healing migration
     news_columns = [col['name'] for col in inspector.get_columns('news_records')]
@@ -710,6 +714,8 @@ def get_history(db: Session = Depends(get_db)):
             "tp": t.tp or 0.0,
             "open_time": t.open_time.strftime("%Y-%m-%d %H:%M:%S"),
             "close_time": t.close_time.strftime("%Y-%m-%d %H:%M:%S"),
+            "open_time_raw": int(t.open_time.timestamp()),
+            "close_time_raw": int(t.close_time.timestamp()),
             "profit": t.profit,
             "comment": t.comment or "Simulation"
         })
@@ -743,7 +749,8 @@ def get_history(db: Session = Depends(get_db)):
                         entry_info[d.position_id] = {
                             "comment": d.comment,
                             "price": d.price,
-                            "time": datetime.fromtimestamp(d.time).strftime("%Y-%m-%d %H:%M:%S")
+                            "time": datetime.fromtimestamp(d.time).strftime("%Y-%m-%d %H:%M:%S"),
+                            "time_raw": d.time
                         }
                 
                 real_deals = []
@@ -767,6 +774,8 @@ def get_history(db: Session = Depends(get_db)):
                             "tp": order_sl_tp.get(d.position_id, {}).get("tp", 0.0),
                             "open_time": open_time,
                             "close_time": datetime.fromtimestamp(d.time).strftime("%Y-%m-%d %H:%M:%S"),
+                            "open_time_raw": info.get("time_raw", d.time),
+                            "close_time_raw": d.time,
                             "profit": d.profit,
                             "comment": orig_comment
                         })
@@ -1211,10 +1220,12 @@ def run_backtest(req: BacktestRequest):
                         "type": t_type,
                         "open_time": active_trade["open_time"],
                         "open_timestamp": active_trade["open_timestamp"],
-                        "close_time": datetime.fromtimestamp(current_time).strftime("%Y-%m-%d %H:%M:%S"),
+                        "close_time": datetime.fromtimestamp(current_time, timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
                         "close_timestamp": current_time,
                         "open_price": open_p,
                         "close_price": close_p,
+                        "sl": active_trade.get("sl", 0.0),
+                        "tp": active_trade.get("tp", 0.0),
                         "profit": round(pnl, 2),
                         "result": "win" if pnl >= 0 else "loss",
                         "reason": close_reason
@@ -1245,7 +1256,7 @@ def run_backtest(req: BacktestRequest):
                         "ticket": ticket_counter,
                         "type": sig,
                         "open_price": current_price,
-                        "open_time": datetime.fromtimestamp(current_time).strftime("%Y-%m-%d %H:%M:%S"),
+                        "open_time": datetime.fromtimestamp(current_time, timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
                         "open_timestamp": current_time,
                         "sl": sl_p,
                         "tp": tp_p
@@ -1270,10 +1281,12 @@ def run_backtest(req: BacktestRequest):
                 "type": t_type,
                 "open_time": active_trade["open_time"],
                 "open_timestamp": active_trade["open_timestamp"],
-                "close_time": datetime.fromtimestamp(candles[-1]["time"]).strftime("%Y-%m-%d %H:%M:%S"),
+                "close_time": datetime.fromtimestamp(candles[-1]["time"], timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
                 "close_timestamp": candles[-1]["time"],
                 "open_price": open_p,
                 "close_price": close_p,
+                "sl": active_trade.get("sl", 0.0),
+                "tp": active_trade.get("tp", 0.0),
                 "profit": round(pnl, 2),
                 "result": "win" if pnl >= 0 else "loss",
                 "reason": "End of Data"

@@ -168,9 +168,78 @@ class MT5Manager:
             # Simulation mode
             return self.sim_prices.get(symbol, {"bid": 100.0, "ask": 100.1})
 
+    def get_broker_timezone_offset(self) -> int:
+        """
+        Get the broker's timezone offset from UTC in seconds.
+        """
+        if self.is_simulated or not self.is_connected:
+            return 0  # Simulation mode uses UTC (offset 0)
+            
+        try:
+            # Try to get the broker server time from a fresh tick
+            resolved = self._resolve_symbol("XAUUSD")
+            tick = mt5.symbol_info_tick(resolved)
+            if tick is None:
+                resolved = self._resolve_symbol("EURUSD")
+                tick = mt5.symbol_info_tick(resolved)
+                
+            if tick is not None:
+                tick_time = tick.time
+                local_utc_time = int(time.time())
+                # Only use tick time if it's recent (within 30 seconds) to avoid weekend/market-close issues
+                if abs(local_utc_time - tick_time) < 30:
+                    offset = tick_time - local_utc_time
+                    self._cached_broker_offset = offset
+                    return offset
+        except Exception as e:
+            logger.warning(f"Error calculating dynamic broker timezone offset: {e}")
+            
+        # Fallback cache
+        if hasattr(self, '_cached_broker_offset') and self._cached_broker_offset is not None:
+            return self._cached_broker_offset
+            
+        # Estimate based on server name
+        server_name = (self.server or "").lower()
+        if "exness" in server_name:
+            offset = 0
+        else:
+            # Default to EET/EEST (GMT+2 or GMT+3 depending on DST)
+            now = datetime.now()
+            is_dst = False
+            if 3 < now.month < 10:
+                is_dst = True
+            elif now.month == 3:
+                last_sun = 31 - (datetime(now.year, 3, 31).weekday() + 1) % 7
+                if now.day >= last_sun:
+                    is_dst = True
+            elif now.month == 10:
+                last_sun = 31 - (datetime(now.year, 10, 31).weekday() + 1) % 7
+                if now.day < last_sun:
+                    is_dst = True
+            offset = 3 * 3600 if is_dst else 2 * 3600
+            
+        self._cached_broker_offset = offset
+        return offset
+
+    def get_timezone_shift(self) -> int:
+        """
+        Calculate the shift in seconds to convert broker server time representation to local machine time.
+        """
+        is_dst = time.localtime().tm_isdst
+        local_offset = -time.altzone if (is_dst > 0) else -time.timezone
+        
+        # Broker offset from UTC in seconds
+        broker_offset = self.get_broker_timezone_offset()
+        
+        return local_offset - broker_offset
+
     def get_historical_candles(self, symbol: str, timeframe_str: str, count: int = 150) -> list:
         """Fetch candlestick chart data."""
         resolved_symbol = self._resolve_symbol(symbol)
+        
+        # Calculate timezone shift to convert raw candle times to local machine representation
+        shift = self.get_timezone_shift()
+        
         if not self.is_simulated and self.is_connected:
             # Map string to MT5 timeframe constant
             tf_map = {
@@ -188,22 +257,30 @@ class MT5Manager:
             rates = mt5.copy_rates_from_pos(resolved_symbol, tf, 0, count)
             if rates is None or len(rates) == 0:
                 logger.warning(f"Could not fetch rates for {resolved_symbol} from MT5, falling back to simulation.")
-                return self._generate_simulated_candles(symbol, timeframe_str, count)
-            
-            candles = []
-            for rate in rates:
-                # rate is a structured numpy tuple: (time, open, high, low, close, tick_volume, spread, real_volume)
-                candles.append({
-                    "time": int(rate[0]),  # Unix timestamp
-                    "open": float(rate[1]),
-                    "high": float(rate[2]),
-                    "low": float(rate[3]),
-                    "close": float(rate[4]),
-                    "volume": float(rate[5])
-                })
-            return candles
+                raw_candles = self._generate_simulated_candles(symbol, timeframe_str, count)
+            else:
+                raw_candles = []
+                for rate in rates:
+                    raw_candles.append({
+                        "time": int(rate[0]),  # Raw broker server time Unix timestamp
+                        "open": float(rate[1]),
+                        "high": float(rate[2]),
+                        "low": float(rate[3]),
+                        "close": float(rate[4]),
+                        "volume": float(rate[5])
+                    })
         else:
-            return self._generate_simulated_candles(symbol, timeframe_str, count)
+            raw_candles = self._generate_simulated_candles(symbol, timeframe_str, count)
+            
+        # Apply the timezone shift to align chart display with local machine time (+7)
+        shifted_candles = []
+        for candle in raw_candles:
+            shifted_candles.append({
+                **candle,
+                "time": candle["time"] + shift
+            })
+            
+        return shifted_candles
 
     def _generate_simulated_candles(self, symbol: str, timeframe_str: str, count: int) -> list:
         """Generates mock candlestick data for simulation or fallback."""
