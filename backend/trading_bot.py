@@ -95,7 +95,7 @@ def calculate_macd(prices, fast_period=12, slow_period=26, signal_period=9):
 
 # --- Signal Resolver ---
 
-def evaluate_signals(prices, algorithm, candles=None):
+def evaluate_signals(prices, algorithm, candles=None, symbol="XAUUSD", timeframe="H1"):
     """
     Evaluates trading signals from historic close prices.
     Returns: 'buy', 'sell', or 'none'
@@ -269,7 +269,88 @@ def evaluate_signals(prices, algorithm, candles=None):
             return "none"
         from backend.pattern_detector import detect_fvg
         return detect_fvg(candles)
+    elif algorithm == "adx":
+        if candles is None or len(candles) < 35:
+            return "none"
+        from backend.pattern_detector import calculate_adx
+        adx_vals, plus_di, minus_di = calculate_adx(candles, 14)
+        if (len(adx_vals) < 3 or adx_vals[-2] is None or 
+            plus_di[-2] is None or plus_di[-3] is None or 
+            minus_di[-2] is None or minus_di[-3] is None):
+            return "none"
+            
+        plus_di_prev2 = plus_di[-3]
+        plus_di_prev = plus_di[-2]
+        minus_di_prev2 = minus_di[-3]
+        minus_di_prev = minus_di[-2]
+        adx_prev = adx_vals[-2]
         
+        is_bullish_cross = plus_di_prev2 <= minus_di_prev2 and plus_di_prev > minus_di_prev
+        is_bearish_cross = plus_di_prev2 >= minus_di_prev2 and plus_di_prev < minus_di_prev
+        
+        if is_bullish_cross and adx_prev is not None and adx_prev > 20:
+            return "buy"
+        if is_bearish_cross and adx_prev is not None and adx_prev > 20:
+            return "sell"
+            
+    elif algorithm == "pj_indicator":
+        if candles is None or len(candles) < 55:
+            return "none"
+            
+        from backend.pattern_detector import calculate_pj_indicator_trend_and_score
+        
+        # Calculate PJ trend and score history
+        results = calculate_pj_indicator_trend_and_score(candles, timeframe=timeframe)
+        if len(results) < 3:
+            return "none"
+            
+        # We evaluate crossover at previous candle (index -2) and candle before that (index -3)
+        close_prev = candles[-2]["close"]
+        close_prev2 = candles[-3]["close"]
+        
+        ema_prev = results[-2]["ema14"]
+        ema_prev2 = results[-3]["ema14"]
+        
+        macd_line_prev = results[-2]["macd_line"]
+        macd_line_prev2 = results[-3]["macd_line"]
+        
+        macd_sig_prev = results[-2]["macd_signal"]
+        macd_sig_prev2 = results[-3]["macd_signal"]
+        
+        stoch_k_prev = results[-2]["stoch_k"]
+        stoch_k_prev2 = results[-3]["stoch_k"]
+        
+        stoch_d_prev = results[-2]["stoch_d"]
+        stoch_d_prev2 = results[-3]["stoch_d"]
+        
+        if (ema_prev is None or ema_prev2 is None or macd_line_prev is None or 
+            macd_line_prev2 is None or macd_sig_prev is None or macd_sig_prev2 is None or 
+            stoch_k_prev is None or stoch_k_prev2 is None or stoch_d_prev is None or stoch_d_prev2 is None):
+            return "none"
+            
+        # Crossovers at index -2
+        emaCrossUp = (close_prev2 <= ema_prev2 and close_prev > ema_prev)
+        macdCrossUp = (macd_line_prev2 <= macd_sig_prev2 and macd_line_prev > macd_sig_prev)
+        stochCrossUp = (stoch_k_prev2 <= stoch_d_prev2 and stoch_k_prev > stoch_d_prev)
+        
+        emaCrossDown = (close_prev2 >= ema_prev2 and close_prev < ema_prev)
+        macdCrossDown = (macd_line_prev2 >= macd_sig_prev2 and macd_line_prev < macd_sig_prev)
+        stochCrossDown = (stoch_k_prev2 >= stoch_d_prev2 and stoch_k_prev < stoch_d_prev)
+        
+        trend_bull_prev = results[-2]["trend_bull"]
+        trend_bear_prev = results[-2]["trend_bear"]
+        
+        # PJ Indicator Signal Logic:
+        # buySignalRaw  = trendBull[1] and (emaCrossUp[1] or macdCrossUp[1] or stochCrossUp[1])
+        # sellSignalRaw = trendBear[1] and (emaCrossDown[1] or macdCrossDown[1] or stochCrossDown[1])
+        buySignal = trend_bull_prev and (emaCrossUp or macdCrossUp or stochCrossUp)
+        sellSignal = trend_bear_prev and (emaCrossDown or macdCrossDown or stochCrossDown)
+        
+        if buySignal:
+            return "buy"
+        if sellSignal:
+            return "sell"
+            
     elif algorithm == "smc_confluence_pro":
         if candles is None or len(candles) < 35:
             return "none"
@@ -289,7 +370,7 @@ def evaluate_signals(prices, algorithm, candles=None):
             
     return "none"
 
-def evaluate_multi_signals(prices, algorithms_list, signal_mode, candles=None):
+def evaluate_multi_signals(prices, algorithms_list, signal_mode, candles=None, symbol="XAUUSD", timeframe="H1"):
     """
     Evaluates signals from a list of algorithms and combines them.
     algorithms_list: list of strings (e.g. ['sma_cross', 'rsi_oscillator'])
@@ -300,7 +381,7 @@ def evaluate_multi_signals(prices, algorithms_list, signal_mode, candles=None):
         
     individual_signals = {}
     for algo in algorithms_list:
-        individual_signals[algo] = evaluate_signals(prices, algo, candles=candles)
+        individual_signals[algo] = evaluate_signals(prices, algo, candles=candles, symbol=symbol, timeframe=timeframe)
         
     buys = [algo for algo, sig in individual_signals.items() if sig == "buy"]
     sells = [algo for algo, sig in individual_signals.items() if sig == "sell"]
@@ -467,7 +548,7 @@ class BotManager:
                 
         # 3. Evaluate signals
         algorithms_list = [a.strip() for a in bot.algorithms.split(",") if a.strip()]
-        signal = evaluate_multi_signals(close_prices, algorithms_list, bot.signal_mode, candles=candles)
+        signal = evaluate_multi_signals(close_prices, algorithms_list, bot.signal_mode, candles=candles, symbol=bot.symbol, timeframe=bot.timeframe)
         
         # Apply Geopolitical & News Sentiment Filter
         if getattr(bot, "use_news_filter", False) and signal in ["buy", "sell"]:
@@ -609,17 +690,38 @@ class BotManager:
                 sl_price = 0.0
                 tp_price = 0.0
                 
-                # Dynamic multiplier adjustment (Forex vs Gold vs Stock decimals)
-                if signal == "buy":
-                    if bot.sl_points > 0:
-                        sl_price = current_price - bot.sl_points
-                    if bot.tp_points > 0:
-                        tp_price = current_price + bot.tp_points
-                else: # sell
-                    if bot.sl_points > 0:
-                        sl_price = current_price + bot.sl_points
-                    if bot.tp_points > 0:
-                        tp_price = current_price - bot.tp_points
+                pj_tp_target = getattr(bot, "pj_tp_target", "manual")
+                if pj_tp_target and pj_tp_target != "manual":
+                    from backend.pattern_detector import calculate_pj_dynamic_levels
+                    sl_dist, tp_dist = calculate_pj_dynamic_levels(candles, signal, pj_tp_target)
+                    if sl_dist is not None and tp_dist is not None:
+                        if signal == "buy":
+                            sl_price = current_price - sl_dist
+                            tp_price = current_price + tp_dist
+                        else: # sell
+                            sl_price = current_price + sl_dist
+                            tp_price = current_price - tp_dist
+                        self._log_to_db(db, bot.id, f"คํานวณ SL/TP แบบไดนามิก ({pj_tp_target.upper()}): SL ห่าง {sl_dist:.4f} (ราคา SL: {sl_price:.4f}), TP ห่าง {tp_dist:.4f} (ราคา TP: {tp_price:.4f})", "info")
+                    else:
+                        # Fallback
+                        self._log_to_db(db, bot.id, "คำเตือน: ไม่สามารถคำนวณ PJ SL/TP แบบไดนามิกได้เนื่องจากข้อมูลไม่พอ ใช้ค่า manual แทน", "error")
+                        if signal == "buy":
+                            if bot.sl_points > 0: sl_price = current_price - bot.sl_points
+                            if bot.tp_points > 0: tp_price = current_price + bot.tp_points
+                        else: # sell
+                            if bot.sl_points > 0: sl_price = current_price + bot.sl_points
+                            if bot.tp_points > 0: tp_price = current_price - bot.tp_points
+                else:
+                    if signal == "buy":
+                        if bot.sl_points > 0:
+                            sl_price = current_price - bot.sl_points
+                        if bot.tp_points > 0:
+                            tp_price = current_price + bot.tp_points
+                    else: # sell
+                        if bot.sl_points > 0:
+                            sl_price = current_price + bot.sl_points
+                        if bot.tp_points > 0:
+                            tp_price = current_price - bot.tp_points
                         
                 # Dynamic ATR Risk Position Sizing
                 lot_size = bot.lot_size
@@ -689,6 +791,11 @@ class BotManager:
                             rsi = calculate_rsi(close_prices, 14)[-1]
                             if rsi is not None:
                                 ind_info_list.append(f"RSI={rsi:.2f}")
+                        elif algo == "adx":
+                            from backend.pattern_detector import calculate_adx
+                            adx_vals, plus_di, minus_di = calculate_adx(candles, 14)
+                            if adx_vals[-1] is not None:
+                                ind_info_list.append(f"ADX={adx_vals[-1]:.1f}, +DI={plus_di[-1]:.1f}, -DI={minus_di[-1]:.1f}")
                         elif algo == "stoch_rsi":
                             from backend.pattern_detector import calculate_stoch_rsi
                             k_vals, d_vals = calculate_stoch_rsi(close_prices, 14, 14, 3, 3)

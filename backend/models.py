@@ -52,6 +52,7 @@ class BotSettings(Base):
     lot_size = Column(Float, default=0.01)
     sl_points = Column(Float, default=0.0)
     tp_points = Column(Float, default=0.0)
+    pj_tp_target = Column(String(20), default="manual")
     active_ticket = Column(Integer, nullable=True)
     is_running = Column(Boolean, default=False)
     use_trend_filter = Column(Boolean, default=False)

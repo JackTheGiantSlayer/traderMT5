@@ -1,5 +1,6 @@
 import os
-from fastapi import FastAPI, Depends, HTTPException, Query, BackgroundTasks
+import asyncio
+from fastapi import FastAPI, Depends, HTTPException, Query, BackgroundTasks, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -55,6 +56,10 @@ try:
         if "last_traded_pattern_time" not in columns:
             conn.execute(text("ALTER TABLE bot_settings ADD COLUMN last_traded_pattern_time INTEGER DEFAULT 0"))
             print("Database Migration: Successfully added 'last_traded_pattern_time' column.")
+
+        if "pj_tp_target" not in columns:
+            conn.execute(text("ALTER TABLE bot_settings ADD COLUMN pj_tp_target VARCHAR(20) DEFAULT 'manual'"))
+            print("Database Migration: Successfully added 'pj_tp_target' column to 'bot_settings' table.")
             
     # NewsRecord self-healing migration
     news_columns = [col['name'] for col in inspector.get_columns('news_records')]
@@ -247,6 +252,7 @@ class BotCreateRequest(BaseModel):
     lot_size: float
     sl_points: float = 0.0
     tp_points: float = 0.0
+    pj_tp_target: str = "manual"
     signal_mode: str = "or"
     use_trend_filter: bool = False
     use_atr_sizing: bool = False
@@ -447,6 +453,146 @@ def get_candles(
         return data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.websocket("/ws/live-data")
+async def websocket_live_data(
+    websocket: WebSocket,
+    symbol: str = "XAUUSD",
+    timeframes: str = "H1",
+    watchlist: str = "XAUUSD"
+):
+    await websocket.accept()
+    
+    tfs = [tf.strip() for tf in timeframes.split(",") if tf.strip()]
+    watchlist_syms = [s.strip() for s in watchlist.split(",") if s.strip()]
+    
+    # Cache D1 change percentages to minimize heavy copy_rates calls
+    d1_change_cache = {}
+    counter = 0
+    
+    try:
+        while True:
+            # 1. Fetch watchlist prices (every 0.5 seconds)
+            watchlist_data = {}
+            # Update D1 change percentage cache every 10 ticks (5.0 seconds at 0.5s loop interval)
+            update_d1 = (counter % 10 == 0)
+            
+            for sym in watchlist_syms:
+                price_info = mt5_manager.get_symbol_price(sym)
+                
+                if update_d1 or sym not in d1_change_cache:
+                    try:
+                        candles_d1 = mt5_manager.get_historical_candles(sym, "D1", 2)
+                        change_pct = 0.0
+                        if len(candles_d1) >= 2:
+                            change_pct = ((candles_d1[-1]["close"] - candles_d1[-2]["close"]) / candles_d1[-2]["close"]) * 100
+                        d1_change_cache[sym] = f"{change_pct:.2f}"
+                    except Exception as d1_err:
+                        if sym not in d1_change_cache:
+                            d1_change_cache[sym] = "0.00"
+                            
+                watchlist_data[sym] = {
+                    "bid": price_info["bid"],
+                    "ask": price_info["ask"],
+                    "change": d1_change_cache.get(sym, "0.00")
+                }
+                
+            # 2. Fetch chart candle updates (every tick = 0.5 seconds)
+            chart_data = {}
+            for tf in tfs:
+                try:
+                    candles_tf = mt5_manager.get_historical_candles(symbol, tf, 1)
+                    if candles_tf:
+                        chart_data[tf] = candles_tf[0]
+                except Exception as chart_err:
+                    pass
+                        
+            # 3. Send combined payload
+            await websocket.send_json({
+                "watchlist": watchlist_data,
+                "charts": chart_data
+            })
+            
+            counter += 1
+            # Wait for 0.5 seconds before next push
+            await asyncio.sleep(0.5)
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        print(f"WebSocket Error: {e}")
+    finally:
+        try:
+            await websocket.close()
+        except:
+            pass
+
+
+@app.get("/api/mt5/pj-levels")
+def get_pj_levels(
+    symbol: str = Query(..., description="Asset symbol like XAUUSD"),
+    timeframe: str = Query("H1", description="Timeframe M1, M5, M15, M30, H1, D1")
+):
+    """Retrieve the current calculated PJ Indicator dynamic SL and TP distances (TP1, TP1.5, TP2, TP2.5, TP3)."""
+    try:
+        # We need at least 150 candles (55 candles minimum for PJ + 50 ATR SMA = 105 candles total)
+        candles = mt5_manager.get_historical_candles(symbol, timeframe, count=150)
+        if not candles or len(candles) < 105:
+            raise HTTPException(status_code=400, detail="ข้อมูลแท่งเทียนไม่เพียงพอสำหรับการคำนวณ PJ levels")
+            
+        from backend.pattern_detector import calculate_pj_dynamic_levels
+        # order_type doesn't affect the sl_dist or tp_dist magnitude, it just calculates risk and risk * tp_mult.
+        sl_tp1 = calculate_pj_dynamic_levels(candles, "buy", "tp1")
+        sl_tp1_5 = calculate_pj_dynamic_levels(candles, "buy", "tp1_5")
+        sl_tp2 = calculate_pj_dynamic_levels(candles, "buy", "tp2")
+        sl_tp2_5 = calculate_pj_dynamic_levels(candles, "buy", "tp2_5")
+        sl_tp3 = calculate_pj_dynamic_levels(candles, "buy", "tp3")
+        
+        if not sl_tp1 or sl_tp1[0] is None:
+            raise HTTPException(status_code=400, detail="ไม่สามารถคำนวณ PJ dynamic levels ได้")
+            
+        # Get ATR and ATR ratio for metadata
+        from backend.pattern_detector import calculate_atr
+        atr_vals = calculate_atr(candles, 14)
+        atr_sma_vals = []
+        for i in range(len(atr_vals)):
+            sub = atr_vals[max(0, i - 49) : i + 1]
+            valid_sub = [x for x in sub if x is not None]
+            if len(valid_sub) < 50:
+                atr_sma_vals.append(None)
+            else:
+                atr_sma_vals.append(sum(valid_sub) / 50)
+        atr_val = atr_vals[-2]
+        atr_sma = atr_sma_vals[-2]
+        atr_ratio = atr_val / atr_sma if (atr_val is not None and atr_sma is not None and atr_sma > 0) else 1.0
+        
+        # Calculate dynamic multiplier
+        atr_mult = 1.5
+        if atr_ratio > 1.5:
+            dynamic_mult = atr_mult * 0.8
+        elif atr_ratio < 0.7:
+            dynamic_mult = atr_mult * 1.2
+        else:
+            dynamic_mult = atr_mult
+            
+        return {
+            "success": True,
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "latest_close": candles[-1]["close"],
+            "atr": atr_val,
+            "atr_sma": atr_sma,
+            "atr_ratio": atr_ratio,
+            "dynamic_multiplier": dynamic_mult,
+            "sl": round(sl_tp1[0], 4),
+            "tp1": round(sl_tp1[1], 4),
+            "tp1_5": round(sl_tp1_5[1], 4),
+            "tp2": round(sl_tp2[1], 4),
+            "tp2_5": round(sl_tp2_5[1], 4),
+            "tp3": round(sl_tp3[1], 4)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/api/mt5/patterns")
 def get_patterns(
@@ -953,6 +1099,7 @@ def serialize_bot(bot: BotSettings):
         "lot_size": bot.lot_size,
         "sl_points": bot.sl_points,
         "tp_points": bot.tp_points,
+        "pj_tp_target": getattr(bot, "pj_tp_target", "manual"),
         "active_ticket": bot.active_ticket,
         "is_running": bot.is_running,
         "use_trend_filter": bot.use_trend_filter,
@@ -975,6 +1122,7 @@ def create_bot(req: BotCreateRequest, db: Session = Depends(get_db)):
         lot_size=req.lot_size,
         sl_points=req.sl_points,
         tp_points=req.tp_points,
+        pj_tp_target=req.pj_tp_target,
         use_trend_filter=req.use_trend_filter,
         use_atr_sizing=req.use_atr_sizing,
         use_news_filter=req.use_news_filter,
@@ -1014,6 +1162,7 @@ def update_bot(bot_id: int, req: BotCreateRequest, db: Session = Depends(get_db)
     if bot.lot_size != req.lot_size: changes.append(f"ขนาด Lot: {bot.lot_size} -> {req.lot_size}")
     if bot.sl_points != req.sl_points: changes.append(f"SL: {bot.sl_points} -> {req.sl_points}")
     if bot.tp_points != req.tp_points: changes.append(f"TP: {bot.tp_points} -> {req.tp_points}")
+    if getattr(bot, "pj_tp_target", "manual") != req.pj_tp_target: changes.append(f"PJ TP Target: {getattr(bot, 'pj_tp_target', 'manual')} -> {req.pj_tp_target}")
     if bot.use_trend_filter != req.use_trend_filter: changes.append(f"Trend Filter: {bot.use_trend_filter} -> {req.use_trend_filter}")
     if bot.use_atr_sizing != req.use_atr_sizing: changes.append(f"ATR Sizing: {bot.use_atr_sizing} -> {req.use_atr_sizing}")
     if getattr(bot, "use_news_filter", False) != req.use_news_filter: changes.append(f"AI News Filter: {getattr(bot, 'use_news_filter', False)} -> {req.use_news_filter}")
@@ -1028,6 +1177,7 @@ def update_bot(bot_id: int, req: BotCreateRequest, db: Session = Depends(get_db)
     bot.lot_size = req.lot_size
     bot.sl_points = req.sl_points
     bot.tp_points = req.tp_points
+    bot.pj_tp_target = req.pj_tp_target
     bot.use_trend_filter = req.use_trend_filter
     bot.use_atr_sizing = req.use_atr_sizing
     bot.use_news_filter = req.use_news_filter
@@ -1114,6 +1264,7 @@ class BacktestRequest(BaseModel):
     lot_size: float = 0.1
     sl_points: float = 0.0
     tp_points: float = 0.0
+    pj_tp_target: str = "manual"
     initial_balance: float = 10000.0
 
 
@@ -1190,7 +1341,7 @@ def run_backtest(req: BacktestRequest):
                         
                 # Check for opposite exit signals
                 opp_signal = False
-                sig = evaluate_multi_signals(close_prices_slice, algorithms_list, req.signal_mode, candles=candles_slice)
+                sig = evaluate_multi_signals(close_prices_slice, algorithms_list, req.signal_mode, candles=candles_slice, symbol=req.symbol, timeframe=req.timeframe)
                 if t_type == "buy" and sig == "sell":
                     opp_signal = True
                 elif t_type == "sell" and sig == "buy":
@@ -1240,17 +1391,37 @@ def run_backtest(req: BacktestRequest):
                     
             # 2. Look for new trades if none active
             if not active_trade:
-                sig = evaluate_multi_signals(close_prices_slice, algorithms_list, req.signal_mode, candles=candles_slice)
+                sig = evaluate_multi_signals(close_prices_slice, algorithms_list, req.signal_mode, candles=candles_slice, symbol=req.symbol, timeframe=req.timeframe)
                 if sig in ["buy", "sell"]:
                     sl_p = 0.0
                     tp_p = 0.0
                     
-                    if sig == "buy":
-                        if req.sl_points > 0: sl_p = current_price - req.sl_points
-                        if req.tp_points > 0: tp_p = current_price + req.tp_points
-                    else: # sell
-                        if req.sl_points > 0: sl_p = current_price + req.sl_points
-                        if req.tp_points > 0: tp_p = current_price - req.tp_points
+                    pj_tp_target = getattr(req, "pj_tp_target", "manual")
+                    if pj_tp_target and pj_tp_target != "manual":
+                        from backend.pattern_detector import calculate_pj_dynamic_levels
+                        sl_dist, tp_dist = calculate_pj_dynamic_levels(candles_slice, sig, pj_tp_target)
+                        if sl_dist is not None and tp_dist is not None:
+                            if sig == "buy":
+                                sl_p = current_price - sl_dist
+                                tp_p = current_price + tp_dist
+                            else: # sell
+                                sl_p = current_price + sl_dist
+                                tp_p = current_price - tp_dist
+                        else:
+                            # Fallback if calculation fails
+                            if sig == "buy":
+                                if req.sl_points > 0: sl_p = current_price - req.sl_points
+                                if req.tp_points > 0: tp_p = current_price + req.tp_points
+                            else: # sell
+                                if req.sl_points > 0: sl_p = current_price + req.sl_points
+                                if req.tp_points > 0: tp_p = current_price - req.tp_points
+                    else:
+                        if sig == "buy":
+                            if req.sl_points > 0: sl_p = current_price - req.sl_points
+                            if req.tp_points > 0: tp_p = current_price + req.tp_points
+                        else: # sell
+                            if req.sl_points > 0: sl_p = current_price + req.sl_points
+                            if req.tp_points > 0: tp_p = current_price - req.tp_points
                         
                     active_trade = {
                         "ticket": ticket_counter,

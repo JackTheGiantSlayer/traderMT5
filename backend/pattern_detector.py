@@ -756,3 +756,406 @@ def detect_fvg(candles, lookback=30):
             return "sell"
             
     return "none"
+
+# --- PJ Indicator calculations ---
+
+def calculate_sma(prices, period):
+    """Calculates Simple Moving Average."""
+    if len(prices) < period:
+        return [None] * len(prices)
+    sma_vals = [None] * (period - 1)
+    for i in range(period - 1, len(prices)):
+        sma_vals.append(sum(prices[i - period + 1 : i + 1]) / period)
+    return sma_vals
+
+def calculate_stochastic(candles, period=9, k_period=3, d_period=3):
+    """Calculates Stochastic %K and %D lines."""
+    n = len(candles)
+    if n < period:
+        return [None] * n, [None] * n
+    
+    stoch_raw = []
+    for i in range(n):
+        if i < period - 1:
+            stoch_raw.append(None)
+            continue
+        sub_candles = candles[i - period + 1 : i + 1]
+        lows = [c["low"] for c in sub_candles]
+        highs = [c["high"] for c in sub_candles]
+        min_low = min(lows)
+        max_high = max(highs)
+        
+        if max_high == min_low:
+            stoch_raw.append(50.0)
+        else:
+            val = 100.0 * (candles[i]["close"] - min_low) / (max_high - min_low)
+            stoch_raw.append(val)
+            
+    # Calculate %K (3-period SMA of stoch_raw)
+    k_vals = []
+    for i in range(n):
+        if i < period - 1 + k_period - 1:
+            k_vals.append(None)
+            continue
+        sub_raw = stoch_raw[i - k_period + 1 : i + 1]
+        if any(x is None for x in sub_raw):
+            k_vals.append(None)
+        else:
+            k_vals.append(sum(sub_raw) / k_period)
+            
+    # Calculate %D (3-period SMA of %K)
+    d_vals = []
+    for i in range(n):
+        if i < period - 1 + k_period - 1 + d_period - 1:
+            d_vals.append(None)
+            continue
+        sub_k = k_vals[i - d_period + 1 : i + 1]
+        if any(x is None for x in sub_k):
+            d_vals.append(None)
+        else:
+            d_vals.append(sum(sub_k) / d_period)
+            
+    return k_vals, d_vals
+
+def calculate_bollinger_bands(prices, period=14, std_multiplier=2.0):
+    """Calculates Bollinger Bands Basis, Upper, and Lower."""
+    n = len(prices)
+    if n < period:
+        return [None] * n, [None] * n, [None] * n
+    
+    basis = [None] * (period - 1)
+    upper = [None] * (period - 1)
+    lower = [None] * (period - 1)
+    
+    for i in range(period - 1, n):
+        sub_prices = prices[i - period + 1 : i + 1]
+        mean = sum(sub_prices) / period
+        variance = sum((x - mean) ** 2 for x in sub_prices) / period
+        std_dev = variance ** 0.5
+        
+        basis.append(mean)
+        upper.append(mean + std_multiplier * std_dev)
+        lower.append(mean - std_multiplier * std_dev)
+        
+    return basis, upper, lower
+
+def calculate_vwap(candles, anchor="Session"):
+    """Calculates Volume Weighted Average Price (VWAP) resetting at Session/Week/Month."""
+    from datetime import datetime
+    n = len(candles)
+    vwap_vals = []
+    
+    cum_pv = 0.0
+    cum_v = 0.0
+    prev_date = None
+    
+    for i in range(n):
+        c = candles[i]
+        t = c["time"]
+        dt = datetime.fromtimestamp(t)
+        
+        reset = False
+        if prev_date is not None:
+            if anchor == "Session":
+                reset = (dt.date() != prev_date.date())
+            elif anchor == "Week":
+                reset = (dt.isocalendar()[1] != prev_date.isocalendar()[1] or dt.year != prev_date.year)
+            elif anchor == "Month":
+                reset = (dt.month != prev_date.month or dt.year != prev_date.year)
+                
+        if reset:
+            cum_pv = 0.0
+            cum_v = 0.0
+            
+        hlc3 = (c["high"] + c["low"] + c["close"]) / 3.0
+        vol = c.get("volume", 1.0)
+        if vol <= 0:
+            vol = 1.0
+            
+        cum_pv += hlc3 * vol
+        cum_v += vol
+        
+        vwap_vals.append(cum_pv / cum_v)
+        prev_date = dt
+        
+    return vwap_vals
+
+def calculate_macd(prices, fast_period=12, slow_period=26, signal_period=9):
+    """Calculates MACD and Signal lines."""
+    if len(prices) < slow_period + signal_period:
+        return [None] * len(prices), [None] * len(prices)
+        
+    fast_ema = calculate_ema(prices, fast_period)
+    slow_ema = calculate_ema(prices, slow_period)
+    
+    macd_line = []
+    for f, s in zip(fast_ema, slow_ema):
+        if f is None or s is None:
+            macd_line.append(None)
+        else:
+            macd_line.append(f - s)
+            
+    # Calculate signal line (EMA of MACD line)
+    first_valid_idx = slow_period - 1
+    valid_macd = macd_line[first_valid_idx:]
+    
+    valid_signal = calculate_ema(valid_macd, signal_period)
+    
+    signal_line = [None] * first_valid_idx + valid_signal
+    return macd_line, signal_line
+
+def calculate_pj_indicator_trend_and_score(candles, timeframe="H1", min_score=6, use_volume=False, vol_multiplier=2.0, vwap_anchor="Session"):
+    """
+    Calculates the Trend direction and Confluence Scores of the PJ Indicator.
+    """
+    n = len(candles)
+    if n < 55:
+        return [{
+            "bull_score": 0, "bear_score": 0,
+            "trend_bull": False, "trend_bear": False,
+            "trend_text": "SIDEWAY", "trend_col": "#D4AF37",
+            "high_vol": False,
+            "ema14": None, "rsi14": None, "vwap": None,
+            "macd_line": None, "macd_signal": None,
+            "stoch_k": None, "stoch_d": None, "bb_basis": None
+        }] * n
+        
+    prices = [c["close"] for c in candles]
+    
+    ema14 = calculate_ema(prices, 14)
+    rsi14 = calculate_rsi(prices, 14)
+    macd_line, macd_signal = calculate_macd(prices, 15, 35, 9)
+    stoch_k, stoch_d = calculate_stochastic(candles, 9, 3, 3)
+    bb_basis, bb_upper, bb_lower = calculate_bollinger_bands(prices, 14, 2.0)
+    vwap_vals = calculate_vwap(candles, anchor=vwap_anchor)
+    
+    vol_prices = [c.get("volume", 1.0) for c in candles]
+    vol_avg = calculate_sma(vol_prices, 20)
+    high_vol_list = []
+    for i in range(n):
+        vol = candles[i].get("volume", 1.0)
+        avg = vol_avg[i]
+        high_vol_list.append(vol > avg * vol_multiplier if avg is not None else False)
+        
+    results = []
+    for i in range(n):
+        if (ema14[i] is None or rsi14[i] is None or macd_line[i] is None or 
+            macd_signal[i] is None or stoch_k[i] is None or stoch_d[i] is None or 
+            bb_basis[i] is None or vwap_vals[i] is None):
+            results.append({
+                "bull_score": 0, "bear_score": 0,
+                "trend_bull": False, "trend_bear": False,
+                "trend_text": "SIDEWAY", "trend_col": "#D4AF37",
+                "high_vol": high_vol_list[i],
+                "ema14": None, "rsi14": None, "vwap": None,
+                "macd_line": None, "macd_signal": None,
+                "stoch_k": None, "stoch_d": None, "bb_basis": None
+            })
+            continue
+            
+        close = candles[i]["close"]
+        
+        # Bull conditions
+        ema_bull = close > ema14[i]
+        vwap_bull = close > vwap_vals[i]
+        macd_bull = macd_line[i] > macd_signal[i]
+        rsi_bull = rsi14[i] > 55
+        stoch_bull = stoch_k[i] > stoch_d[i] and stoch_k[i] > 50
+        bb_bull = close > bb_basis[i]
+        
+        bull_score = ((2 if ema_bull else 0) + 
+                      (2 if vwap_bull else 0) + 
+                      (2 if macd_bull else 0) + 
+                      (2 if rsi_bull else 0) + 
+                      (1 if stoch_bull else 0) + 
+                      (1 if bb_bull else 0))
+                      
+        # Bear conditions
+        ema_bear = close < ema14[i]
+        vwap_bear = close < vwap_vals[i]
+        macd_bear = macd_line[i] < macd_signal[i]
+        rsi_bear = rsi14[i] < 45
+        stoch_bear = stoch_k[i] < stoch_d[i] and stoch_k[i] < 50
+        bb_bear = close < bb_basis[i]
+        
+        bear_score = ((2 if ema_bear else 0) + 
+                      (2 if vwap_bear else 0) + 
+                      (2 if macd_bear else 0) + 
+                      (2 if rsi_bear else 0) + 
+                      (1 if stoch_bear else 0) + 
+                      (1 if bb_bear else 0))
+                      
+        trend_bull = bull_score >= min_score and bull_score > bear_score
+        trend_bear = bear_score >= min_score and bear_score > bull_score
+        
+        trend_text = "UPTREND" if trend_bull else "DOWNTREND" if trend_bear else "SIDEWAY"
+        trend_col = "#00C853" if trend_bull else "#FF1744" if trend_bear else "#D4AF37"
+        
+        results.append({
+            "bull_score": bull_score,
+            "bear_score": bear_score,
+            "trend_bull": trend_bull,
+            "trend_bear": trend_bear,
+            "trend_text": trend_text,
+            "trend_col": trend_col,
+            "high_vol": high_vol_list[i],
+            "ema14": ema14[i],
+            "rsi14": rsi14[i],
+            "vwap": vwap_vals[i],
+            "macd_line": macd_line[i],
+            "macd_signal": macd_signal[i],
+            "stoch_k": stoch_k[i],
+            "stoch_d": stoch_d[i],
+            "bb_basis": bb_basis[i]
+        })
+        
+    return results
+
+
+def calculate_adx(candles, period=14):
+    """
+    Calculates ADX (Average Directional Index), +DI, and -DI using Wilder's smoothing.
+    Returns: (adx_list, plus_di_list, minus_di_list)
+    """
+    n = len(candles)
+    if n < period + 1:
+        return [None] * n, [None] * n, [None] * n
+        
+    tr_vals = [None]
+    plus_dm_vals = [None]
+    minus_dm_vals = [None]
+    
+    for i in range(1, n):
+        h = candles[i]["high"]
+        l = candles[i]["low"]
+        ph = candles[i - 1]["high"]
+        pl = candles[i - 1]["low"]
+        pc = candles[i - 1]["close"]
+        
+        tr = max(h - l, abs(h - pc), abs(l - pc))
+        tr_vals.append(tr)
+        
+        up_move = h - ph
+        down_move = pl - l
+        
+        if up_move > down_move and up_move > 0:
+            plus_dm = up_move
+        else:
+            plus_dm = 0.0
+        plus_dm_vals.append(plus_dm)
+        
+        if down_move > up_move and down_move > 0:
+            minus_dm = down_move
+        else:
+            minus_dm = 0.0
+        minus_dm_vals.append(minus_dm)
+        
+    smoothed_tr = [None] * n
+    smoothed_plus_dm = [None] * n
+    smoothed_minus_dm = [None] * n
+    
+    # First valid value is index 'period'
+    sum_tr = sum(tr_vals[1:period+1])
+    sum_plus_dm = sum(plus_dm_vals[1:period+1])
+    sum_minus_dm = sum(minus_dm_vals[1:period+1])
+    
+    smoothed_tr[period] = sum_tr
+    smoothed_plus_dm[period] = sum_plus_dm
+    smoothed_minus_dm[period] = sum_minus_dm
+    
+    for i in range(period + 1, n):
+        smoothed_tr[i] = smoothed_tr[i - 1] - (smoothed_tr[i - 1] / period) + tr_vals[i]
+        smoothed_plus_dm[i] = smoothed_plus_dm[i - 1] - (smoothed_plus_dm[i - 1] / period) + plus_dm_vals[i]
+        smoothed_minus_dm[i] = smoothed_minus_dm[i - 1] - (smoothed_minus_dm[i - 1] / period) + minus_dm_vals[i]
+        
+    plus_di = [None] * n
+    minus_di = [None] * n
+    dx_vals = [None] * n
+    
+    for i in range(period, n):
+        tr_val = smoothed_tr[i]
+        if tr_val == 0:
+            plus_di[i] = 0.0
+            minus_di[i] = 0.0
+        else:
+            plus_di[i] = 100.0 * (smoothed_plus_dm[i] / tr_val)
+            minus_di[i] = 100.0 * (smoothed_minus_dm[i] / tr_val)
+            
+        sum_di = plus_di[i] + minus_di[i]
+        if sum_di == 0:
+            dx_vals[i] = 0.0
+        else:
+            dx_vals[i] = 100.0 * abs(plus_di[i] - minus_di[i]) / sum_di
+            
+    adx = [None] * n
+    start_adx_idx = 2 * period - 1
+    if n >= start_adx_idx + 1:
+        sum_dx = sum(dx_vals[period:start_adx_idx+1])
+        adx[start_adx_idx] = sum_dx / period
+        
+        for i in range(start_adx_idx + 1, n):
+            adx[i] = (adx[i - 1] * (period - 1) + dx_vals[i]) / period
+            
+    return adx, plus_di, minus_di
+
+
+def calculate_pj_dynamic_levels(candles, order_type, tp_target, atr_mult=1.5, use_dyn_atr=True):
+    """
+    Calculates dynamic SL and TP levels based on PJ Indicator logic.
+    Ref: PJ_Indicator.pine
+    """
+    if len(candles) < 55:
+        return None, None
+        
+    atr_vals = calculate_atr(candles, 14)
+    # Calculate 50-period SMA of atr_vals safely
+    atr_sma_vals = []
+    for i in range(len(atr_vals)):
+        sub = atr_vals[max(0, i - 49) : i + 1]
+        valid_sub = [x for x in sub if x is not None]
+        if len(valid_sub) < 50:
+            atr_sma_vals.append(None)
+        else:
+            atr_sma_vals.append(sum(valid_sub) / 50)
+            
+    # Reference values are at index -2 (last completed candle)
+    atr14_prev = atr_vals[-2]
+    atr_sma_prev = atr_sma_vals[-2]
+    
+    if atr14_prev is None or atr_sma_prev is None or atr_sma_prev == 0:
+        return None, None
+        
+    atr_ratio = atr14_prev / atr_sma_prev
+    
+    # Pine Script: dynamicMult = useDynATR ? (atrRatio > 1.5 ? atrMult * 0.8 : atrRatio < 0.7 ? atrMult * 1.2 : atrMult) : atrMult
+    if use_dyn_atr:
+        if atr_ratio > 1.5:
+            dynamic_mult = atr_mult * 0.8
+        elif atr_ratio < 0.7:
+            dynamic_mult = atr_mult * 1.2
+        else:
+            dynamic_mult = atr_mult
+    else:
+        dynamic_mult = atr_mult
+        
+    risk = atr14_prev * dynamic_mult
+    
+    # Map tp_target string to RR multiplier
+    # Default multipliers: TP1=1.0, TP1.5=1.5, TP2=2.0, TP2.5=2.5, TP3=3.0
+    rr_multipliers = {
+        "tp1": 1.0,
+        "tp1.5": 1.5,
+        "tp1_5": 1.5,
+        "tp2": 2.0,
+        "tp2.5": 2.5,
+        "tp2_5": 2.5,
+        "tp3": 3.0
+    }
+    
+    tp_mult = rr_multipliers.get(tp_target.lower(), 1.0)
+    
+    # Calculate SL and TP distances
+    return risk, risk * tp_mult
+
+
+

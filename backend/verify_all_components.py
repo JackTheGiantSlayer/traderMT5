@@ -85,6 +85,11 @@ try:
     k_vals, d_vals = pattern_detector.calculate_stoch_rsi(prices, 14, 14, 3, 3)
     ema = pattern_detector.calculate_ema(prices, 20)
     macd_vals, macd_colors = pattern_detector.calculate_macd_4c(prices, 12, 26, 9)
+    adx_vals, plus_di, minus_di = pattern_detector.calculate_adx(candles, 14)
+    
+    # PJ Indicator test
+    pj_trend = pattern_detector.calculate_pj_indicator_trend_and_score(candles, timeframe="H1")
+    pj_latest = pj_trend[-1]
     
     rsi_latest = rsi[-1] if rsi[-1] is not None else 0.0
     atr_latest = atr[-1] if atr[-1] is not None else 0.0
@@ -93,19 +98,26 @@ try:
     ema_latest = ema[-1] if ema[-1] is not None else 0.0
     macd_latest = macd_vals[-1] if macd_vals[-1] is not None else 0.0
     macd_color_latest = macd_colors[-1] if macd_colors[-1] is not None else "None"
+    adx_latest = adx_vals[-1] if adx_vals[-1] is not None else 0.0
+    plus_di_latest = plus_di[-1] if plus_di[-1] is not None else 0.0
+    minus_di_latest = minus_di[-1] if minus_di[-1] is not None else 0.0
     
     print(f" [OK] Standard indicators calculated successfully:")
+    print(f"    - PJ Indicator Trend/Score (latest): {pj_latest['trend_text']} (B:{pj_latest['bull_score']}/S:{pj_latest['bear_score']})")
     print(f"    - RSI (latest): {rsi_latest:.2f}")
     print(f"    - ATR (latest): {atr_latest:.2f}")
     print(f"    - StochRSI K/D (latest): {k_latest:.2f}/{d_latest:.2f}")
     print(f"    - EMA20 (latest): {ema_latest:.2f}")
     print(f"    - MACD 4C (latest value/color): {macd_latest:.4f}/{macd_color_latest}")
+    print(f"    - ADX / +DI / -DI (latest): {adx_latest:.2f} / {plus_di_latest:.2f} / {minus_di_latest:.2f}")
     
     # Assert checks
     assert len(rsi) == len(candles), "RSI output length mismatch"
     assert len(atr) == len(candles), "ATR output length mismatch"
     assert len(k_vals) == len(candles), "StochRSI output length mismatch"
     assert len(macd_vals) == len(candles), "MACD output length mismatch"
+    assert len(adx_vals) == len(candles), "ADX output length mismatch"
+    assert len(pj_trend) == len(candles), "PJ Indicator output length mismatch"
 
     # 3. Test SMC and Pattern Detection Algorithms
     swings = pattern_detector.detect_swings(candles)
@@ -164,9 +176,31 @@ try:
     print(f"    - Net Profit: ${result['net_profit']:.2f}")
     print(f"    - Equity curve size: {len(result['equity_curve'])}")
     
+    # Construct a PJ Indicator backtest request
+    req_pj = BacktestRequest(
+        symbol="XAUUSD",
+        timeframe="H1",
+        count=150,
+        algorithm="pj_indicator",
+        signal_mode="or",
+        lot_size=0.1,
+        sl_points=5.0,
+        tp_points=10.0,
+        initial_balance=10000.0
+    )
+    result_pj = run_backtest(req_pj)
+    print(f" [OK] PJ Indicator Backtest ran successfully:")
+    print(f"    - Symbol: {result_pj['symbol']} ({result_pj['timeframe']})")
+    print(f"    - Algorithm: {result_pj['algorithm']}")
+    print(f"    - Final Balance: ${result_pj['final_balance']:.2f}")
+    print(f"    - Total Trades: {result_pj['total_trades']}")
+    print(f"    - Win Rate: {result_pj['win_rate']}% (Wins: {result_pj['wins_count']}, Losses: {result_pj['losses_count']})")
+    
     # Assert sanity checks
     assert result['total_trades'] >= 0, "Negative trades count"
     assert len(result['equity_curve']) > 0, "Empty equity curve"
+    assert result_pj['total_trades'] >= 0, "Negative trades count for PJ"
+    assert len(result_pj['equity_curve']) > 0, "Empty equity curve for PJ"
 except Exception as e:
     print(f" [FAIL] Backtest Engine verification failed: {e}")
     traceback.print_exc()
