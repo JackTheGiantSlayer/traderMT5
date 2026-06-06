@@ -483,7 +483,7 @@ const TradingApp = () => {
     const [activeBot, setActiveBot] = useState(null);
     const [botLogs, setBotLogs] = useState([]);
     const [botFormOpen, setBotFormOpen] = useState(false);
-    const [botForm, setBotForm] = useState({ name: "บอทเทรดทองคำ RSI", symbol: "XAUUSD", timeframe: "M1", algorithm: "rsi_oscillator", lot_size: 0.01, sl_points: 5.0, tp_points: 10.0, use_trend_filter: false, use_atr_sizing: false, risk_percent: 1.0, allowed_sessions: "all", use_news_filter: false });
+    const [botForm, setBotForm] = useState({ name: "บอทเทรดทองคำ RSI", symbol: "XAUUSD", timeframe: "M1", algorithm: "rsi_oscillator", lot_size: 0.01, sl_points: 5.0, tp_points: 10.0, pj_tp_target: "manual", use_trend_filter: false, use_atr_sizing: false, risk_percent: 1.0, allowed_sessions: "all", use_news_filter: false });
     const [selectedAlgos, setSelectedAlgos] = useState(["rsi_oscillator"]);
     const [signalMode, setSignalMode] = useState("or");
     const [activeRunningBotsCount, setActiveRunningBotsCount] = useState(0);
@@ -2321,6 +2321,7 @@ const TradingApp = () => {
             lot_size: bot.lot_size,
             sl_points: bot.sl_points,
             tp_points: bot.tp_points,
+            pj_tp_target: bot.pj_tp_target || "manual",
             use_trend_filter: bot.use_trend_filter || false,
             use_atr_sizing: bot.use_atr_sizing || false,
             risk_percent: bot.risk_percent || 1.0,
@@ -2348,6 +2349,7 @@ const TradingApp = () => {
                     lot_size: parseFloat(botForm.lot_size),
                     sl_points: parseFloat(botForm.sl_points) || 0.0,
                     tp_points: parseFloat(botForm.tp_points) || 0.0,
+                    pj_tp_target: botForm.pj_tp_target || "manual",
                     signal_mode: signalMode,
                     use_trend_filter: botForm.use_trend_filter || false,
                     use_atr_sizing: botForm.use_atr_sizing || false,
@@ -3618,6 +3620,7 @@ const TradingApp = () => {
                                     <div className="backtest-checkbox-list">
                                         {[
                                             { value: 'smc_confluence_pro', label: 'SMC Confluence Pro 🌟' },
+                                            { value: 'pj_indicator', label: 'PJ Indicator 🔮' },
                                             { value: 'smc_order_block', label: 'SMC Order Block 🟩' },
                                             { value: 'smc_fvg_imbalance', label: 'SMC FVG Imbalance ⚡' },
                                             { value: 'smc_bos_choch', label: 'SMC BOS / CHoCH 📈' },
@@ -5477,6 +5480,7 @@ const TradingApp = () => {
                                                                                 fontWeight: 500
                                                                             }}>
                                                                                 {aTrim === 'rsi_oscillator' ? 'RSI' : 
+                                                                                 aTrim === 'pj_indicator' ? 'PJ Indicator' : 
                                                                                  aTrim === 'stoch_rsi' ? 'StochRSI' : 
                                                                                  aTrim === 'macd_4c' ? 'MACD 4C Momentum' :
                                                                                  aTrim === 'sma_cross' ? 'SMA Cross' : 
@@ -5671,6 +5675,7 @@ const TradingApp = () => {
                                                 <div className="backtest-checkbox-list">
                                                     {[
                                                         { value: 'smc_confluence_pro', label: 'SMC Confluence Pro 🌟' },
+                                                        { value: 'pj_indicator', label: 'PJ Indicator 🔮' },
                                                         { value: 'smc_order_block', label: 'SMC Order Block 🟩' },
                                                         { value: 'smc_fvg_imbalance', label: 'SMC FVG Imbalance ⚡' },
                                                         { value: 'smc_bos_choch', label: 'SMC BOS / CHoCH 📈' },
@@ -7168,6 +7173,7 @@ const TradingApp = () => {
                                 }}>
                                     {[
                                         { id: 'rsi_oscillator', name: 'RSI Overbought/Oversold', desc: 'เทรดเมื่อจุดกลับตัวจากเขต RSI Overbought/Oversold' },
+                                        { id: 'pj_indicator', name: 'PJ Indicator 🔮', desc: 'กลยุทธ์ตามแนวโน้มและ Confluence Score จาก Pine Script' },
                                         { id: 'stoch_rsi', name: 'Stochastic RSI (StochRSI)', desc: 'จับสัญญาณซื้อขายและจุดกลับตัวได้รวดเร็วกว่า RSI ทั่วไป โดยใช้ออสซิลเลเตอร์คำนวณซ้ำบน RSI' },
                                         { id: 'macd_4c', name: 'MACD 4 Color (4C) Momentum', desc: 'ตรวจจับแรงขับเคลื่อนเทรนด้วยแท่งสีโมเมนตัม 4 มิติ (Pine Script 4-Color MACD)' },
                                         { id: 'sma_cross', name: 'Double SMA Crossover', desc: 'เทรดตามแนวโน้มเมื่อเส้น SMA 5 ตัดกับ 15' },
@@ -7204,6 +7210,7 @@ const TradingApp = () => {
                                                     if (nextAlgos.length === 1) {
                                                         const single = nextAlgos[0];
                                                         const suffix = single === "rsi_oscillator" ? "RSI Overbought/Oversold" :
+                                                                       single === "pj_indicator" ? "PJ Indicator" :
                                                                        single === "stoch_rsi" ? "StochRSI Fast Reversal" :
                                                                        single === "sma_cross" ? "Double SMA" :
                                                                        single === "macd" ? "MACD Cross" :
@@ -7323,6 +7330,30 @@ const TradingApp = () => {
                                     />
                                 </div>
                             </div>
+
+                            {selectedAlgos.includes('pj_indicator') && (
+                                <div className="bot-form-grid" style={{ marginTop: '10px', marginBottom: '10px' }}>
+                                    <div className="input-group" style={{ gridColumn: 'span 2', margin: 0 }}>
+                                        <label style={{ color: 'var(--accent-gold)', fontWeight: 600 }}>PJ Take Profit Target (เป้าหมายกำไรจาก Indicator)</label>
+                                        <select 
+                                            className="numeric-input"
+                                            style={{ appearance: 'auto' }}
+                                            value={botForm.pj_tp_target || 'manual'}
+                                            onChange={(e) => setBotForm({ ...botForm, pj_tp_target: e.target.value })}
+                                        >
+                                            <option value="manual">Manual TP Points (ใช้ระยะ TP ด้านบน)</option>
+                                            <option value="tp1">TP Target 1 (ระยะ TP1 ตามสูตร PJ)</option>
+                                            <option value="tp1_5">TP Target 1.5 (ระยะ TP1.5 ตามสูตร PJ)</option>
+                                            <option value="tp2">TP Target 2 (ระยะ TP2 ตามสูตร PJ)</option>
+                                            <option value="tp2_5">TP Target 2.5 (ระยะ TP2.5 ตามสูตร PJ)</option>
+                                            <option value="tp3">TP Target 3 (ระยะ TP3 ตามสูตร PJ)</option>
+                                        </select>
+                                        <span style={{ fontSize: '9px', color: 'var(--text-muted)', display: 'block', marginTop: '4px' }}>
+                                            * เมื่อเลือกเป้าหมายกำไรที่ไม่ใช่ Manual ระบบจะละทิ้งระยะ TP ด้านบน และใช้ระดับราคา TP จากอินดิเคเตอร์ PJ แทน
+                                        </span>
+                                    </div>
+                                </div>
+                            )}
 
                             {/* --- Advanced SMC & Risk Management Settings --- */}
                             <div style={{
