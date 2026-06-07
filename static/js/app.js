@@ -507,6 +507,7 @@ const TradingApp = () => {
     const [backtestLoading, setBacktestLoading] = useState(false);
     const [backtestSubTab, setBacktestSubTab] = useState("stats"); // 'stats' | 'price' | 'equity' | 'deals'
     const [selectedBacktestTrade, setSelectedBacktestTrade] = useState(null);
+    const [analyticsTimeFilter, setAnalyticsTimeFilter] = useState("all"); // 'day' | 'week' | 'month' | 'year' | 'all'
 
     const backtestChartContainerRef = useRef(null);
     const backtestPriceLinesRef = useRef([]);
@@ -2660,6 +2661,43 @@ const TradingApp = () => {
             };
         }
 
+        const parseCloseTime = (str) => {
+            if (!str) return null;
+            return new Date(str.replace(/-/g, '/'));
+        };
+
+        const now = new Date();
+        const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const startOfWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        const startOfMonth = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        const startOfYear = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+
+        const filteredTrades = tradeHistory.filter(t => {
+            if (!t.close_time) return false;
+            const closeDate = parseCloseTime(t.close_time);
+            if (!closeDate) return false;
+
+            if (analyticsTimeFilter === 'day') {
+                return closeDate >= startOfDay;
+            } else if (analyticsTimeFilter === 'week') {
+                return closeDate >= startOfWeek;
+            } else if (analyticsTimeFilter === 'month') {
+                return closeDate >= startOfMonth;
+            } else if (analyticsTimeFilter === 'year') {
+                return closeDate >= startOfYear;
+            }
+            return true; // 'all'
+        });
+
+        if (filteredTrades.length === 0) {
+            return { 
+                totalProfit: "0.00", winRate: "0.0", winCount: 0, loseCount: 0, totalTrades: 0, best: "0.00", worst: "0.00", 
+                todayProfit: "0.00", todayTrades: 0, todayWins: 0, todayWinRate: "0.0",
+                monthProfit: "0.00", profitFactor: "0.00", avgWin: "0.00", avgLoss: "0.00", riskRewardRatio: "1.00",
+                maxConWins: 0, maxConLosses: 0, botStats: [], sessionStats: [] 
+            };
+        }
+
         const todayStr = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD local timezone
         const currentMonthStr = todayStr.substring(0, 7); // YYYY-MM
 
@@ -2689,7 +2727,7 @@ const TradingApp = () => {
             evening: { key: 'evening', name: 'ช่วงค่ำ/ดึก (Evening/Night: 18:00 - 06:00)', totalTrades: 0, winCount: 0, loseCount: 0, totalProfit: 0.0, grossProfit: 0.0, grossLoss: 0.0, best: -999999.0, worst: 999999.0, icon: 'moon', bots: {} }
         };
 
-        for (const t of tradeHistory) {
+        for (const t of filteredTrades) {
             total += t.profit;
             if (t.profit > 0) {
                 wins++;
@@ -2776,17 +2814,17 @@ const TradingApp = () => {
             }
         }
 
-        const winRate = (wins / tradeHistory.length) * 100;
+        const winRate = (wins / filteredTrades.length) * 100;
         const todayWinRate = todayTradesCount > 0 ? ((todayWinsCount / todayTradesCount) * 100).toFixed(1) : "0.0";
         const profitFactor = grossLoss > 0 ? (grossProfit / grossLoss).toFixed(2) : grossProfit > 0 ? "Max" : "0.00";
         
         const avgWin = wins > 0 ? (totalWinAmt / wins).toFixed(2) : "0.00";
-        const losses = tradeHistory.length - wins;
+        const losses = filteredTrades.length - wins;
         const avgLoss = losses > 0 ? (totalLossAmt / losses).toFixed(2) : "0.00";
         const riskRewardRatio = parseFloat(avgLoss) > 0 ? (parseFloat(avgWin) / parseFloat(avgLoss)).toFixed(2) : "1.00";
 
         // Calculate consecutive win/loss streaks (sort chronologically first)
-        const sortedTrades = [...tradeHistory].sort((a, b) => new Date(a.close_time) - new Date(b.close_time));
+        const sortedTrades = [...filteredTrades].sort((a, b) => new Date(a.close_time) - new Date(b.close_time));
         let maxConWins = 0;
         let maxConLosses = 0;
         let currentConWins = 0;
@@ -2851,8 +2889,8 @@ const TradingApp = () => {
             totalProfit: total.toFixed(2),
             winRate: winRate.toFixed(1),
             winCount: wins,
-            loseCount: tradeHistory.length - wins,
-            totalTrades: tradeHistory.length,
+            loseCount: filteredTrades.length - wins,
+            totalTrades: filteredTrades.length,
             best: best.toFixed(2),
             worst: worst.toFixed(2),
             todayProfit: todayProfit.toFixed(2),
@@ -3066,6 +3104,28 @@ const TradingApp = () => {
                             <Icon name="trend-up" size={18} />
                             <span>การวิเคราะห์ประสิทธิภาพเชิงลึกพอร์ตการลงทุน (Deep Analytics)</span>
                         </h2>
+                        {/* Time Filter Segmented Control */}
+                        <div style={{ display: 'flex', gap: '4px', background: 'var(--bg-main)', padding: '4px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+                            {['all', 'day', 'week', 'month', 'year'].map(filter => (
+                                <button
+                                    key={filter}
+                                    onClick={() => setAnalyticsTimeFilter(filter)}
+                                    style={{
+                                        padding: '4px 10px',
+                                        fontSize: '11px',
+                                        fontWeight: 'bold',
+                                        borderRadius: '4px',
+                                        border: 'none',
+                                        background: analyticsTimeFilter === filter ? 'var(--accent-gold)' : 'transparent',
+                                        color: analyticsTimeFilter === filter ? '#000' : 'var(--text-muted)',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.2s ease'
+                                    }}
+                                >
+                                    {filter === 'all' ? 'ทั้งหมด' : filter === 'day' ? 'วันนี้' : filter === 'week' ? 'สัปดาห์นี้' : filter === 'month' ? 'เดือนนี้' : 'ปีนี้'}
+                                </button>
+                            ))}
+                        </div>
                     </div>
                     {/* Top Summary Cards */}
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
@@ -5040,8 +5100,30 @@ const TradingApp = () => {
                             {/* Analytics Tab Content */}
                             {activeTab === 'analytics' && (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', padding: '8px' }}>
-                                    {/* Popout Button for Deep Analytics */}
-                                    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                                    {/* Popout Button for Deep Analytics & Filter Row */}
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        {/* Time Filter Segmented Control */}
+                                        <div style={{ display: 'flex', gap: '4px', background: 'var(--bg-main)', padding: '4px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+                                            {['all', 'day', 'week', 'month', 'year'].map(filter => (
+                                                <button
+                                                    key={filter}
+                                                    onClick={() => setAnalyticsTimeFilter(filter)}
+                                                    style={{
+                                                        padding: '4px 10px',
+                                                        fontSize: '11px',
+                                                        fontWeight: 'bold',
+                                                        borderRadius: '4px',
+                                                        border: 'none',
+                                                        background: analyticsTimeFilter === filter ? 'var(--accent-gold)' : 'transparent',
+                                                        color: analyticsTimeFilter === filter ? '#000' : 'var(--text-muted)',
+                                                        cursor: 'pointer',
+                                                        transition: 'all 0.2s ease'
+                                                    }}
+                                                >
+                                                    {filter === 'all' ? 'ทั้งหมด' : filter === 'day' ? 'วันนี้' : filter === 'week' ? 'สัปดาห์นี้' : filter === 'month' ? 'เดือนนี้' : 'ปีนี้'}
+                                                </button>
+                                            ))}
+                                        </div>
                                         <button 
                                             className="btn-trade-execute buy"
                                             onClick={() => window.open('/?popout=analytics', '_blank', 'width=1280,height=800,menubar=no,toolbar=no,location=no,status=no')}
