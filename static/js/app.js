@@ -2075,8 +2075,8 @@ const TradingApp = () => {
                                                 </span>
                                             </td>
                                             <td style={{ fontFamily: 'monospace' }}>{backtestForm.lot_size}</td>
-                                            <td style={{ fontFamily: 'monospace' }}>{t.open_price.toLocaleString('en-US', { minimumFractionDigits: decimals })}</td>
-                                            <td style={{ fontFamily: 'monospace' }}>{t.close_price.toLocaleString('en-US', { minimumFractionDigits: decimals })}</td>
+                                            <td style={{ fontFamily: 'monospace' }}>{(t.open_price ?? 0).toLocaleString('en-US', { minimumFractionDigits: decimals })}</td>
+                                            <td style={{ fontFamily: 'monospace' }}>{(t.close_price ?? 0).toLocaleString('en-US', { minimumFractionDigits: decimals })}</td>
                                             <td style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{t.open_time}</td>
                                             <td style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>{t.close_time}</td>
                                             <td>
@@ -2084,8 +2084,8 @@ const TradingApp = () => {
                                                     {t.result.toUpperCase()}
                                                 </span>
                                             </td>
-                                            <td className={t.profit >= 0 ? 'price-up' : 'price-down'} style={{ fontWeight: 700, fontFamily: 'monospace' }}>
-                                                {t.profit >= 0 ? '+' : ''}${t.profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                            <td className={(t.profit ?? 0) >= 0 ? 'price-up' : 'price-down'} style={{ fontWeight: 700, fontFamily: 'monospace' }}>
+                                                {(t.profit ?? 0) >= 0 ? '+' : ''}${(t.profit ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                                             </td>
                                             <td style={{ fontWeight: 600, fontSize: '11px', color: t.reason === 'Take Profit' ? 'var(--bull-green)' : t.reason === 'Stop Loss' ? 'var(--bear-red)' : 'var(--text-secondary)' }}>
                                                 {t.reason}
@@ -2831,7 +2831,7 @@ const TradingApp = () => {
         let currentConLosses = 0;
 
         for (const t of sortedTrades) {
-            if (t.profit >= 0) {
+            if ((t.profit ?? 0) >= 0) {
                 currentConWins++;
                 if (currentConWins > maxConWins) maxConWins = currentConWins;
                 currentConLosses = 0;
@@ -3871,8 +3871,8 @@ const TradingApp = () => {
                                             <div className="backtest-stats-grid">
                                                 <div className="backtest-stat-card">
                                                     <span className="metric-label">กำไร/ขาดทุนสุทธิ (Net profit)</span>
-                                                    <span className={`metric-value ${backtestResult.net_profit >= 0 ? 'price-up' : 'price-down'}`}>
-                                                        {backtestResult.net_profit >= 0 ? '+' : ''}${backtestResult.net_profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                                    <span className={`metric-value ${(backtestResult.net_profit ?? 0) >= 0 ? 'price-up' : 'price-down'}`}>
+                                                        {(backtestResult.net_profit ?? 0) >= 0 ? '+' : ''}${(backtestResult.net_profit ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                                                     </span>
                                                 </div>
                                                 <div className="backtest-stat-card">
@@ -3881,24 +3881,24 @@ const TradingApp = () => {
                                                         {backtestResult.win_rate}%
                                                     </span>
                                                     <span style={{ fontSize: '9px', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
-                                                        ชนะ {backtestResult.wins_count} | แพ้ {backtestResult.losses_count}
+                                                        ชนะ {(backtestResult.wins_count ?? 0)} | แพ้ {(backtestResult.losses_count ?? 0)}
                                                     </span>
                                                     <div className="winrate-gauge-container">
                                                         <div className="winrate-gauge-bar">
-                                                            <div className="winrate-gauge-fill" style={{ width: `${backtestResult.win_rate}%` }}></div>
+                                                            <div className="winrate-gauge-fill" style={{ width: `${backtestResult.win_rate ?? 0}%` }}></div>
                                                         </div>
                                                     </div>
                                                 </div>
                                                 <div className="backtest-stat-card">
                                                     <span className="metric-label">ออเดอร์ทั้งหมด (Total deals)</span>
                                                     <span className="metric-value" style={{ color: 'var(--text-primary)' }}>
-                                                        {backtestResult.total_trades} ไม้
+                                                        {(backtestResult.total_trades ?? 0)} ไม้
                                                     </span>
                                                 </div>
                                                 <div className="backtest-stat-card">
                                                     <span className="metric-label">บาลานซ์สุทธิ (Final Balance)</span>
                                                     <span className="metric-value" style={{ color: 'var(--bull-green)' }}>
-                                                        ${backtestResult.final_balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                                        ${(backtestResult.final_balance ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                                                     </span>
                                                 </div>
                                             </div>
@@ -3910,25 +3910,25 @@ const TradingApp = () => {
                                                     <h5>📊 วิเคราะห์ผลตอบแทน (Returns Analysis)</h5>
                                                     <div className="backtest-detail-row">
                                                         <span className="backtest-detail-label">กำไรรวมทั้งหมด (Gross Profit)</span>
-                                                        <span className="backtest-detail-value price-up">+${backtestResult.gross_profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                                        <span className="backtest-detail-value price-up">+${(backtestResult.gross_profit ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                                                     </div>
                                                     <div className="backtest-detail-row">
                                                         <span className="backtest-detail-label">ขาดทุนรวมทั้งหมด (Gross Loss)</span>
-                                                        <span className="backtest-detail-value price-down">-${backtestResult.gross_loss.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                                        <span className="backtest-detail-value price-down">-${(backtestResult.gross_loss ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                                                     </div>
                                                     <div className="backtest-detail-row">
                                                         <span className="backtest-detail-label">ตัวประกอบกำไร (Profit Factor)</span>
                                                         <span className="backtest-detail-value" style={{ 
-                                                            color: backtestResult.profit_factor >= 1.5 ? 'var(--bull-green)' : backtestResult.profit_factor >= 1.0 ? 'var(--accent-gold)' : 'var(--bear-red)',
+                                                            color: (backtestResult.profit_factor ?? 0) >= 1.5 ? 'var(--bull-green)' : (backtestResult.profit_factor ?? 0) >= 1.0 ? 'var(--accent-gold)' : 'var(--bear-red)',
                                                             fontWeight: 'bold'
                                                         }}>
-                                                            {backtestResult.profit_factor}
+                                                            {(backtestResult.profit_factor ?? 0)}
                                                         </span>
                                                     </div>
                                                     <div className="backtest-detail-row">
                                                         <span className="backtest-detail-label">ความคาดหวังดีลเฉลี่ย (Expectancy)</span>
-                                                        <span className={`backtest-detail-value ${backtestResult.expectancy >= 0 ? 'price-up' : 'price-down'}`}>
-                                                            {backtestResult.expectancy >= 0 ? '+' : ''}${backtestResult.expectancy.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                                        <span className={`backtest-detail-value ${(backtestResult.expectancy ?? 0) >= 0 ? 'price-up' : 'price-down'}`}>
+                                                            {(backtestResult.expectancy ?? 0) >= 0 ? '+' : ''}${(backtestResult.expectancy ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                                                         </span>
                                                     </div>
                                                 </div>
@@ -3938,22 +3938,22 @@ const TradingApp = () => {
                                                     <h5>🛡️ การควบคุมความเสี่ยง (Risk & Drawdown)</h5>
                                                     <div className="backtest-detail-row">
                                                         <span className="backtest-detail-label">การย่อตัวลึกสุด (Max Drawdown)</span>
-                                                        <span className="backtest-detail-value price-down">-${backtestResult.max_drawdown.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                                        <span className="backtest-detail-value price-down">-${(backtestResult.max_drawdown ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                                                     </div>
                                                     <div className="backtest-detail-row">
                                                         <span className="backtest-detail-label">เปอร์เซ็นต์ย่อตัวลึกสุด (Max Drawdown %)</span>
-                                                        <span className="backtest-detail-value price-down">-{backtestResult.max_drawdown_percent}%</span>
+                                                        <span className="backtest-detail-value price-down">-{(backtestResult.max_drawdown_percent ?? 0)}%</span>
                                                     </div>
                                                     <div className="backtest-detail-row">
                                                         <span className="backtest-detail-label">เงินตั้งต้นจำลอง (Initial Balance)</span>
-                                                        <span className="backtest-detail-value" style={{ color: 'var(--text-secondary)' }}>${backtestResult.initial_balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                                        <span className="backtest-detail-value" style={{ color: 'var(--text-secondary)' }}>${(backtestResult.initial_balance ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                                                     </div>
                                                     <div className="backtest-detail-row">
                                                         <span className="backtest-detail-label">ระดับความเสี่ยงพอร์ต (Risk Rating)</span>
                                                         <span className="backtest-detail-value" style={{ 
-                                                            color: backtestResult.max_drawdown_percent <= 10 ? 'var(--bull-green)' : backtestResult.max_drawdown_percent <= 20 ? 'var(--accent-gold)' : 'var(--bear-red)'
+                                                            color: (backtestResult.max_drawdown_percent ?? 0) <= 10 ? 'var(--bull-green)' : (backtestResult.max_drawdown_percent ?? 0) <= 20 ? 'var(--accent-gold)' : 'var(--bear-red)'
                                                         }}>
-                                                            {backtestResult.max_drawdown_percent <= 10 ? 'ต่ำ (Low Risk)' : backtestResult.max_drawdown_percent <= 20 ? 'ปานกลาง (Medium Risk)' : 'สูง (High Drawdown!)'}
+                                                            {(backtestResult.max_drawdown_percent ?? 0) <= 10 ? 'ต่ำ (Low Risk)' : (backtestResult.max_drawdown_percent ?? 0) <= 20 ? 'ปานกลาง (Medium Risk)' : 'สูง (High Drawdown!)'}
                                                         </span>
                                                     </div>
                                                 </div>
@@ -3963,22 +3963,22 @@ const TradingApp = () => {
                                                     <h5>🧬 พฤติกรรมดีลการเทรด (Trade Statistics)</h5>
                                                     <div className="backtest-detail-row">
                                                         <span className="backtest-detail-label">เฉลี่ยต่อดีลกำไร (Average Win)</span>
-                                                        <span className="backtest-detail-value price-up">+${backtestResult.avg_win.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                                        <span className="backtest-detail-value price-up">+${(backtestResult.avg_win ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                                                     </div>
                                                     <div className="backtest-detail-row">
                                                         <span className="backtest-detail-label">เฉลี่ยต่อดีลขาดทุน (Average Loss)</span>
-                                                        <span className="backtest-detail-value price-down">-${backtestResult.avg_loss.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                                        <span className="backtest-detail-value price-down">-${(backtestResult.avg_loss ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                                                     </div>
                                                     <div className="backtest-detail-row">
                                                         <span className="backtest-detail-label">อัตราส่วนเฉลี่ย Win/Loss RR</span>
                                                         <span className="backtest-detail-value">
-                                                            {backtestResult.avg_loss > 0 ? (backtestResult.avg_win / backtestResult.avg_loss).toFixed(2) : backtestResult.avg_win.toFixed(2)}
+                                                            {(backtestResult.avg_loss ?? 0) > 0 ? ((backtestResult.avg_win ?? 0) / (backtestResult.avg_loss ?? 1)).toFixed(2) : (backtestResult.avg_win ?? 0).toFixed(2)}
                                                         </span>
                                                     </div>
                                                     <div className="backtest-detail-row">
                                                         <span className="backtest-detail-label">สตรีคชนะ / แพ้ ต่อเนื่องสูงสุด</span>
                                                         <span className="backtest-detail-value">
-                                                            <span className="price-up">{backtestResult.max_consecutive_wins} Wins</span> / <span className="price-down">{backtestResult.max_consecutive_losses} Losses</span>
+                                                            <span className="price-up">{(backtestResult.max_consecutive_wins ?? 0)} Wins</span> / <span className="price-down">{(backtestResult.max_consecutive_losses ?? 0)} Losses</span>
                                                         </span>
                                                     </div>
                                                 </div>
@@ -4034,25 +4034,25 @@ const TradingApp = () => {
                     <div className="account-metric">
                         <span className="metric-label">Balance</span>
                         <span className="metric-value" style={{ fontFamily: 'monospace' }}>
-                            ${account.balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                            ${(account.balance ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                         </span>
                     </div>
                     <div className="account-metric">
                         <span className="metric-label">Equity</span>
                         <span className="metric-value" style={{ fontFamily: 'monospace' }}>
-                            ${account.equity.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                            ${(account.equity ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                         </span>
                     </div>
                     <div className="account-metric">
                         <span className="metric-label">Used Margin</span>
                         <span className="metric-value" style={{ color: 'var(--text-secondary)', fontFamily: 'monospace' }}>
-                            ${account.margin.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                            ${(account.margin ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                         </span>
                     </div>
                     <div className="account-metric">
                         <span className="metric-label">Floating Profit</span>
-                        <span className={`metric-value ${account.profit >= 0 ? 'pnl-positive' : 'pnl-negative'}`} style={{ fontFamily: 'monospace' }}>
-                            {account.profit >= 0 ? '+' : ''}${account.profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        <span className={`metric-value ${(account.profit ?? 0) >= 0 ? 'pnl-positive' : 'pnl-negative'}`} style={{ fontFamily: 'monospace' }}>
+                            {(account.profit ?? 0) >= 0 ? '+' : ''}${(account.profit ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                         </span>
                     </div>
 
@@ -4981,15 +4981,15 @@ const TradingApp = () => {
                                                             </span>
                                                         </td>
                                                         <td style={{ fontFamily: 'monospace' }}>{pos.volume}</td>
-                                                        <td style={{ fontFamily: 'monospace' }}>{pos.open_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-                                                        <td style={{ fontFamily: 'monospace', color: 'var(--accent-gold)' }}>{pos.current_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                                                        <td style={{ fontFamily: 'monospace' }}>{(pos.open_price ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                                                        <td style={{ fontFamily: 'monospace', color: 'var(--accent-gold)' }}>{(pos.current_price ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
                                                         <td style={{ fontFamily: 'monospace', color: pos.sl > 0 ? 'var(--bear-red)' : 'var(--text-muted)' }}>{pos.sl > 0 ? pos.sl.toFixed(2) : '-'}</td>
                                                         <td style={{ fontFamily: 'monospace', color: pos.tp > 0 ? 'var(--bull-green)' : 'var(--text-muted)' }}>{pos.tp > 0 ? pos.tp.toFixed(2) : '-'}</td>
                                                         <td 
-                                                            className={pos.profit >= 0 ? 'price-up' : 'price-down'}
+                                                            className={(pos.profit ?? 0) >= 0 ? 'price-up' : 'price-down'}
                                                             style={{ fontWeight: 700, fontFamily: 'monospace', fontSize: '13px' }}
                                                         >
-                                                            {pos.profit >= 0 ? '+' : ''}${pos.profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                                            {(pos.profit ?? 0) >= 0 ? '+' : ''}${(pos.profit ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                                                         </td>
                                                         <td>
                                                             <button 
@@ -5084,10 +5084,10 @@ const TradingApp = () => {
                                                         <td style={{ fontFamily: 'monospace', color: 'var(--text-muted)' }}>{formatP(t.tp)}</td>
                                                         <td style={{ fontFamily: 'monospace' }}>{formatP(t.close_price)}</td>
                                                         <td 
-                                                            className={t.profit >= 0 ? 'price-up' : 'price-down'}
+                                                            className={(t.profit ?? 0) >= 0 ? 'price-up' : 'price-down'}
                                                             style={{ fontWeight: 700, fontFamily: 'monospace', fontSize: '13px' }}
                                                         >
-                                                            {t.profit >= 0 ? '+' : ''}${t.profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                                            {(t.profit ?? 0) >= 0 ? '+' : ''}${(t.profit ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                                                         </td>
                                                     </tr>
                                                 );
@@ -5963,8 +5963,8 @@ const TradingApp = () => {
                                                         <div className="backtest-stats-grid">
                                                             <div className="backtest-stat-card">
                                                                 <span className="metric-label">กำไร/ขาดทุนสุทธิ (Net profit)</span>
-                                                                <span className={`metric-value ${backtestResult.net_profit >= 0 ? 'price-up' : 'price-down'}`}>
-                                                                    {backtestResult.net_profit >= 0 ? '+' : ''}${backtestResult.net_profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                                                <span className={`metric-value ${(backtestResult.net_profit ?? 0) >= 0 ? 'price-up' : 'price-down'}`}>
+                                                                    {(backtestResult.net_profit ?? 0) >= 0 ? '+' : ''}${(backtestResult.net_profit ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                                                                 </span>
                                                             </div>
                                                             <div className="backtest-stat-card">
@@ -5973,24 +5973,24 @@ const TradingApp = () => {
                                                                     {backtestResult.win_rate}%
                                                                 </span>
                                                                 <span style={{ fontSize: '9px', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
-                                                                    ชนะ {backtestResult.wins_count} | แพ้ {backtestResult.losses_count}
+                                                                    ชนะ {(backtestResult.wins_count ?? 0)} | แพ้ {(backtestResult.losses_count ?? 0)}
                                                                 </span>
                                                                 <div className="winrate-gauge-container">
                                                                     <div className="winrate-gauge-bar">
-                                                                        <div className="winrate-gauge-fill" style={{ width: `${backtestResult.win_rate}%` }}></div>
+                                                                        <div className="winrate-gauge-fill" style={{ width: `${backtestResult.win_rate ?? 0}%` }}></div>
                                                                     </div>
                                                                 </div>
                                                             </div>
                                                             <div className="backtest-stat-card">
                                                                 <span className="metric-label">ออเดอร์ทั้งหมด (Total deals)</span>
                                                                 <span className="metric-value" style={{ color: 'var(--text-primary)' }}>
-                                                                    {backtestResult.total_trades} ไม้
+                                                                    {(backtestResult.total_trades ?? 0)} ไม้
                                                                 </span>
                                                             </div>
                                                             <div className="backtest-stat-card">
                                                                 <span className="metric-label">บาลานซ์สุทธิ (Final Balance)</span>
                                                                 <span className="metric-value" style={{ color: 'var(--bull-green)' }}>
-                                                                    ${backtestResult.final_balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                                                    ${(backtestResult.final_balance ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                                                                 </span>
                                                             </div>
                                                         </div>
@@ -6002,25 +6002,25 @@ const TradingApp = () => {
                                                                 <h5>📊 วิเคราะห์ผลตอบแทน (Returns Analysis)</h5>
                                                                 <div className="backtest-detail-row">
                                                                     <span className="backtest-detail-label">กำไรรวมทั้งหมด (Gross Profit)</span>
-                                                                    <span className="backtest-detail-value price-up">+${backtestResult.gross_profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                                                    <span className="backtest-detail-value price-up">+${(backtestResult.gross_profit ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                                                                 </div>
                                                                 <div className="backtest-detail-row">
                                                                     <span className="backtest-detail-label">ขาดทุนรวมทั้งหมด (Gross Loss)</span>
-                                                                    <span className="backtest-detail-value price-down">-${backtestResult.gross_loss.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                                                    <span className="backtest-detail-value price-down">-${(backtestResult.gross_loss ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                                                                 </div>
                                                                 <div className="backtest-detail-row">
                                                                     <span className="backtest-detail-label">ตัวประกอบกำไร (Profit Factor)</span>
                                                                     <span className="backtest-detail-value" style={{ 
-                                                                        color: backtestResult.profit_factor >= 1.5 ? 'var(--bull-green)' : backtestResult.profit_factor >= 1.0 ? 'var(--accent-gold)' : 'var(--bear-red)',
+                                                                        color: (backtestResult.profit_factor ?? 0) >= 1.5 ? 'var(--bull-green)' : (backtestResult.profit_factor ?? 0) >= 1.0 ? 'var(--accent-gold)' : 'var(--bear-red)',
                                                                         fontWeight: 'bold'
                                                                     }}>
-                                                                        {backtestResult.profit_factor}
+                                                                        {(backtestResult.profit_factor ?? 0)}
                                                                     </span>
                                                                 </div>
                                                                 <div className="backtest-detail-row">
                                                                     <span className="backtest-detail-label">ความคาดหวังดีลเฉลี่ย (Expectancy)</span>
-                                                                    <span className={`backtest-detail-value ${backtestResult.expectancy >= 0 ? 'price-up' : 'price-down'}`}>
-                                                                        {backtestResult.expectancy >= 0 ? '+' : ''}${backtestResult.expectancy.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                                                    <span className={`backtest-detail-value ${(backtestResult.expectancy ?? 0) >= 0 ? 'price-up' : 'price-down'}`}>
+                                                                        {(backtestResult.expectancy ?? 0) >= 0 ? '+' : ''}${(backtestResult.expectancy ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                                                                     </span>
                                                                 </div>
                                                             </div>
@@ -6030,22 +6030,22 @@ const TradingApp = () => {
                                                                 <h5>🛡️ การควบคุมความเสี่ยง (Risk & Drawdown)</h5>
                                                                 <div className="backtest-detail-row">
                                                                     <span className="backtest-detail-label">การย่อตัวลึกสุด (Max Drawdown)</span>
-                                                                    <span className="backtest-detail-value price-down">-${backtestResult.max_drawdown.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                                                    <span className="backtest-detail-value price-down">-${(backtestResult.max_drawdown ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                                                                 </div>
                                                                 <div className="backtest-detail-row">
                                                                     <span className="backtest-detail-label">เปอร์เซ็นต์ย่อตัวลึกสุด (Max Drawdown %)</span>
-                                                                    <span className="backtest-detail-value price-down">-{backtestResult.max_drawdown_percent}%</span>
+                                                                    <span className="backtest-detail-value price-down">-{(backtestResult.max_drawdown_percent ?? 0)}%</span>
                                                                 </div>
                                                                 <div className="backtest-detail-row">
                                                                     <span className="backtest-detail-label">เงินตั้งต้นจำลอง (Initial Balance)</span>
-                                                                    <span className="backtest-detail-value" style={{ color: 'var(--text-secondary)' }}>${backtestResult.initial_balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                                                    <span className="backtest-detail-value" style={{ color: 'var(--text-secondary)' }}>${(backtestResult.initial_balance ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                                                                 </div>
                                                                 <div className="backtest-detail-row">
                                                                     <span className="backtest-detail-label">ระดับความเสี่ยงพอร์ต (Risk Rating)</span>
                                                                     <span className="backtest-detail-value" style={{ 
-                                                                        color: backtestResult.max_drawdown_percent <= 10 ? 'var(--bull-green)' : backtestResult.max_drawdown_percent <= 20 ? 'var(--accent-gold)' : 'var(--bear-red)'
+                                                                        color: (backtestResult.max_drawdown_percent ?? 0) <= 10 ? 'var(--bull-green)' : (backtestResult.max_drawdown_percent ?? 0) <= 20 ? 'var(--accent-gold)' : 'var(--bear-red)'
                                                                     }}>
-                                                                        {backtestResult.max_drawdown_percent <= 10 ? 'ต่ำ (Low Risk)' : backtestResult.max_drawdown_percent <= 20 ? 'ปานกลาง (Medium Risk)' : 'สูง (High Drawdown!)'}
+                                                                        {(backtestResult.max_drawdown_percent ?? 0) <= 10 ? 'ต่ำ (Low Risk)' : (backtestResult.max_drawdown_percent ?? 0) <= 20 ? 'ปานกลาง (Medium Risk)' : 'สูง (High Drawdown!)'}
                                                                     </span>
                                                                 </div>
                                                             </div>
@@ -6055,22 +6055,22 @@ const TradingApp = () => {
                                                                 <h5>🧬 พฤติกรรมดีลการเทรด (Trade Statistics)</h5>
                                                                 <div className="backtest-detail-row">
                                                                     <span className="backtest-detail-label">เฉลี่ยต่อดีลกำไร (Average Win)</span>
-                                                                    <span className="backtest-detail-value price-up">+${backtestResult.avg_win.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                                                    <span className="backtest-detail-value price-up">+${(backtestResult.avg_win ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                                                                 </div>
                                                                 <div className="backtest-detail-row">
                                                                     <span className="backtest-detail-label">เฉลี่ยต่อดีลขาดทุน (Average Loss)</span>
-                                                                    <span className="backtest-detail-value price-down">-${backtestResult.avg_loss.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                                                    <span className="backtest-detail-value price-down">-${(backtestResult.avg_loss ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                                                                 </div>
                                                                 <div className="backtest-detail-row">
                                                                     <span className="backtest-detail-label">อัตราส่วนเฉลี่ย Win/Loss RR</span>
                                                                     <span className="backtest-detail-value">
-                                                                        {backtestResult.avg_loss > 0 ? (backtestResult.avg_win / backtestResult.avg_loss).toFixed(2) : backtestResult.avg_win.toFixed(2)}
+                                                                        {(backtestResult.avg_loss ?? 0) > 0 ? ((backtestResult.avg_win ?? 0) / (backtestResult.avg_loss ?? 1)).toFixed(2) : (backtestResult.avg_win ?? 0).toFixed(2)}
                                                                     </span>
                                                                 </div>
                                                                 <div className="backtest-detail-row">
                                                                     <span className="backtest-detail-label">สตรีคชนะ / แพ้ ต่อเนื่องสูงสุด</span>
                                                                     <span className="backtest-detail-value">
-                                                                        <span className="price-up">{backtestResult.max_consecutive_wins} Wins</span> / <span className="price-down">{backtestResult.max_consecutive_losses} Losses</span>
+                                                                        <span className="price-up">{(backtestResult.max_consecutive_wins ?? 0)} Wins</span> / <span className="price-down">{(backtestResult.max_consecutive_losses ?? 0)} Losses</span>
                                                                     </span>
                                                                 </div>
                                                             </div>
@@ -6468,7 +6468,7 @@ const TradingApp = () => {
                             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
                                 <span className="text-secondary">Free Margin</span>
                                 <span style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>
-                                    ${account.margin_free.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                    ${(account.margin_free ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                                 </span>
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '8px' }}>

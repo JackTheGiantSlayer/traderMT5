@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, timezone
 from backend.config import HOST, PORT, STATIC_DIR, MT5_LOGIN, MT5_PASSWORD, MT5_SERVER, ENCRYPTION_KEY, encrypt_password, decrypt_password
 from backend.database import engine, Base, get_db
 from backend.models import AccountSettings, TradeHistoryRecord, WatchlistItem, BotSettings, BotLog, NewsRecord
+from backend.models_advanced import HistoricalCandle, AdvancedBacktestRun, AdvancedBacktestTrade
 from backend.mt5_manager import MT5Manager
 from backend.trading_bot import BotManager
 from backend.chatbot import ChatbotAssistant
@@ -1329,7 +1330,8 @@ def run_backtest(req: BacktestRequest):
                         is_allowed = True
             
             # Slice candle histories up to current loop step to simulate zero-bias environment
-            candles_slice = candles[:i+1]
+            # Cap lookback to 300 candles to optimize indicator computation time and avoid O(N^2) complexity
+            candles_slice = candles[max(0, i - 299) : i+1]
             close_prices_slice = [c["close"] for c in candles_slice]
             
             # 1. Manage active trade
@@ -1590,6 +1592,89 @@ def run_backtest(req: BacktestRequest):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+class SyncRequest(BaseModel):
+    symbol: str
+    timeframe: str
+    start_date: str = ""
+    end_date: str = ""
+
+@app.post("/api/backtest/sync")
+def api_sync_historical_data(req: SyncRequest, db: Session = Depends(get_db)):
+    """Downloads historical rates from MT5 terminal or generates fallback mock data and caches them in DB."""
+    try:
+        from backend.backtest_analyzer import sync_historical_data, get_start_date_for_timeframe
+        
+        end_dt = datetime.utcnow()
+        if req.end_date:
+            end_dt = datetime.strptime(req.end_date, "%Y-%m-%d")
+            
+        if req.start_date:
+            start_dt = datetime.strptime(req.start_date, "%Y-%m-%d")
+        else:
+            start_dt = get_start_date_for_timeframe(req.timeframe)
+            
+        inserted = sync_historical_data(db, req.symbol, req.timeframe, start_dt, end_dt)
+        return {
+            "success": True,
+            "message": f"Successfully synced historical candles for {req.symbol} ({req.timeframe}).",
+            "inserted_count": inserted
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=400, detail=str(e))
+
+class AdvancedBacktestRequest(BaseModel):
+    symbol: str
+    timeframe: str
+    algorithm: str
+    signal_mode: str = "or"
+    lot_size: float = 0.1
+    sl_points: float = 0.0
+    tp_points: float = 0.0
+    initial_balance: float = 10000.0
+    allowed_sessions: str = "all"
+    start_date: str = ""
+    end_date: str = ""
+
+@app.post("/api/backtest/advanced")
+def api_run_advanced_backtest(req: AdvancedBacktestRequest, db: Session = Depends(get_db)):
+    try:
+        from backend.backtest_analyzer import run_advanced_backtest, sync_historical_data, get_start_date_for_timeframe
+        
+        end_dt = datetime.utcnow()
+        if req.end_date:
+            end_dt = datetime.strptime(req.end_date, "%Y-%m-%d")
+            
+        if req.start_date:
+            start_dt = datetime.strptime(req.start_date, "%Y-%m-%d")
+        else:
+            start_dt = get_start_date_for_timeframe(req.timeframe)
+            
+        # 1. Sync rates from MT5/mock to database first
+        sync_historical_data(db, req.symbol, req.timeframe, start_dt, end_dt)
+        
+        # 2. Run the advanced backtest using database candles
+        result = run_advanced_backtest(
+            db=db,
+            symbol=req.symbol,
+            timeframe=req.timeframe,
+            algorithm=req.algorithm,
+            signal_mode=req.signal_mode,
+            lot_size=req.lot_size,
+            sl_points=req.sl_points,
+            tp_points=req.tp_points,
+            initial_balance=req.initial_balance,
+            allowed_sessions=req.allowed_sessions,
+            start_dt=start_dt,
+            end_dt=end_dt
+        )
+        return result
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=400, detail=str(e))
 
 # --- Serve Static React Frontend ---
 

@@ -477,7 +477,7 @@ class BotManager:
     def _process_bot(self, db, bot):
         """Processes signals and executes trades for an individual bot."""
         # 1. Fetch candles for indicator computations
-        candles = self.mt5.get_historical_candles(bot.symbol, bot.timeframe, count=150)
+        candles = self.mt5.get_historical_candles(bot.symbol, bot.timeframe, count=300)
         if not candles or len(candles) < 35:
             # Not enough data yet
             return
