@@ -121,27 +121,27 @@ def evaluate_signals(prices, algorithm, candles=None, symbol="XAUUSD", timeframe
             
     elif algorithm == "rsi_oscillator":
         rsi = calculate_rsi(prices, 14)
-        if rsi[-1] is None or rsi[-2] is None:
+        if len(rsi) < 3 or rsi[-2] is None or rsi[-3] is None:
             return "none"
             
-        # Oversold cross upwards (RSI crosses above 30) -> BUY
-        if rsi[-2] <= 30 and rsi[-1] > 30:
+        # Oversold cross upwards (RSI crosses above 30) on completed candle -> BUY
+        if rsi[-3] <= 30 and rsi[-2] > 30:
             return "buy"
-        # Overbought cross downwards (RSI crosses below 70) -> SELL
-        if rsi[-2] >= 70 and rsi[-1] < 70:
+        # Overbought cross downwards (RSI crosses below 70) on completed candle -> SELL
+        if rsi[-3] >= 70 and rsi[-2] < 70:
             return "sell"
             
     elif algorithm == "stoch_rsi":
         from backend.pattern_detector import calculate_stoch_rsi
         k_vals, d_vals = calculate_stoch_rsi(prices, 14, 14, 3, 3)
-        if len(k_vals) < 2 or len(d_vals) < 2 or k_vals[-1] is None or k_vals[-2] is None or d_vals[-1] is None or d_vals[-2] is None:
+        if len(k_vals) < 3 or len(d_vals) < 3 or k_vals[-2] is None or k_vals[-3] is None or d_vals[-2] is None or d_vals[-3] is None:
             return "none"
             
-        # %K crosses above %D while in or near oversold zone (<= 25) -> BUY
-        if k_vals[-2] <= d_vals[-2] and k_vals[-1] > d_vals[-1] and (k_vals[-1] <= 25 or k_vals[-2] <= 20):
+        # %K crosses above %D while in or near oversold zone (<= 25) on completed candle -> BUY
+        if k_vals[-3] <= d_vals[-3] and k_vals[-2] > d_vals[-2] and (k_vals[-2] <= 25 or k_vals[-3] <= 20):
             return "buy"
-        # %K crosses below %D while in or near overbought zone (>= 75) -> SELL
-        if k_vals[-2] >= d_vals[-2] and k_vals[-1] < d_vals[-1] and (k_vals[-1] >= 75 or k_vals[-2] >= 80):
+        # %K crosses below %D while in or near overbought zone (>= 75) on completed candle -> SELL
+        if k_vals[-3] >= d_vals[-3] and k_vals[-2] < d_vals[-2] and (k_vals[-2] >= 75 or k_vals[-3] >= 80):
             return "sell"
             
     elif algorithm == "macd":
@@ -691,6 +691,8 @@ class BotManager:
                 tp_price = 0.0
                 
                 pj_tp_target = getattr(bot, "pj_tp_target", "manual")
+                is_wave_strategy = any(algo in ["elliott_wave", "harmonic_patterns"] for algo in algorithms_list)
+                
                 if pj_tp_target and pj_tp_target != "manual":
                     from backend.pattern_detector import calculate_pj_dynamic_levels
                     sl_dist, tp_dist = calculate_pj_dynamic_levels(candles, signal, pj_tp_target)
@@ -705,6 +707,28 @@ class BotManager:
                     else:
                         # Fallback
                         self._log_to_db(db, bot.id, "คำเตือน: ไม่สามารถคำนวณ PJ SL/TP แบบไดนามิกได้เนื่องจากข้อมูลไม่พอ ใช้ค่า manual แทน", "error")
+                        if signal == "buy":
+                            if bot.sl_points > 0: sl_price = current_price - bot.sl_points
+                            if bot.tp_points > 0: tp_price = current_price + bot.tp_points
+                        else: # sell
+                            if bot.sl_points > 0: sl_price = current_price + bot.sl_points
+                            if bot.tp_points > 0: tp_price = current_price - bot.tp_points
+                elif is_wave_strategy:
+                    from backend.pattern_detector import calculate_atr
+                    atr_vals = calculate_atr(candles, 14)
+                    atr_val = atr_vals[-1] if (atr_vals and atr_vals[-1] is not None) else 0.0
+                    if atr_val > 0:
+                        sl_dist = 2.0 * atr_val
+                        tp_dist = 3.0 * atr_val
+                        if signal == "buy":
+                            sl_price = current_price - sl_dist
+                            tp_price = current_price + tp_dist
+                        else: # sell
+                            sl_price = current_price + sl_dist
+                            tp_price = current_price - tp_dist
+                        self._log_to_db(db, bot.id, f"คํานวณ SL/TP แบบไดนามิกอิงตามความผันผวนจริง (ATR-based): SL ห่าง {sl_dist:.4f} (ราคา SL: {sl_price:.4f}), TP ห่าง {tp_dist:.4f} (ราคา TP: {tp_price:.4f})", "info")
+                    else:
+                        self._log_to_db(db, bot.id, "คำเตือน: ไม่สามารถคำนวณ ATR SL/TP ได้เนื่องจากข้อมูลไม่พอ ใช้ค่า manual แทน", "error")
                         if signal == "buy":
                             if bot.sl_points > 0: sl_price = current_price - bot.sl_points
                             if bot.tp_points > 0: tp_price = current_price + bot.tp_points

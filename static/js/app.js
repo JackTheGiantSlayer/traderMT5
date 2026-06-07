@@ -499,7 +499,8 @@ const TradingApp = () => {
         sl_points: 5.0,
         tp_points: 10.0,
         initial_balance: 10000.0,
-        signal_mode: "or"
+        signal_mode: "or",
+        allowed_sessions: "all"
     });
     const [backtestSelectedAlgos, setBacktestSelectedAlgos] = useState(["rsi_oscillator"]);
     const [backtestResult, setBacktestResult] = useState(null);
@@ -1700,7 +1701,8 @@ const TradingApp = () => {
                     lot_size: parseFloat(backtestForm.lot_size) || 0.1,
                     sl_points: parseFloat(backtestForm.sl_points) || 0.0,
                     tp_points: parseFloat(backtestForm.tp_points) || 0.0,
-                    initial_balance: parseFloat(backtestForm.initial_balance) || 10000.0
+                    initial_balance: parseFloat(backtestForm.initial_balance) || 10000.0,
+                    allowed_sessions: backtestForm.allowed_sessions || "all"
                 })
             });
 
@@ -3724,6 +3726,21 @@ const TradingApp = () => {
                                             style={{ height: '36px', fontSize: '12px', padding: '6px 10px' }}
                                         />
                                     </div>
+                                </div>
+
+                                <div className="input-group" style={{ margin: '8px 0 0 0' }}>
+                                    <label>ช่วงเวลาเทรด (Trading Session)</label>
+                                    <select
+                                        value={backtestForm.allowed_sessions || "all"}
+                                        onChange={(e) => setBacktestForm({ ...backtestForm, allowed_sessions: e.target.value })}
+                                        style={{ height: '36px', fontSize: '12px', padding: '6px 10px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-color)', borderRadius: '4px', width: '100%' }}
+                                    >
+                                        <option value="all">24 ชั่วโมง (All Sessions)</option>
+                                        <option value="asian">Asian Only (00-08 UTC)</option>
+                                        <option value="london">London Only (08-16 UTC)</option>
+                                        <option value="newyork">NY Only (13-21 UTC)</option>
+                                        <option value="london_ny">London + NY Overlap (13-16 UTC)</option>
+                                    </select>
                                 </div>
 
                                 <button 
@@ -5779,6 +5796,21 @@ const TradingApp = () => {
                                                         style={{ height: '36px', fontSize: '12px', padding: '6px 10px' }}
                                                     />
                                                 </div>
+                                            </div>
+
+                                            <div className="input-group" style={{ margin: '8px 0 0 0' }}>
+                                                <label>ช่วงเวลาเทรด (Trading Session)</label>
+                                                <select
+                                                    value={backtestForm.allowed_sessions || "all"}
+                                                    onChange={(e) => setBacktestForm({ ...backtestForm, allowed_sessions: e.target.value })}
+                                                    style={{ height: '36px', fontSize: '12px', padding: '6px 10px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-color)', borderRadius: '4px', width: '100%' }}
+                                                >
+                                                    <option value="all">24 ชั่วโมง (All Sessions)</option>
+                                                    <option value="asian">Asian Only (00-08 UTC)</option>
+                                                    <option value="london">London Only (08-16 UTC)</option>
+                                                    <option value="newyork">NY Only (13-21 UTC)</option>
+                                                    <option value="london_ny">London + NY Overlap (13-16 UTC)</option>
+                                                </select>
                                             </div>
 
                                             <button 

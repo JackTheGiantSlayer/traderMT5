@@ -1266,6 +1266,7 @@ class BacktestRequest(BaseModel):
     tp_points: float = 0.0
     pj_tp_target: str = "manual"
     initial_balance: float = 10000.0
+    allowed_sessions: str = "all"
 
 
 def get_point_multiplier(symbol: str) -> float:
@@ -1310,6 +1311,23 @@ def run_backtest(req: BacktestRequest):
             current_price = current_candle["close"]
             current_time = current_candle["time"]
             
+            # Apply Session Time Filter inside backtest loop
+            allowed_sess = getattr(req, "allowed_sessions", "all")
+            is_allowed = True
+            if allowed_sess != "all":
+                is_allowed = False
+                utc_hour = datetime.fromtimestamp(current_time, timezone.utc).hour
+                sessions_list = [s.strip().lower() for s in allowed_sess.split(",") if s.strip()]
+                for s in sessions_list:
+                    if s == "asian" and (0 <= utc_hour < 8):
+                        is_allowed = True
+                    elif s == "london" and (8 <= utc_hour < 16):
+                        is_allowed = True
+                    elif s == "newyork" and (13 <= utc_hour < 21):
+                        is_allowed = True
+                    elif s == "london_ny" and (13 <= utc_hour < 16):
+                        is_allowed = True
+            
             # Slice candle histories up to current loop step to simulate zero-bias environment
             candles_slice = candles[:i+1]
             close_prices_slice = [c["close"] for c in candles_slice]
@@ -1342,6 +1360,8 @@ def run_backtest(req: BacktestRequest):
                 # Check for opposite exit signals
                 opp_signal = False
                 sig = evaluate_multi_signals(close_prices_slice, algorithms_list, req.signal_mode, candles=candles_slice, symbol=req.symbol, timeframe=req.timeframe)
+                if not is_allowed:
+                    sig = "none"
                 if t_type == "buy" and sig == "sell":
                     opp_signal = True
                 elif t_type == "sell" and sig == "buy":
@@ -1392,11 +1412,15 @@ def run_backtest(req: BacktestRequest):
             # 2. Look for new trades if none active
             if not active_trade:
                 sig = evaluate_multi_signals(close_prices_slice, algorithms_list, req.signal_mode, candles=candles_slice, symbol=req.symbol, timeframe=req.timeframe)
+                if not is_allowed:
+                    sig = "none"
                 if sig in ["buy", "sell"]:
                     sl_p = 0.0
                     tp_p = 0.0
                     
                     pj_tp_target = getattr(req, "pj_tp_target", "manual")
+                    is_wave_strategy = any(algo in ["elliott_wave", "harmonic_patterns"] for algo in algorithms_list)
+                    
                     if pj_tp_target and pj_tp_target != "manual":
                         from backend.pattern_detector import calculate_pj_dynamic_levels
                         sl_dist, tp_dist = calculate_pj_dynamic_levels(candles_slice, sig, pj_tp_target)
@@ -1409,6 +1433,26 @@ def run_backtest(req: BacktestRequest):
                                 tp_p = current_price - tp_dist
                         else:
                             # Fallback if calculation fails
+                            if sig == "buy":
+                                if req.sl_points > 0: sl_p = current_price - req.sl_points
+                                if req.tp_points > 0: tp_p = current_price + req.tp_points
+                            else: # sell
+                                if req.sl_points > 0: sl_p = current_price + req.sl_points
+                                if req.tp_points > 0: tp_p = current_price - req.tp_points
+                    elif is_wave_strategy:
+                        from backend.pattern_detector import calculate_atr
+                        atr_vals = calculate_atr(candles_slice, 14)
+                        atr_val = atr_vals[-1] if (atr_vals and atr_vals[-1] is not None) else 0.0
+                        if atr_val > 0:
+                            sl_dist = 2.0 * atr_val
+                            tp_dist = 3.0 * atr_val
+                            if sig == "buy":
+                                sl_p = current_price - sl_dist
+                                tp_p = current_price + tp_dist
+                            else: # sell
+                                sl_p = current_price + sl_dist
+                                tp_p = current_price - tp_dist
+                        else:
                             if sig == "buy":
                                 if req.sl_points > 0: sl_p = current_price - req.sl_points
                                 if req.tp_points > 0: tp_p = current_price + req.tp_points
