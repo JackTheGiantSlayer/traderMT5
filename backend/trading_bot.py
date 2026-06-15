@@ -496,6 +496,50 @@ class BotManager:
             if matching_pos:
                 has_active_position = True
                 active_pos = matching_pos[0]
+                
+                # Check maximum holding time limit (max_hold_hours)
+                max_hold = getattr(bot, "max_hold_hours", 0.0)
+                if max_hold and max_hold > 0.0:
+                    try:
+                        time_raw = active_pos.get("time_raw")
+                        if time_raw:
+                            elapsed_hours = (time.time() - time_raw) / 3600.0
+                            if elapsed_hours >= max_hold:
+                                self._log_to_db(db, bot.id, f"หมดเวลาถือครองสูงสุด ({elapsed_hours:.2f} / {max_hold:.2f} ชม.)! กำลังสั่งปิดออเดอร์ #{bot.active_ticket}", "info")
+                                res = self.mt5.close_position(bot.active_ticket)
+                                if res.get("success"):
+                                    pnl = res.get("profit", 0.0)
+                                    self._log_to_db(db, bot.id, f"ปิดออเดอร์ #{bot.active_ticket} สำเร็จเนื่องจากหมดเวลาถือครอง! กำไร/ขาดทุน: ${pnl}", "close")
+                                    
+                                    if self.mt5.is_simulated:
+                                        try:
+                                            from backend.models import TradeHistoryRecord
+                                            history_record = TradeHistoryRecord(
+                                                ticket=res["ticket"],
+                                                symbol=res["symbol"],
+                                                order_type=res["type"],
+                                                volume=res["volume"],
+                                                open_price=res["open_price"],
+                                                close_price=res["close_price"],
+                                                sl=res.get("sl", 0.0),
+                                                tp=res.get("tp", 0.0),
+                                                open_time=datetime.strptime(res["open_time"], "%Y-%m-%d %H:%M:%S") if isinstance(res["open_time"], str) else res["open_time"],
+                                                close_time=datetime.strptime(res["close_time"], "%Y-%m-%d %H:%M:%S") if isinstance(res["close_time"], str) else res["close_time"],
+                                                profit=res["profit"],
+                                                comment=f"{bot.name} [Time Out - {max_hold}h]"
+                                            )
+                                            db.add(history_record)
+                                        except Exception as e:
+                                            logger.error(f"Failed to save bot simulated trade history: {e}")
+                                            
+                                    bot.active_ticket = None
+                                    db.commit()
+                                    has_active_position = False
+                                    active_pos = None
+                                else:
+                                    self._log_to_db(db, bot.id, f"ไม่สามารถปิดออเดอร์ (หมดเวลาถือครอง): {res.get('comment')}", "error")
+                    except Exception as close_err:
+                        self._log_to_db(db, bot.id, f"ข้อผิดพลาดขณะพยายามปิดออเดอร์ (หมดเวลาถือครอง): {str(close_err)}", "error")
             else:
                 # Ticket no longer open (closed manually, or hit TP/SL)
                 msg = f"ออเดอร์ #{bot.active_ticket} ถูกปิดการทำงานแล้ว (โดยผู้ใช้ หรือถึงขีดจำกัด TP/SL)"
@@ -601,6 +645,48 @@ class BotManager:
                     if int(time.time()) % 60 < 10:
                         self._log_to_db(db, bot.id, f"ขัดแย้งกับเทรนด์ใหญ่! สัญญาณ SELL ถูกบล็อกเนื่องจากราคาปัจจุบัน ({current_price:.2f}) สูงกว่า EMA 200 ({ema200[-1]:.2f})", "info")
                     signal = "none"
+                    
+        # Apply Multi-Timeframe Trend Filter (HTF EMA 200 Alignment)
+        if getattr(bot, "use_mtf_filter", False) and signal in ["buy", "sell"]:
+            try:
+                # 1. Determine higher timeframe
+                htf = "H1"
+                tf = bot.timeframe.upper()
+                if tf == "M1":
+                    htf = "M15"
+                elif tf == "M5":
+                    htf = "H1"
+                elif tf == "M15":
+                    htf = "H1"
+                elif tf == "M30":
+                    htf = "H4"
+                elif tf == "H1":
+                    htf = "H4"
+                elif tf == "H4":
+                    htf = "D1"
+                else:
+                    htf = "D1"
+                    
+                # 2. Fetch candles for higher timeframe
+                htf_candles = self.mt5.get_historical_candles(bot.symbol, htf, count=250)
+                if htf_candles and len(htf_candles) >= 200:
+                    htf_close_prices = [c["close"] for c in htf_candles]
+                    htf_ema200 = calculate_ema(htf_close_prices, 200)
+                    htf_current_price = htf_close_prices[-1]
+                    
+                    if htf_ema200[-1] is not None:
+                        # If BUY signal, higher timeframe trend must be Bullish (HTF Close > HTF EMA 200)
+                        if signal == "buy" and htf_current_price < htf_ema200[-1]:
+                            if int(time.time()) % 60 < 10:
+                                self._log_to_db(db, bot.id, f"🛡️ MTF Filter: สัญญาณ BUY ถูกบล็อกเนื่องจากแนวโน้มหลักบน {htf} เป็นขาลง (ราคาปิดปัจจุบัน {htf_current_price:.2f} < EMA 200 {htf_ema200[-1]:.2f})", "info")
+                            signal = "none"
+                        # If SELL signal, higher timeframe trend must be Bearish (HTF Close < HTF EMA 200)
+                        elif signal == "sell" and htf_current_price > htf_ema200[-1]:
+                            if int(time.time()) % 60 < 10:
+                                self._log_to_db(db, bot.id, f"🛡️ MTF Filter: สัญญาณ SELL ถูกบล็อกเนื่องจากแนวโน้มหลักบน {htf} เป็นขาขึ้น (ราคาปิดปัจจุบัน {htf_current_price:.2f} > EMA 200 {htf_ema200[-1]:.2f})", "info")
+                            signal = "none"
+            except Exception as mtf_err:
+                logger.error(f"Error executing Multi-Timeframe Trend filter: {mtf_err}")
                     
         # Apply Session Time Filter
         allowed_sess = getattr(bot, "allowed_sessions", "all")

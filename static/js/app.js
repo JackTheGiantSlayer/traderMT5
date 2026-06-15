@@ -378,17 +378,18 @@ const TradingApp = () => {
                                 lastValueVisible: false
                             });
                             
-                            const points = [{ time: struct.start_time, value: struct.price }];
+                            const points = [{ time: struct.start_time + 7 * 3600, value: struct.price }];
                             const midTime = Math.round((struct.start_time + struct.end_time) / 2);
+                            const adjustedMidTime = midTime + 7 * 3600;
                             if (midTime > struct.start_time && midTime < struct.end_time) {
-                                points.push({ time: midTime, value: struct.price });
+                                points.push({ time: adjustedMidTime, value: struct.price });
                             }
-                            points.push({ time: struct.end_time, value: struct.price });
+                            points.push({ time: struct.end_time + 7 * 3600, value: struct.price });
                             
                             lineSeries.setData(points);
                             
                             if (title) {
-                                const markerTime = (midTime > struct.start_time && midTime < struct.end_time) ? midTime : struct.end_time;
+                                const markerTime = (midTime > struct.start_time && midTime < struct.end_time) ? adjustedMidTime : (struct.end_time + 7 * 3600);
                                 lineSeries.setMarkers([
                                     {
                                         time: markerTime,
@@ -414,8 +415,8 @@ const TradingApp = () => {
                     price: struct.price,
                     symbol: activeSymbol,
                     points: [
-                        { time: struct.start_time, price: struct.price },
-                        { time: struct.end_time, price: struct.price }
+                        { time: struct.start_time + 7 * 3600, price: struct.price },
+                        { time: struct.end_time + 7 * 3600, price: struct.price }
                     ],
                     instances: lineInstances
                 });
@@ -483,8 +484,11 @@ const TradingApp = () => {
     const [activeBot, setActiveBot] = useState(null);
     const [botLogs, setBotLogs] = useState([]);
     const [botFormOpen, setBotFormOpen] = useState(false);
-    const [botForm, setBotForm] = useState({ name: "บอทเทรดทองคำ RSI", symbol: "XAUUSD", timeframe: "M1", algorithm: "rsi_oscillator", lot_size: 0.01, sl_points: 5.0, tp_points: 10.0, pj_tp_target: "manual", use_trend_filter: false, use_atr_sizing: false, risk_percent: 1.0, allowed_sessions: "all", use_news_filter: false });
+    const [botForm, setBotForm] = useState({ name: "บอทเทรดทองคำ RSI", symbol: "XAUUSD", timeframe: "M1", algorithm: "rsi_oscillator", lot_size: 0.01, sl_points: 5.0, tp_points: 10.0, pj_tp_target: "manual", use_trend_filter: false, use_mtf_filter: false, use_atr_sizing: false, risk_percent: 1.0, allowed_sessions: "all", use_news_filter: false, max_hold_hours: 0.0 });
     const [selectedAlgos, setSelectedAlgos] = useState(["rsi_oscillator"]);
+    const [indicatorSignalsOpen, setIndicatorSignalsOpen] = useState(false);
+    const [indicatorSignals, setIndicatorSignals] = useState([]);
+    const [loadingSignals, setLoadingSignals] = useState(false);
     const [signalMode, setSignalMode] = useState("or");
     const [activeRunningBotsCount, setActiveRunningBotsCount] = useState(0);
     const [editingBotId, setEditingBotId] = useState(null);
@@ -742,7 +746,12 @@ const TradingApp = () => {
                 const series = candlestickSeriesesRef.current[paneId];
                 const chart = chartsRef.current[paneId];
                 if (data && data.length > 0 && series && chart) {
-                    series.setData(data);
+                    // Shift timestamps to Thailand time (GMT+7)
+                    const adjustedData = data.map(c => ({
+                        ...c,
+                        time: c.time + 7 * 3600
+                    }));
+                    series.setData(adjustedData);
                     chart.timeScale().fitContent();
                 }
             }
@@ -794,8 +803,13 @@ const TradingApp = () => {
                 return Math.floor(timestamp / seconds) * seconds;
             };
 
-            const openTimeUnix = parseToUnix(selectedHistoryOrder.open_time);
-            const closeTimeUnix = parseToUnix(selectedHistoryOrder.close_time);
+            // Shift timestamps by +7 hours to match Thailand time (GMT+7)
+            const openTimeUnix = selectedHistoryOrder.open_time_raw 
+                ? selectedHistoryOrder.open_time_raw + 7 * 3600 
+                : parseToUnix(selectedHistoryOrder.open_time);
+            const closeTimeUnix = selectedHistoryOrder.close_time_raw 
+                ? selectedHistoryOrder.close_time_raw + 7 * 3600 
+                : parseToUnix(selectedHistoryOrder.close_time);
             const alignedOpenTime = openTimeUnix ? alignTimeToTimeframe(openTimeUnix, paneTf) : null;
             const alignedCloseTime = closeTimeUnix ? alignTimeToTimeframe(closeTimeUnix, paneTf) : null;
 
@@ -863,7 +877,7 @@ const TradingApp = () => {
                 // 1. Draw ZigZag Line if we have swings
                 if (showChartPatterns && data.swings && data.swings.length > 0 && swingSeries) {
                     const lineData = data.swings.map(s => ({
-                        time: s.time,
+                        time: s.time + 7 * 3600,
                         value: s.price
                     }));
                     lineData.sort((a, b) => a.time - b.time);
@@ -880,7 +894,7 @@ const TradingApp = () => {
                         if (data.swings) {
                             data.swings.forEach(s => {
                                 markers.push({
-                                    time: s.time,
+                                    time: s.time + 7 * 3600,
                                     position: s.type === 'high' ? 'aboveBar' : 'belowBar',
                                     color: s.type === 'high' ? '#e74c3c' : '#2ecc71',
                                     shape: 'circle',
@@ -895,7 +909,7 @@ const TradingApp = () => {
                             const labels = ['X', 'A', 'B', 'C', 'D'];
                             pts.forEach((pt, idx) => {
                                 markers.push({
-                                    time: pt.time,
+                                    time: pt.time + 7 * 3600,
                                     position: pt.type === 'high' ? 'aboveBar' : 'belowBar',
                                     color: '#ffb703',
                                     shape: idx === 4 ? 'pin' : 'square',
@@ -905,7 +919,7 @@ const TradingApp = () => {
                             
                             const D = pts[4];
                             markers.push({
-                                time: D.time,
+                                time: D.time + 7 * 3600,
                                 position: D.type === 'high' ? 'aboveBar' : 'belowBar',
                                 color: data.harmonic.signal === 'buy' ? '#2ecc71' : '#e74c3c',
                                 shape: data.harmonic.signal === 'buy' ? 'arrowUp' : 'arrowDown',
@@ -917,7 +931,7 @@ const TradingApp = () => {
                             const pts = data.elliott.points;
                             pts.forEach((pt, idx) => {
                                 markers.push({
-                                    time: pt.time,
+                                    time: pt.time + 7 * 3600,
                                     position: pt.type === 'high' ? 'aboveBar' : 'belowBar',
                                     color: '#00b4d8',
                                     shape: 'circle',
@@ -927,7 +941,7 @@ const TradingApp = () => {
                             
                             const lastPt = pts[pts.length - 1];
                             markers.push({
-                                time: lastPt.time,
+                                time: lastPt.time + 7 * 3600,
                                 position: lastPt.type === 'high' ? 'aboveBar' : 'belowBar',
                                 color: data.elliott.signal === 'buy' ? '#2ecc71' : '#e74c3c',
                                 shape: data.elliott.signal === 'buy' ? 'arrowUp' : 'arrowDown',
@@ -1254,7 +1268,7 @@ const TradingApp = () => {
                         if (candles && candles.length > 0) {
                             const candle = candles[0];
                             series.update({
-                                time: candle.time,
+                                time: candle.time + 7 * 3600,
                                 open: candle.open,
                                 high: candle.high,
                                 low: candle.low,
@@ -1360,7 +1374,7 @@ const TradingApp = () => {
 
         // Format equity curve data
         const chartData = backtestResult.equity_curve.map(item => ({
-            time: item.time,
+            time: item.time + 7 * 3600,
             value: item.value
         }));
         
@@ -1460,7 +1474,7 @@ const TradingApp = () => {
 
         // Format candlestick data
         const candleData = backtestResult.candles.map(item => ({
-            time: item.time,
+            time: item.time + 7 * 3600,
             open: item.open,
             high: item.high,
             low: item.low,
@@ -1539,8 +1553,8 @@ const TradingApp = () => {
         const decimals = (backtestForm.symbol && backtestForm.symbol.includes('EURUSD')) ? 5 : 2;
         const formatP = (val) => Number(val).toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 
-        const openTime = selectedBacktestTrade.open_timestamp;
-        const closeTime = selectedBacktestTrade.close_timestamp;
+        const openTime = selectedBacktestTrade.open_timestamp ? selectedBacktestTrade.open_timestamp + 7 * 3600 : null;
+        const closeTime = selectedBacktestTrade.close_timestamp ? selectedBacktestTrade.close_timestamp + 7 * 3600 : null;
         
         const seriesList = [];
         const priceLinesList = [];
@@ -2180,8 +2194,13 @@ const TradingApp = () => {
             return Math.floor(timestamp / seconds) * seconds;
         };
 
-        const openTimeUnix = parseToUnix(selectedHistoryOrder.open_time);
-        const closeTimeUnix = parseToUnix(selectedHistoryOrder.close_time);
+        // Shift timestamps by +7 hours to match Thailand time (GMT+7)
+        const openTimeUnix = selectedHistoryOrder.open_time_raw 
+            ? selectedHistoryOrder.open_time_raw + 7 * 3600 
+            : parseToUnix(selectedHistoryOrder.open_time);
+        const closeTimeUnix = selectedHistoryOrder.close_time_raw 
+            ? selectedHistoryOrder.close_time_raw + 7 * 3600 
+            : parseToUnix(selectedHistoryOrder.close_time);
 
         activePaneIds.forEach(pId => {
             const chart = chartsRef.current[pId];
@@ -2326,10 +2345,12 @@ const TradingApp = () => {
             tp_points: bot.tp_points,
             pj_tp_target: bot.pj_tp_target || "manual",
             use_trend_filter: bot.use_trend_filter || false,
+            use_mtf_filter: bot.use_mtf_filter || false,
             use_atr_sizing: bot.use_atr_sizing || false,
             risk_percent: bot.risk_percent || 1.0,
             allowed_sessions: bot.allowed_sessions || "all",
-            use_news_filter: bot.use_news_filter || false
+            use_news_filter: bot.use_news_filter || false,
+            max_hold_hours: bot.max_hold_hours || 0.0
         });
         setSelectedAlgos((bot.algorithms || bot.algorithm || "").split(",").map(a => a.trim()).filter(Boolean));
         setSignalMode(bot.signal_mode || "or");
@@ -2355,10 +2376,12 @@ const TradingApp = () => {
                     pj_tp_target: botForm.pj_tp_target || "manual",
                     signal_mode: signalMode,
                     use_trend_filter: botForm.use_trend_filter || false,
+                    use_mtf_filter: botForm.use_mtf_filter || false,
                     use_atr_sizing: botForm.use_atr_sizing || false,
                     risk_percent: parseFloat(botForm.risk_percent) || 1.0,
                     allowed_sessions: botForm.allowed_sessions || "all",
-                    use_news_filter: botForm.use_news_filter || false
+                    use_news_filter: botForm.use_news_filter || false,
+                    max_hold_hours: parseFloat(botForm.max_hold_hours) || 0.0
                 })
             });
             if (res.ok) {
@@ -2381,6 +2404,98 @@ const TradingApp = () => {
             alert(`เกิดข้อผิดพลาด: ${err.message}`);
         }
     };
+
+    const handleAutoTradeAdvisor = async () => {
+        const advisorBot = bots.find(b => b.name === "Auto Advisor XAUUSD");
+        const isAdvisorRunning = advisorBot ? advisorBot.is_running : false;
+        
+        if (isAdvisorRunning) {
+            if (!confirm("คุณต้องการปิดการใช้งานบอท AI เทรดอัตโนมัติ (Auto Advisor XAUUSD) ใช่หรือไม่?")) return;
+            handleToggleBot(advisorBot.id);
+        } else {
+            if (!confirm("คุณต้องการอนุญาตให้ระบบ AI วิเคราะห์ตลาดทองคำล่าสุด คํานวณความเสี่ยง และเปิดสร้างพร้อมรันบอทเทรดอัตโนมัติ (Auto Advisor XAUUSD) ทันทีใช่หรือไม่?")) return;
+            try {
+                const res = await fetch("/api/bots/auto-advisor", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" }
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    alert(data.message || "ตั้งค่าและเปิดรันบอทเทรดอัตโนมัติสำเร็จ!");
+                    fetchBots();
+                } else {
+                    let errMsg = "Unknown error";
+                    try {
+                        const err = await res.json();
+                        errMsg = err.detail || err.message || JSON.stringify(err);
+                    } catch (_) {
+                        try {
+                            errMsg = await res.text();
+                        } catch (__) {}
+                    }
+                    alert(`ล้มเหลวในการตั้งค่าบอทอัตโนมัติ: ${errMsg}`);
+                }
+            } catch (err) {
+                alert(`เกิดข้อผิดพลาด: ${err.message}`);
+            }
+        }
+    };
+    
+    const fetchIndicatorSignals = async (showLoading = false) => {
+        if (showLoading) setLoadingSignals(true);
+        try {
+            const res = await fetch(`/api/bots/advisor-signals?symbol=${activeSymbol}&timeframe=${timeframe}`);
+            if (res.ok) {
+                const data = await res.json();
+                if (data.success) {
+                    setIndicatorSignals(data.indicators || []);
+                }
+            }
+        } catch (err) {
+            console.error("Error fetching indicator signals:", err);
+        } finally {
+            if (showLoading) setLoadingSignals(false);
+        }
+    };
+
+    const handleAutoStartIndicatorBot = async (algoId, algoName) => {
+        if (!confirm(`คุณต้องการเปิดบอทอัตโนมัติสำหรับอินดิเคเตอร์ ${algoName} ทันทีใช่หรือไม่?`)) return;
+        try {
+            const res = await fetch(`/api/bots/auto-advisor?algorithm=${algoId}&symbol=${activeSymbol}&timeframe=${timeframe}`, {
+                method: "POST"
+            });
+            if (res.ok) {
+                const data = await res.json();
+                alert(data.message || `เปิดบอทอัตโนมัติสำหรับ ${algoName} สำเร็จ!`);
+                fetchBots();
+            } else {
+                let errMsg = "Unknown error";
+                try {
+                    const err = await res.json();
+                    errMsg = err.detail || err.message || JSON.stringify(err);
+                } catch (_) {
+                    try {
+                        errMsg = await res.text();
+                    } catch (__) {}
+                }
+                alert(`ล้มเหลวในการตั้งค่าบอทอัตโนมัติ: ${errMsg}`);
+            }
+        } catch (err) {
+            alert(`เกิดข้อผิดพลาด: ${err.message}`);
+        }
+    };
+
+    useEffect(() => {
+        if (!indicatorSignalsOpen) return;
+        
+        fetchIndicatorSignals(indicatorSignals.length === 0);
+        
+        const interval = setInterval(() => {
+            fetchIndicatorSignals(false);
+        }, 10000);
+        
+        return () => clearInterval(interval);
+    }, [indicatorSignalsOpen, activeSymbol, timeframe]);
 
     const handleToggleBot = async (botId) => {
         try {
@@ -5524,10 +5639,52 @@ const TradingApp = () => {
                                             <h4 style={{ fontSize: '13px', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
                                                 จัดการระบบอัลกอริทึม ({activeRunningBotsCount} ทำงานอยู่)
                                             </h4>
-                                            <button className="btn-create-bot" onClick={() => { setSelectedAlgos(["rsi_oscillator"]); setSignalMode("or"); setBotForm({ name: "บอทเทรดทองคำ RSI", symbol: "XAUUSD", timeframe: "M1", algorithm: "rsi_oscillator", lot_size: 0.01, sl_points: 5.0, tp_points: 10.0 }); setEditingBotId(null); setBotFormOpen(true); }}>
-                                                <Icon name="plus" size={12} />
-                                                <span>สร้างบอทใหม่</span>
-                                            </button>
+                                            <div style={{ display: 'flex', gap: '8px' }}>
+                                                <button 
+                                                    className="btn-create-bot" 
+                                                    style={{ 
+                                                        background: 'linear-gradient(135deg, #00b4d8, #0077b6)', 
+                                                        border: 'none', 
+                                                        color: '#fff', 
+                                                        fontWeight: '700', 
+                                                        display: 'flex', 
+                                                        alignItems: 'center', 
+                                                        gap: '6px',
+                                                        boxShadow: '0 4px 12px rgba(0, 180, 216, 0.2)'
+                                                    }}
+                                                    onClick={() => setIndicatorSignalsOpen(true)}
+                                                >
+                                                    <Icon name="info" size={12} style={{ color: '#fff' }} />
+                                                    <span>ตรวจเช็คสัญญาณระบบ AI</span>
+                                                </button>
+                                                {(() => {
+                                                    const advisorBot = bots.find(b => b.name === "Auto Advisor XAUUSD");
+                                                    const isAdvisorRunning = advisorBot ? advisorBot.is_running : false;
+                                                    return (
+                                                        <button 
+                                                            className="btn-create-bot" 
+                                                            style={{ 
+                                                                background: isAdvisorRunning ? 'linear-gradient(135deg, #e74c3c, #c0392b)' : 'linear-gradient(135deg, #d4af37, #aa7c11)', 
+                                                                border: 'none', 
+                                                                color: isAdvisorRunning ? '#fff' : '#000', 
+                                                                fontWeight: '700', 
+                                                                display: 'flex', 
+                                                                alignItems: 'center', 
+                                                                gap: '6px',
+                                                                boxShadow: isAdvisorRunning ? '0 4px 12px rgba(231, 76, 60, 0.2)' : '0 4px 12px rgba(212, 175, 55, 0.2)'
+                                                            }}
+                                                            onClick={handleAutoTradeAdvisor}
+                                                        >
+                                                            <Icon name={isAdvisorRunning ? "stop" : "shield"} size={12} />
+                                                            <span>{isAdvisorRunning ? "ปิดใช้งาน AI เทรดอัตโนมัติ" : "อนุญาต AI เทรดอัตโนมัติ"}</span>
+                                                        </button>
+                                                    );
+                                                })()}
+                                                <button className="btn-create-bot" onClick={() => { setSelectedAlgos(["rsi_oscillator"]); setSignalMode("or"); setBotForm({ name: "บอทเทรดทองคำ RSI", symbol: "XAUUSD", timeframe: "M1", algorithm: "rsi_oscillator", lot_size: 0.01, sl_points: 5.0, tp_points: 10.0, pj_tp_target: "manual", use_trend_filter: false, use_mtf_filter: false, use_atr_sizing: false, risk_percent: 1.0, allowed_sessions: "all", use_news_filter: false, max_hold_hours: 0.0 }); setEditingBotId(null); setBotFormOpen(true); }}>
+                                                    <Icon name="plus" size={12} />
+                                                    <span>สร้างบอทใหม่</span>
+                                                </button>
+                                            </div>
                                         </div>
                                         
                                         {bots.length === 0 ? (
@@ -5619,6 +5776,18 @@ const TradingApp = () => {
                                                                 <span className="bot-metric-label">กรอง EMA 200</span>
                                                                 <span className="bot-metric-value" style={{ color: bot.use_trend_filter ? 'var(--bull-green)' : 'var(--text-muted)' }}>
                                                                     {bot.use_trend_filter ? 'ACTIVE' : 'INACTIVE'}
+                                                                </span>
+                                                            </div>
+                                                            <div className="bot-metric-item">
+                                                                <span className="bot-metric-label">กรองข่าว AI</span>
+                                                                <span className="bot-metric-value" style={{ color: bot.use_news_filter ? 'var(--bull-green)' : 'var(--text-muted)' }}>
+                                                                    {bot.use_news_filter ? 'ACTIVE' : 'INACTIVE'}
+                                                                </span>
+                                                            </div>
+                                                            <div className="bot-metric-item">
+                                                                <span className="bot-metric-label">กรองเทรดหลายกรอบเวลา</span>
+                                                                <span className="bot-metric-value" style={{ color: bot.use_mtf_filter ? 'var(--bull-green)' : 'var(--text-muted)' }}>
+                                                                    {bot.use_mtf_filter ? 'ACTIVE' : 'INACTIVE'}
                                                                 </span>
                                                             </div>
                                                         </div>
@@ -7505,6 +7674,24 @@ const TradingApp = () => {
                                         </div>
                                     </div>
 
+                                    <div className="input-group" style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(255,255,255,0.01)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.03)' }}>
+                                        <input 
+                                            type="checkbox" 
+                                            id="chk-mtf-filter"
+                                            checked={botForm.use_mtf_filter || false}
+                                            onChange={(e) => setBotForm({ ...botForm, use_mtf_filter: e.target.checked })}
+                                            style={{ accentColor: 'var(--accent-gold)', width: '16px', height: '16px', cursor: 'pointer' }}
+                                        />
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', cursor: 'pointer' }} onClick={() => setBotForm({ ...botForm, use_mtf_filter: !botForm.use_mtf_filter })}>
+                                            <label htmlFor="chk-mtf-filter" style={{ margin: 0, cursor: 'pointer', fontWeight: 600, fontSize: '11px', textTransform: 'none' }}>
+                                                เปิดใช้ตัวกรองเทรดหลายกรอบเวลา (Multi-TF Filter)
+                                            </label>
+                                            <span style={{ fontSize: '9px', color: 'var(--text-muted)', lineHeight: '1.2' }}>
+                                                วิเคราะห์แนวโน้มกรอบเวลาที่ใหญ่กว่าเพื่อยืนยันสัญญาณเทรด
+                                            </span>
+                                        </div>
+                                    </div>
+
                                     <div className="input-group">
                                         <label>ช่วงเวลาทำเงิน (Allowed Session)</label>
                                         <select 
@@ -7583,8 +7770,8 @@ const TradingApp = () => {
                                     <span>ระบบกรองเทรดขั้นสูง & การจัดการความเสี่ยง</span>
                                 </h4>
 
-                                {/* 1. Trend Filter & Session Filter in one row */}
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                                {/* 1. Trend Filter & Session Filter */}
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
                                     <div className="input-group" style={{ 
                                         display: 'flex', 
                                         alignItems: 'center', 
@@ -7611,21 +7798,47 @@ const TradingApp = () => {
                                         </label>
                                     </div>
 
-                                    <div className="input-group" style={{ margin: 0 }}>
-                                        <label style={{ fontSize: '11px', marginBottom: '4px' }}>เวลาซื้อขาย (Trading Session)</label>
-                                        <select 
-                                            className="numeric-input"
-                                            style={{ appearance: 'auto', fontSize: '12px', padding: '8px 10px', height: '42px' }}
-                                            value={botForm.allowed_sessions || "all"}
-                                            onChange={(e) => setBotForm({ ...botForm, allowed_sessions: e.target.value })}
-                                        >
-                                            <option value="all">ตลอดทั้งวัน (All Day Sessions)</option>
-                                            <option value="london">ลอนดอน (London Session)</option>
-                                            <option value="newyork">นิวยอร์ก (NY Session)</option>
-                                            <option value="london_ny">ทับซ้อน London+NY (Overlap)</option>
-                                            <option value="asian">เอเชีย (Asian Session)</option>
-                                        </select>
+                                    <div className="input-group" style={{ 
+                                        display: 'flex', 
+                                        alignItems: 'center', 
+                                        gap: '8px', 
+                                        background: 'rgba(255,255,255,0.02)',
+                                        padding: '10px 12px',
+                                        borderRadius: '8px',
+                                        border: '1px solid rgba(255,255,255,0.05)',
+                                        cursor: 'pointer',
+                                        height: '42px',
+                                        marginTop: 'auto',
+                                        marginBottom: '0'
+                                    }} onClick={() => setBotForm({ ...botForm, use_mtf_filter: !botForm.use_mtf_filter })}>
+                                        <input 
+                                            type="checkbox" 
+                                            id="chk-mtffilter"
+                                            checked={botForm.use_mtf_filter || false}
+                                            onChange={(e) => setBotForm({ ...botForm, use_mtf_filter: e.target.checked })}
+                                            onClick={(e) => e.stopPropagation()}
+                                            style={{ accentColor: 'var(--accent-gold)', width: '16px', height: '16px', cursor: 'pointer' }}
+                                        />
+                                        <label htmlFor="chk-mtffilter" style={{ margin: 0, cursor: 'pointer', textTransform: 'none', fontSize: '11px', fontWeight: 600 }}>
+                                            กรองเทรดหลายกรอบเวลา (Multi-TF Filter)
+                                        </label>
                                     </div>
+                                </div>
+
+                                <div className="input-group" style={{ marginBottom: '12px' }}>
+                                    <label style={{ fontSize: '11px', marginBottom: '4px' }}>เวลาซื้อขาย (Trading Session)</label>
+                                    <select 
+                                        className="numeric-input"
+                                        style={{ appearance: 'auto', fontSize: '12px', padding: '8px 10px', height: '42px' }}
+                                        value={botForm.allowed_sessions || "all"}
+                                        onChange={(e) => setBotForm({ ...botForm, allowed_sessions: e.target.value })}
+                                    >
+                                        <option value="all">ตลอดทั้งวัน (All Day Sessions)</option>
+                                        <option value="london">ลอนดอน (London Session)</option>
+                                        <option value="newyork">นิวยอร์ก (NY Session)</option>
+                                        <option value="london_ny">ทับซ้อน London+NY (Overlap)</option>
+                                        <option value="asian">เอเชีย (Asian Session)</option>
+                                    </select>
                                 </div>
 
                                 {/* 2. ATR Position Sizing Box */}
@@ -7717,8 +7930,27 @@ const TradingApp = () => {
                                             🛡️ เปิดระบบ AI กรองข่าวด่วนและสงครามภูมิรัฐศาสตร์ (AI Geopolitical Risk Filter)
                                         </label>
                                     </div>
-                                    <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontStyle: 'italic', display: 'block', lineHeight: '1.3' }}>
-                                        * กรองและบล็อกคำสั่งซื้อขายอัตโนมัติเมื่อตรวจพบระดับความรุนแรงสูง (High Threat เช่น ความตึงเครียดทางสงคราม) หรือมีปัจจัยข่าวสารระดับ High Impact ที่ขัดแย้งกับการเปิดสถานะ เพื่อความปลอดภัยสูงสุดของทุนในพอร์ต
+                                </div>
+
+                                {/* 4. Max Hold Hours Input */}
+                                <div className="input-group" style={{ marginTop: '12px' }}>
+                                    <label style={{ fontSize: '11px', marginBottom: '4px', color: 'var(--accent-gold)' }}>จำกัดเวลาถือครองออเดอร์สูงสุด (ชั่วโมง)</label>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <input 
+                                            type="number" 
+                                            className="numeric-input" 
+                                            step="0.5" 
+                                            min="0" 
+                                            max="720"
+                                            placeholder="เช่น 12.0 (0 = ไม่จำกัดเวลา)"
+                                            value={botForm.max_hold_hours || 0.0}
+                                            onChange={(e) => setBotForm({ ...botForm, max_hold_hours: parseFloat(e.target.value) || 0.0 })}
+                                            style={{ height: '36px', fontSize: '12px', padding: '6px 10px', width: '100%' }}
+                                        />
+                                        <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>ชม.</span>
+                                    </div>
+                                    <span style={{ fontSize: '9px', color: 'var(--text-muted)', display: 'block', marginTop: '2px', lineHeight: '1.2' }}>
+                                        * ระบบจะปิดออเดอร์ให้โดยอัตโนมัติหากถือครองนานเกินกว่าเวลาที่กำหนดเพื่อป้องกันความเสี่ยงของการลากขาดทุนยาว
                                     </span>
                                 </div>
                             </div>
@@ -7739,6 +7971,112 @@ const TradingApp = () => {
                                 ยกเลิก
                             </button>
                         </form>
+                    </div>
+                </div>
+            </div>
+
+            {/* --- SUB-INDICATOR SIGNALS & RECOMMENDATIONS MODAL --- */}
+            <div className={`modal-overlay ${indicatorSignalsOpen ? 'active' : ''}`}>
+                <div className="modal-container" style={{ width: '650px', maxWidth: '95%', background: '#131722', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: '12px', boxShadow: '0 8px 32px rgba(0, 0, 0, 0.6)' }}>
+                    <div className="modal-header" style={{ padding: '16px 20px', borderBottom: '1px solid rgba(255, 255, 255, 0.08)' }}>
+                        <h3 style={{ fontSize: '15px', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
+                            <Icon name="shield" size={18} style={{ color: '#00b4d8' }} />
+                            <span>สัญญาณและคำแนะนำระบบอินดิเคเตอร์ย่อย ({activeSymbol} {timeframe})</span>
+                        </h3>
+                        <button className="modal-close-btn" onClick={() => setIndicatorSignalsOpen(false)}>
+                            <Icon name="close" size={20} />
+                        </button>
+                    </div>
+
+                    <div className="modal-body" style={{ maxHeight: '600px', overflowY: 'auto', padding: '20px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', background: 'rgba(255, 255, 255, 0.02)', padding: '10px 14px', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.04)' }}>
+                            <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                                ระบบวิเคราะห์ตลาดเรียลไทม์ (อัปเดตอัตโนมัติทุก 10 วินาที)
+                            </div>
+                            <button 
+                                type="button"
+                                className="btn-secondary" 
+                                style={{ padding: '4px 8px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px', height: '26px', border: '1px solid rgba(255,255,255,0.1)' }}
+                                onClick={() => fetchIndicatorSignals(true)}
+                            >
+                                <Icon name="refresh" size={12} />
+                                <span>รีเฟรชข้อมูล</span>
+                            </button>
+                        </div>
+
+                        {loadingSignals ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '40px 0', gap: '12px' }}>
+                                <div style={{ border: '3px solid rgba(255,255,255,0.05)', borderTop: '3px solid #00b4d8', borderRadius: '50%', width: '32px', height: '32px', animation: 'spin 1s linear infinite' }} />
+                                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>กำลังประเมินสัญญาณเทรดทั้งหมด 17 รายการ...</span>
+                            </div>
+                        ) : indicatorSignals.length === 0 ? (
+                            <div style={{ textAlign: 'center', padding: '30px 0', color: 'var(--text-muted)', fontSize: '12px' }}>
+                                ไม่พบข้อมูลสัญญาณ หรือเกิดข้อผิดพลาดในการโหลด
+                            </div>
+                        ) : (
+                            <div className="backtest-table-wrapper" style={{ maxHeight: 'none', background: 'transparent', padding: 0 }}>
+                                <table className="trading-table">
+                                    <thead>
+                                        <tr>
+                                            <th>รายการอินดิเคเตอร์</th>
+                                            <th style={{ textAlign: 'center' }}>สัญญาณเทรดล่าสุด</th>
+                                            <th style={{ textAlign: 'right' }}>ระบบบอทอัตโนมัติ</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {indicatorSignals.map((item) => {
+                                            const sig = (item.signal || '').toLowerCase();
+                                            let badgeText = 'Neutral';
+                                            let badgeStyle = { background: 'rgba(255,255,255,0.05)', color: '#94a3b8', border: '1px solid rgba(255,255,255,0.1)' };
+
+                                            if (sig === 'buy') {
+                                                badgeText = 'BUY 🟢';
+                                                badgeStyle = { background: 'rgba(46, 204, 113, 0.15)', color: '#2ecc71', border: '1px solid rgba(46, 204, 113, 0.25)', fontWeight: 'bold' };
+                                            } else if (sig === 'sell') {
+                                                badgeText = 'SELL 🔴';
+                                                badgeStyle = { background: 'rgba(231, 76, 60, 0.15)', color: '#e74c3c', border: '1px solid rgba(231, 76, 60, 0.25)', fontWeight: 'bold' };
+                                            }
+
+                                            return (
+                                                <tr key={item.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                                                    <td style={{ fontWeight: 600, fontSize: '12.5px', color: '#f8f9fa' }}>
+                                                        {item.name}
+                                                    </td>
+                                                    <td style={{ textAlign: 'center' }}>
+                                                        <span style={{ display: 'inline-block', padding: '3px 8px', borderRadius: '4px', fontSize: '11px', ...badgeStyle }}>
+                                                            {badgeText}
+                                                        </span>
+                                                    </td>
+                                                    <td style={{ textAlign: 'right' }}>
+                                                        <button 
+                                                            type="button"
+                                                            className="btn-create-bot" 
+                                                            style={{ 
+                                                                background: 'linear-gradient(135deg, #2ecc71, #27ae60)', 
+                                                                border: 'none', 
+                                                                color: '#fff', 
+                                                                fontWeight: '600', 
+                                                                fontSize: '11px',
+                                                                padding: '4px 10px',
+                                                                height: '26px',
+                                                                display: 'inline-flex',
+                                                                alignItems: 'center',
+                                                                gap: '4px',
+                                                                boxShadow: 'none'
+                                                            }}
+                                                            onClick={() => handleAutoStartIndicatorBot(item.id, item.name)}
+                                                        >
+                                                            <Icon name="plus" size={10} />
+                                                            <span>เปิดบอทอัตโนมัติทันที</span>
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>

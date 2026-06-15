@@ -455,7 +455,8 @@ class MT5Manager:
                     "tp": pos.tp,
                     "profit": pos.profit,
                     "comment": pos.comment,
-                    "time": datetime.fromtimestamp(pos.time).strftime("%Y-%m-%d %H:%M:%S")
+                    "time": datetime.fromtimestamp(pos.time).strftime("%Y-%m-%d %H:%M:%S"),
+                    "time_raw": pos.time - self.get_broker_timezone_offset()
                 })
             return pos_list
         else:
@@ -576,7 +577,8 @@ class MT5Manager:
                 "tp": tp,
                 "profit": 0.0,
                 "comment": comment,
-                "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "time_raw": int(time.time())
             }
             
             self.sim_positions.append(new_position)

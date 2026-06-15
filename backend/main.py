@@ -62,6 +62,14 @@ try:
             conn.execute(text("ALTER TABLE bot_settings ADD COLUMN pj_tp_target VARCHAR(20) DEFAULT 'manual'"))
             print("Database Migration: Successfully added 'pj_tp_target' column to 'bot_settings' table.")
             
+        if "max_hold_hours" not in columns:
+            conn.execute(text("ALTER TABLE bot_settings ADD COLUMN max_hold_hours FLOAT DEFAULT 0.0"))
+            print("Database Migration: Successfully added 'max_hold_hours' column to 'bot_settings' table.")
+            
+        if "use_mtf_filter" not in columns:
+            conn.execute(text("ALTER TABLE bot_settings ADD COLUMN use_mtf_filter BOOLEAN DEFAULT 0"))
+            print("Database Migration: Successfully added 'use_mtf_filter' column to 'bot_settings' table.")
+            
     # NewsRecord self-healing migration
     news_columns = [col['name'] for col in inspector.get_columns('news_records')]
     with engine.begin() as conn:
@@ -256,10 +264,12 @@ class BotCreateRequest(BaseModel):
     pj_tp_target: str = "manual"
     signal_mode: str = "or"
     use_trend_filter: bool = False
+    use_mtf_filter: bool = False
     use_atr_sizing: bool = False
     use_news_filter: bool = False
     risk_percent: float = 1.0
     allowed_sessions: str = "all"
+    max_hold_hours: float = 0.0
 
 
 # --- Endpoints ---
@@ -1104,10 +1114,12 @@ def serialize_bot(bot: BotSettings):
         "active_ticket": bot.active_ticket,
         "is_running": bot.is_running,
         "use_trend_filter": bot.use_trend_filter,
+        "use_mtf_filter": getattr(bot, "use_mtf_filter", False),
         "use_atr_sizing": bot.use_atr_sizing,
         "use_news_filter": getattr(bot, "use_news_filter", False),
         "risk_percent": bot.risk_percent,
         "allowed_sessions": bot.allowed_sessions,
+        "max_hold_hours": getattr(bot, "max_hold_hours", 0.0),
         "created_at": bot.created_at.isoformat() if bot.created_at else None
     }
 
@@ -1125,10 +1137,12 @@ def create_bot(req: BotCreateRequest, db: Session = Depends(get_db)):
         tp_points=req.tp_points,
         pj_tp_target=req.pj_tp_target,
         use_trend_filter=req.use_trend_filter,
+        use_mtf_filter=req.use_mtf_filter,
         use_atr_sizing=req.use_atr_sizing,
         use_news_filter=req.use_news_filter,
         risk_percent=req.risk_percent,
         allowed_sessions=req.allowed_sessions,
+        max_hold_hours=req.max_hold_hours,
         is_running=False
     )
     db.add(bot)
@@ -1165,10 +1179,12 @@ def update_bot(bot_id: int, req: BotCreateRequest, db: Session = Depends(get_db)
     if bot.tp_points != req.tp_points: changes.append(f"TP: {bot.tp_points} -> {req.tp_points}")
     if getattr(bot, "pj_tp_target", "manual") != req.pj_tp_target: changes.append(f"PJ TP Target: {getattr(bot, 'pj_tp_target', 'manual')} -> {req.pj_tp_target}")
     if bot.use_trend_filter != req.use_trend_filter: changes.append(f"Trend Filter: {bot.use_trend_filter} -> {req.use_trend_filter}")
+    if getattr(bot, "use_mtf_filter", False) != req.use_mtf_filter: changes.append(f"Multi-TF Filter: {getattr(bot, 'use_mtf_filter', False)} -> {req.use_mtf_filter}")
     if bot.use_atr_sizing != req.use_atr_sizing: changes.append(f"ATR Sizing: {bot.use_atr_sizing} -> {req.use_atr_sizing}")
     if getattr(bot, "use_news_filter", False) != req.use_news_filter: changes.append(f"AI News Filter: {getattr(bot, 'use_news_filter', False)} -> {req.use_news_filter}")
     if bot.risk_percent != req.risk_percent: changes.append(f"Risk %: {bot.risk_percent} -> {req.risk_percent}")
     if bot.allowed_sessions != req.allowed_sessions: changes.append(f"Sessions: {bot.allowed_sessions} -> {req.allowed_sessions}")
+    if getattr(bot, "max_hold_hours", 0.0) != req.max_hold_hours: changes.append(f"จำกัดเวลาถือครอง (ชม.): {getattr(bot, 'max_hold_hours', 0.0)} -> {req.max_hold_hours}")
 
     bot.name = req.name
     bot.symbol = req.symbol.upper()
@@ -1180,10 +1196,12 @@ def update_bot(bot_id: int, req: BotCreateRequest, db: Session = Depends(get_db)
     bot.tp_points = req.tp_points
     bot.pj_tp_target = req.pj_tp_target
     bot.use_trend_filter = req.use_trend_filter
+    bot.use_mtf_filter = req.use_mtf_filter
     bot.use_atr_sizing = req.use_atr_sizing
     bot.use_news_filter = req.use_news_filter
     bot.risk_percent = req.risk_percent
     bot.allowed_sessions = req.allowed_sessions
+    bot.max_hold_hours = req.max_hold_hours
     
     db.commit()
     db.refresh(bot)
@@ -1240,6 +1258,250 @@ def delete_bot(bot_id: int, db: Session = Depends(get_db)):
     db.delete(bot)
     db.commit()
     return {"success": True, "message": f"Bot {bot_id} deleted successfully."}
+
+@app.get("/api/bots/advisor-signals")
+def get_advisor_signals(symbol: str = "XAUUSD", timeframe: str = "H1", db: Session = Depends(get_db)):
+    """
+    Evaluates all 17 system indicators on the latest candle data and returns their current active trading signals.
+    """
+    try:
+        from backend.mt5_manager import MT5Manager
+        from backend.trading_bot import evaluate_signals
+        
+        mt5 = MT5Manager()
+        candles = mt5.get_historical_candles(symbol, timeframe, count=300)
+        if not candles or len(candles) < 35:
+            return {"success": False, "message": "ข้อมูลไม่เพียงพอในการประเมินสัญญาณ"}
+            
+        close_prices = [c["close"] for c in candles]
+        
+        algos = [
+            {"id": "rsi_oscillator", "name": "RSI Overbought/Oversold"},
+            {"id": "pj_indicator", "name": "PJ Indicator 🔮"},
+            {"id": "stoch_rsi", "name": "Stochastic RSI (StochRSI)"},
+            {"id": "macd_4c", "name": "MACD 4 Color (4C) Momentum"},
+            {"id": "sma_cross", "name": "Double SMA Crossover"},
+            {"id": "macd", "name": "MACD Signal Cross"},
+            {"id": "elliott_wave", "name": "Elliott Wave Theory"},
+            {"id": "harmonic_patterns", "name": "Harmonic Patterns"},
+            {"id": "ema_cross_50_200", "name": "EMA 50 / 200 Cross"},
+            {"id": "rsi_divergence", "name": "RSI Divergence"},
+            {"id": "atr_breakout", "name": "ATR Volatility Breakout"},
+            {"id": "support_resistance", "name": "Support / Resistance Bounce"},
+            {"id": "liquidity_sweep", "name": "Liquidity Sweep (Stop Hunt)"},
+            {"id": "smc_bos_choch", "name": "SMC BOS/CHoCH Breakout"},
+            {"id": "smc_order_block", "name": "SMC Order Block (OB)"},
+            {"id": "smc_fvg_imbalance", "name": "SMC Fair Value Gap (FVG)"},
+            {"id": "smc_confluence_pro", "name": "SMC Confluence Master Pro"}
+        ]
+        
+        results = []
+        for algo in algos:
+            try:
+                sig = evaluate_signals(close_prices, algo["id"], candles=candles, symbol=symbol, timeframe=timeframe)
+            except Exception as e:
+                sig = "error"
+            results.append({
+                **algo,
+                "signal": sig
+            })
+            
+        return {
+            "success": True,
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "indicators": results
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"เกิดข้อผิดพลาดในการประเมินสัญญาณอินดิเคเตอร์: {str(e)}")
+
+@app.post("/api/bots/auto-advisor")
+def create_or_update_auto_advisor_bot(
+    algorithm: str = Query(None),
+    symbol: str = Query("XAUUSD"),
+    timeframe: str = Query(None),
+    db: Session = Depends(get_db)
+):
+    """
+    Creates or updates an AI auto-advisor bot based on the latest AI market analysis recommendations, 
+    or a specific indicator if 'algorithm' query parameter is specified.
+    Enforces time-based exit (max_hold_hours).
+    """
+    try:
+        from backend.chatbot import ChatbotAssistant
+        from backend.mt5_manager import MT5Manager
+        from backend.pattern_detector import calculate_atr
+        from backend.trading_bot import BotManager
+        
+        mt5 = MT5Manager()
+        
+        # Determine symbol
+        symbol = symbol.upper()
+        
+        # 1. Get ATR data for dynamic SL/TP recommendations
+        h1_candles = mt5.get_historical_candles(symbol, "H1", count=100)
+        atr_value = 5.0  # Fallback
+        if h1_candles and len(h1_candles) >= 15:
+            atr_vals = calculate_atr(h1_candles, 14)
+            if atr_vals and atr_vals[-1] is not None:
+                atr_value = atr_vals[-1]
+                
+        if algorithm:
+            # Selective indicator mode
+            algo_names = {
+                "rsi_oscillator": "RSI Osc",
+                "pj_indicator": "PJ Ind",
+                "stoch_rsi": "StochRSI",
+                "macd_4c": "MACD 4C",
+                "sma_cross": "Double SMA",
+                "macd": "MACD Cross",
+                "elliott_wave": "Elliott Wave",
+                "harmonic_patterns": "Harmonic",
+                "ema_cross_50_200": "EMA 50/200",
+                "rsi_divergence": "RSI Div",
+                "atr_breakout": "ATR Breakout",
+                "support_resistance": "S/R Bounce",
+                "liquidity_sweep": "Liq Sweep",
+                "smc_bos_choch": "SMC BOS",
+                "smc_order_block": "SMC OB",
+                "smc_fvg_imbalance": "SMC FVG",
+                "smc_confluence_pro": "SMC Conf Pro"
+            }
+            name_label = algo_names.get(algorithm, "Bot")
+            bot_name = f"AI Auto {name_label} {symbol}"
+            
+            trend_algos = ["sma_cross", "macd", "ema_cross_50_200", "atr_breakout", "smc_bos_choch", "smc_order_block", "smc_fvg_imbalance", "smc_confluence_pro", "pj_indicator"]
+            is_trend = algorithm in trend_algos
+            
+            if is_trend:
+                bot_timeframe = timeframe or "H1"
+                use_trend_filter = True
+                use_atr_sizing = True
+                sl_points = round(2.0 * atr_value, 2)
+                tp_points = round(4.0 * atr_value, 2)
+                risk_percent = 1.0
+                allowed_sessions = "london,newyork"
+                max_hold_hours = 12.0
+                strategy_desc = f"{name_label} Trend"
+            else:
+                bot_timeframe = timeframe or "M15"
+                use_trend_filter = False
+                use_atr_sizing = False
+                sl_points = round(1.5 * atr_value, 2)
+                tp_points = round(2.5 * atr_value, 2)
+                risk_percent = 0.5
+                allowed_sessions = "all"
+                max_hold_hours = 2.0
+                strategy_desc = f"{name_label} Oscillator"
+                
+            sentiment = "Custom Selective"
+            algorithms = algorithm
+            use_news_filter = True
+        else:
+            # Full composite auto advisor mode
+            bot_name = "Auto Advisor XAUUSD"
+            assistant = ChatbotAssistant()
+            analysis_result = assistant.analyze_gold_market("วิเคราะห์ราคาทองคำ", db)
+            
+            response_text = analysis_result.get("response", "")
+            data = analysis_result.get("data", {})
+            sentiment = data.get("sentiment", "Neutral")
+            
+            if "Strongly Bullish" in sentiment or "Bullish" in sentiment:
+                algorithms = "smc_bos_choch" if "Strongly" in sentiment else "smc_bos_choch,sma_cross"
+                bot_timeframe = "H1"
+                use_trend_filter = True
+                use_atr_sizing = True
+                sl_points = round(2.0 * atr_value, 2)
+                tp_points = round(4.0 * atr_value, 2)
+                risk_percent = 1.0
+                allowed_sessions = "london,newyork"
+                max_hold_hours = 12.0
+                strategy_desc = "SMC/SMA Cross (ขาขึ้น)"
+            elif "Strongly Bearish" in sentiment or "Bearish" in sentiment:
+                algorithms = "smc_bos_choch" if "Strongly" in sentiment else "smc_bos_choch,macd_4c"
+                bot_timeframe = "H1"
+                use_trend_filter = True
+                use_atr_sizing = True
+                sl_points = round(2.0 * atr_value, 2)
+                tp_points = round(4.0 * atr_value, 2)
+                risk_percent = 1.0
+                allowed_sessions = "london,newyork"
+                max_hold_hours = 12.0
+                strategy_desc = "SMC/MACD 4C (ขาลง)"
+            else: # Neutral / Sideways
+                algorithms = "stoch_rsi" if "Stoch" in response_text else "rsi_oscillator"
+                bot_timeframe = "M15"
+                use_trend_filter = False
+                use_atr_sizing = False
+                sl_points = round(1.5 * atr_value, 2)
+                tp_points = round(2.5 * atr_value, 2)
+                risk_percent = 0.5
+                allowed_sessions = "all"
+                max_hold_hours = 2.0
+                strategy_desc = "RSI/StochRSI Oscillator (ไซด์เวย์)"
+            use_news_filter = True
+
+        # Check if the auto advisor bot already exists
+        bot = db.query(BotSettings).filter(BotSettings.name == bot_name).first()
+        
+        is_new = False
+        if not bot:
+            is_new = True
+            bot = BotSettings(name=bot_name)
+            db.add(bot)
+            
+        # Update fields
+        bot.symbol = symbol
+        bot.timeframe = bot_timeframe
+        bot.algorithms = algorithms
+        bot.signal_mode = "or"
+        bot.lot_size = 0.01  # Default starting lot
+        bot.sl_points = sl_points
+        bot.tp_points = tp_points
+        bot.pj_tp_target = "manual"
+        bot.use_trend_filter = use_trend_filter
+        bot.use_mtf_filter = True
+        bot.use_atr_sizing = use_atr_sizing
+        bot.use_news_filter = use_news_filter
+        bot.risk_percent = risk_percent
+        bot.allowed_sessions = allowed_sessions
+        bot.max_hold_hours = max_hold_hours
+        bot.is_running = True  # Authorize and start trading immediately!
+        
+        db.commit()
+        db.refresh(bot)
+        
+        # Log to DB
+        action_str = "ถูกสร้างและรันเทรดอัตโนมัติ" if is_new else "ถูกอัปเดตและเริ่มทำงานต่อตามข้อมูลตลาดปัจจุบัน"
+        msg = (
+            f"บอท AI อัตโนมัติ {bot_name} {action_str}! "
+            f"กลยุทธ์: {strategy_desc} | "
+            f"Timeframe: {bot_timeframe} | "
+            f"SL/TP: {sl_points}/{tp_points} | "
+            f"เวลาปิดจำกัด: {max_hold_hours} ชม. | "
+            f"Sentiment: {sentiment}"
+        )
+        log_entry = BotLog(
+            bot_id=bot.id,
+            message=msg,
+            log_type="info"
+        )
+        db.add(log_entry)
+        db.commit()
+        
+        # If BotManager is not running, start it
+        bot_manager = BotManager()
+        if not bot_manager.is_running:
+            bot_manager.start()
+            
+        return {
+            "success": True,
+            "message": msg,
+            "bot": serialize_bot(bot)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"เกิดข้อผิดพลาดในการตั้งค่าบอทอัตโนมัติ: {str(e)}")
 
 @app.get("/api/bots/{bot_id}/logs")
 def get_bot_logs(bot_id: int, db: Session = Depends(get_db)):

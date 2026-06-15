@@ -61,6 +61,8 @@ class BotSettings(Base):
     risk_percent = Column(Float, default=1.0)
     allowed_sessions = Column(String(50), default="all")
     last_traded_pattern_time = Column(Integer, default=0, nullable=True)
+    max_hold_hours = Column(Float, default=0.0, nullable=True)
+    use_mtf_filter = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class BotLog(Base):

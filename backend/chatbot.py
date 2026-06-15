@@ -962,7 +962,14 @@ class ChatbotAssistant:
                                 "raw_analysis": analysis_markdown,
                                 "sentiment": sentiment,
                                 "bid": bid,
-                                "ask": ask
+                                "ask": ask,
+                                "levels": {
+                                    "supports": support_levels,
+                                    "resistances": resistance_levels,
+                                    "sl": sl_target,
+                                    "tp1": tp1,
+                                    "tp2": tp2
+                                }
                             }
                         }
                 else:
@@ -1001,7 +1008,14 @@ class ChatbotAssistant:
                                 "raw_analysis": analysis_markdown,
                                 "sentiment": sentiment,
                                 "bid": bid,
-                                "ask": ask
+                                "ask": ask,
+                                "levels": {
+                                    "supports": support_levels,
+                                    "resistances": resistance_levels,
+                                    "sl": sl_target,
+                                    "tp1": tp1,
+                                    "tp2": tp2
+                                }
                             }
                         }
                 else:
@@ -1042,7 +1056,14 @@ class ChatbotAssistant:
                                 "raw_analysis": analysis_markdown,
                                 "sentiment": sentiment,
                                 "bid": bid,
-                                "ask": ask
+                                "ask": ask,
+                                "levels": {
+                                    "supports": support_levels,
+                                    "resistances": resistance_levels,
+                                    "sl": sl_target,
+                                    "tp1": tp1,
+                                    "tp2": tp2
+                                }
                             }
                         }
                 else:
@@ -1074,7 +1095,14 @@ class ChatbotAssistant:
                             "raw_analysis": analysis_markdown,
                             "sentiment": sentiment,
                             "bid": bid,
-                            "ask": ask
+                            "ask": ask,
+                            "levels": {
+                                "supports": support_levels,
+                                "resistances": resistance_levels,
+                                "sl": sl_target,
+                                "tp1": tp1,
+                                "tp2": tp2
+                            }
                         }
                     }
             except Exception as gemini_err:
