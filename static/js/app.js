@@ -143,47 +143,6 @@ const Icon = ({ name, className = "react-svg-icon", size = 18 }) => {
                 <path d="M20 20H7L3 16c-1-1-1-2 0-3l9-9c1-1 2-1 3 0l5 5c1 1 1 2 0 3l-5 5" />
                 <line x1="22" y1="20" x2="9" y2="20" />
             </svg>
-        ),
-        sun: (
-            <svg viewBox="0 0 24 24" width={size} height={size}>
-                <circle cx="12" cy="12" r="5" />
-                <line x1="12" y1="1" x2="12" y2="3" />
-                <line x1="12" y1="21" x2="12" y2="23" />
-                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
-                <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
-                <line x1="1" y1="12" x2="3" y2="12" />
-                <line x1="21" y1="12" x2="23" y2="12" />
-                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
-                <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
-            </svg>
-        ),
-        sunset: (
-            <svg viewBox="0 0 24 24" width={size} height={size}>
-                <path d="M17 18a5 5 0 0 0-10 0" />
-                <line x1="12" y1="9" x2="12" y2="2" />
-                <line x1="4.22" y1="10.22" x2="5.64" y2="11.64" />
-                <line x1="1" y1="18" x2="3" y2="18" />
-                <line x1="21" y1="18" x2="23" y2="18" />
-                <line x1="18.36" y1="11.64" x2="19.78" y2="10.22" />
-                <line x1="23" y1="22" x2="1" y2="22" />
-                <line x1="16" y1="5" x2="12" y2="2" />
-                <line x1="8" y1="5" x2="12" y2="2" />
-            </svg>
-        ),
-        moon: (
-            <svg viewBox="0 0 24 24" width={size} height={size}>
-                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-            </svg>
-        ),
-        "chevron-down": (
-            <svg viewBox="0 0 24 24" width={size} height={size}>
-                <polyline points="6 9 12 15 18 9" />
-            </svg>
-        ),
-        "chevron-up": (
-            <svg viewBox="0 0 24 24" width={size} height={size}>
-                <polyline points="18 15 12 9 6 15" />
-            </svg>
         )
     };
 
@@ -270,29 +229,6 @@ const TradingApp = () => {
     const [isWatchlistCollapsed, setIsWatchlistCollapsed] = useState(false);
     const [isExecutionCollapsed, setIsExecutionCollapsed] = useState(false);
 
-    // Dynamic chart resizing to match sidebar collapse/expand animations
-    useEffect(() => {
-        const resizeCharts = () => {
-            const activePaneIds = chartLayout === 'single' ? [0] : chartLayout === 'dual' ? [0, 1] : [0, 1, 2, 3];
-            activePaneIds.forEach(paneId => {
-                const chart = chartsRef.current[paneId];
-                const container = containersRef.current[paneId];
-                if (chart && container) {
-                    chart.applyOptions({
-                        width: container.clientWidth,
-                        height: container.clientHeight
-                    });
-                }
-            });
-        };
-        
-        // Multiple checks matching standard CSS transition timing
-        const intervals = [50, 100, 150, 200, 250, 300, 350];
-        const timers = intervals.map(ms => setTimeout(resizeCharts, ms));
-        
-        return () => timers.forEach(clearTimeout);
-    }, [isWatchlistCollapsed, isExecutionCollapsed, chartLayout, isTerminalExpanded, isTerminalCollapsed]);
-
     // Interactive Graph Drawing states & refs
     const [drawingTool, setDrawingToolState] = useState(null); // null | 'trendline' | 'horizontal'
     const [drawingStartPoint, setDrawingStartPointState] = useState(null); // null | { time, price }
@@ -341,7 +277,6 @@ const TradingApp = () => {
         drawnLinesRef.current = drawnLinesRef.current.filter(line => line.symbol !== activeSymbol);
         setDrawingTool(null);
         setSelectedHistoryOrder(null);
-        setSelectedBacktestTrade(null);
     };
 
     const autoDrawSMC = async () => {
@@ -378,18 +313,17 @@ const TradingApp = () => {
                                 lastValueVisible: false
                             });
                             
-                            const points = [{ time: struct.start_time + 7 * 3600, value: struct.price }];
+                            const points = [{ time: struct.start_time, value: struct.price }];
                             const midTime = Math.round((struct.start_time + struct.end_time) / 2);
-                            const adjustedMidTime = midTime + 7 * 3600;
                             if (midTime > struct.start_time && midTime < struct.end_time) {
-                                points.push({ time: adjustedMidTime, value: struct.price });
+                                points.push({ time: midTime, value: struct.price });
                             }
-                            points.push({ time: struct.end_time + 7 * 3600, value: struct.price });
+                            points.push({ time: struct.end_time, value: struct.price });
                             
                             lineSeries.setData(points);
                             
                             if (title) {
-                                const markerTime = (midTime > struct.start_time && midTime < struct.end_time) ? adjustedMidTime : (struct.end_time + 7 * 3600);
+                                const markerTime = (midTime > struct.start_time && midTime < struct.end_time) ? midTime : struct.end_time;
                                 lineSeries.setMarkers([
                                     {
                                         time: markerTime,
@@ -415,8 +349,8 @@ const TradingApp = () => {
                     price: struct.price,
                     symbol: activeSymbol,
                     points: [
-                        { time: struct.start_time + 7 * 3600, price: struct.price },
-                        { time: struct.end_time + 7 * 3600, price: struct.price }
+                        { time: struct.start_time, price: struct.price },
+                        { time: struct.end_time, price: struct.price }
                     ],
                     instances: lineInstances
                 });
@@ -470,6 +404,21 @@ const TradingApp = () => {
     const [tradeHistory, setTradeHistory] = useState([]);
     const [selectedHistoryOrder, setSelectedHistoryOrder] = useState(null);
 
+    // Deep Analytics Filters State
+    const [timeFilter, setTimeFilter] = useState('all');
+    const [sessionFilter, setSessionFilter] = useState('all');
+    const [customStartDate, setCustomStartDate] = useState('');
+    const [customEndDate, setCustomEndDate] = useState('');
+    const [expandedSessions, setExpandedSessions] = useState({});
+
+    const toggleSessionExpanded = (sessionKey) => {
+        setExpandedSessions(prev => ({
+            ...prev,
+            [sessionKey]: !prev[sessionKey]
+        }));
+    };
+
+
     // Market Intelligence News States
     const [newsData, setNewsData] = useState({
         sentiment_summary: 'neutral',
@@ -484,15 +433,11 @@ const TradingApp = () => {
     const [activeBot, setActiveBot] = useState(null);
     const [botLogs, setBotLogs] = useState([]);
     const [botFormOpen, setBotFormOpen] = useState(false);
-    const [botForm, setBotForm] = useState({ name: "บอทเทรดทองคำ RSI", symbol: "XAUUSD", timeframe: "M1", algorithm: "rsi_oscillator", lot_size: 0.01, sl_points: 5.0, tp_points: 10.0, pj_tp_target: "manual", use_trend_filter: false, use_mtf_filter: false, use_atr_sizing: false, risk_percent: 1.0, allowed_sessions: "all", use_news_filter: false, max_hold_hours: 0.0 });
+    const [botForm, setBotForm] = useState({ name: "บอทเทรดทองคำ RSI", symbol: "XAUUSD", timeframe: "M1", algorithm: "rsi_oscillator", lot_size: 0.01, sl_points: 5.0, tp_points: 10.0, use_trend_filter: false, use_mtf_filter: false, use_atr_sizing: false, risk_percent: 1.0, allowed_sessions: "all", use_news_filter: false, stoch_rsi_len: 13, stoch_len: 13, stoch_k: 3, stoch_d: 3, macd_fast: 12, macd_slow: 26, macd_signal: 9, pj_min_score: 6, pj_use_volume: false, pj_vol_multiplier: 2.0, pj_vwap_anchor: "Session", pj_atr_mult: 1.5, pj_use_dyn_atr: true, pj_tp_target: "manual", ema_fast: 50, ema_slow: 200, adx_len: 25, adx_threshold: 30 });
     const [selectedAlgos, setSelectedAlgos] = useState(["rsi_oscillator"]);
-    const [indicatorSignalsOpen, setIndicatorSignalsOpen] = useState(false);
-    const [indicatorSignals, setIndicatorSignals] = useState([]);
-    const [loadingSignals, setLoadingSignals] = useState(false);
     const [signalMode, setSignalMode] = useState("or");
     const [activeRunningBotsCount, setActiveRunningBotsCount] = useState(0);
     const [editingBotId, setEditingBotId] = useState(null);
-    const [expandedSessions, setExpandedSessions] = useState({});
 
     // --- Backtesting States ---
     const [backtestForm, setBacktestForm] = useState({
@@ -503,18 +448,14 @@ const TradingApp = () => {
         sl_points: 5.0,
         tp_points: 10.0,
         initial_balance: 10000.0,
-        signal_mode: "or",
-        allowed_sessions: "all"
+        signal_mode: "or"
     });
     const [backtestSelectedAlgos, setBacktestSelectedAlgos] = useState(["rsi_oscillator"]);
     const [backtestResult, setBacktestResult] = useState(null);
     const [backtestLoading, setBacktestLoading] = useState(false);
     const [backtestSubTab, setBacktestSubTab] = useState("stats"); // 'stats' | 'price' | 'equity' | 'deals'
-    const [selectedBacktestTrade, setSelectedBacktestTrade] = useState(null);
-    const [analyticsTimeFilter, setAnalyticsTimeFilter] = useState("all"); // 'day' | 'week' | 'month' | 'year' | 'all'
 
     const backtestChartContainerRef = useRef(null);
-    const backtestPriceLinesRef = useRef([]);
     const backtestChartRef = useRef(null);
     const backtestAreaSeriesRef = useRef(null);
 
@@ -637,7 +578,29 @@ const TradingApp = () => {
     const chatbotEndRef = useRef(null);
     const watchlistRef = useRef([]);
     const historyPriceLinesRef = useRef({});
-    const baseMarkersRef = useRef({});
+
+    // Dynamic chart resizing to match sidebar collapse/expand animations
+    useEffect(() => {
+        const resizeCharts = () => {
+            const activePaneIds = chartLayout === 'single' ? [0] : chartLayout === 'dual' ? [0, 1] : [0, 1, 2, 3];
+            activePaneIds.forEach(paneId => {
+                const chart = chartsRef.current[paneId];
+                const container = containersRef.current[paneId];
+                if (chart && container) {
+                    chart.applyOptions({
+                        width: container.clientWidth,
+                        height: container.clientHeight
+                    });
+                }
+            });
+        };
+        
+        // Multiple checks matching standard CSS transition timing
+        const intervals = [50, 100, 150, 200, 250, 300, 350];
+        const timers = intervals.map(ms => setTimeout(resizeCharts, ms));
+        
+        return () => timers.forEach(clearTimeout);
+    }, [isWatchlistCollapsed, isExecutionCollapsed, chartLayout, isTerminalExpanded, isTerminalCollapsed]);
 
     // Keep watchlistRef in sync with watchlist state
     useEffect(() => {
@@ -662,11 +625,6 @@ const TradingApp = () => {
         fetchNews();
         fetchAccounts();
 
-        // 1-second interval for prices & dynamic ticks
-        const priceInterval = setInterval(() => {
-            fetchPrices();
-        }, 1000);
-
         // 5-second interval for account metrics, open positions, trade history, and bots
         const accountInterval = setInterval(() => {
             fetchStatus();
@@ -679,7 +637,6 @@ const TradingApp = () => {
         }, 5000);
 
         return () => {
-            clearInterval(priceInterval);
             clearInterval(accountInterval);
         };
     }, []);
@@ -746,99 +703,13 @@ const TradingApp = () => {
                 const series = candlestickSeriesesRef.current[paneId];
                 const chart = chartsRef.current[paneId];
                 if (data && data.length > 0 && series && chart) {
-                    // Shift timestamps to Thailand time (GMT+7)
-                    const adjustedData = data.map(c => ({
-                        ...c,
-                        time: c.time + 7 * 3600
-                    }));
-                    series.setData(adjustedData);
+                    series.setData(data);
                     chart.timeScale().fitContent();
                 }
             }
         } catch (err) {
             console.error(`Failed to load chart data for pane ${paneId}:`, err);
         }
-    };
-
-    // Helper to consolidate base patterns markers and selected order markers
-    const updateChartMarkers = (paneId) => {
-        const series = candlestickSeriesesRef.current[paneId];
-        if (!series) return;
-
-        let markers = [...(baseMarkersRef.current[paneId] || [])];
-
-        // If a history order is selected, align and add its markers
-        if (selectedHistoryOrder && selectedHistoryOrder.symbol === activeSymbol) {
-            const paneTf = paneTimeframes[paneId] || 'H1';
-            const decimals = selectedHistoryOrder.symbol.includes('EURUSD') ? 5 : 2;
-            const formatP = (val) => Number(val).toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
-
-            const parseToUnix = (dateStr) => {
-                if (!dateStr) return null;
-                const parts = dateStr.split(/[- :\/]/);
-                if (parts.length >= 6) {
-                    const y = parseInt(parts[0], 10);
-                    const m = parseInt(parts[1], 10) - 1; // 0-based month
-                    const d = parseInt(parts[2], 10);
-                    const hr = parseInt(parts[3], 10);
-                    const min = parseInt(parts[4], 10);
-                    const sec = parseInt(parts[5], 10);
-                    return Math.floor(Date.UTC(y, m, d, hr, min, sec) / 1000);
-                }
-                const parsed = new Date(dateStr.replace(/-/g, '/'));
-                return Math.floor(parsed.getTime() / 1000);
-            };
-
-            const alignTimeToTimeframe = (timestamp, tf) => {
-                const spacingMap = {
-                    "M1": 60,
-                    "M5": 300,
-                    "M15": 900,
-                    "M30": 1800,
-                    "H1": 3600,
-                    "H4": 14400,
-                    "D1": 86400
-                };
-                const seconds = spacingMap[tf] || 3600;
-                return Math.floor(timestamp / seconds) * seconds;
-            };
-
-            // Shift timestamps by +7 hours to match Thailand time (GMT+7)
-            const openTimeUnix = selectedHistoryOrder.open_time_raw 
-                ? selectedHistoryOrder.open_time_raw + 7 * 3600 
-                : parseToUnix(selectedHistoryOrder.open_time);
-            const closeTimeUnix = selectedHistoryOrder.close_time_raw 
-                ? selectedHistoryOrder.close_time_raw + 7 * 3600 
-                : parseToUnix(selectedHistoryOrder.close_time);
-            const alignedOpenTime = openTimeUnix ? alignTimeToTimeframe(openTimeUnix, paneTf) : null;
-            const alignedCloseTime = closeTimeUnix ? alignTimeToTimeframe(closeTimeUnix, paneTf) : null;
-
-            if (selectedHistoryOrder.open_price && alignedOpenTime) {
-                markers.push({
-                    time: alignedOpenTime,
-                    position: selectedHistoryOrder.type === 'buy' ? 'belowBar' : 'aboveBar',
-                    color: selectedHistoryOrder.type === 'buy' ? '#2ecc71' : '#e74c3c',
-                    shape: selectedHistoryOrder.type === 'buy' ? 'arrowUp' : 'arrowDown',
-                    size: 1.5,
-                    text: `${selectedHistoryOrder.type.toUpperCase()} #${selectedHistoryOrder.ticket} @ ${formatP(selectedHistoryOrder.open_price)}`
-                });
-            }
-
-            if (selectedHistoryOrder.close_price && alignedCloseTime) {
-                markers.push({
-                    time: alignedCloseTime,
-                    position: selectedHistoryOrder.type === 'buy' ? 'aboveBar' : 'belowBar',
-                    color: selectedHistoryOrder.profit >= 0 ? '#2ecc71' : '#e74c3c',
-                    shape: 'pin',
-                    size: 1.5,
-                    text: `CLOSE #${selectedHistoryOrder.ticket} @ ${formatP(selectedHistoryOrder.close_price)} (${selectedHistoryOrder.profit >= 0 ? '+' : ''}${Number(selectedHistoryOrder.profit).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD)`
-                });
-            }
-        }
-
-        // Sort markers chronologically to avoid lightweight-charts warnings/errors
-        markers.sort((a, b) => a.time - b.time);
-        series.setMarkers(markers);
     };
 
     // Helper to load patterns and swing ZigZag lines for a specific chart pane
@@ -877,7 +748,7 @@ const TradingApp = () => {
                 // 1. Draw ZigZag Line if we have swings
                 if (showChartPatterns && data.swings && data.swings.length > 0 && swingSeries) {
                     const lineData = data.swings.map(s => ({
-                        time: s.time + 7 * 3600,
+                        time: s.time,
                         value: s.price
                     }));
                     lineData.sort((a, b) => a.time - b.time);
@@ -894,7 +765,7 @@ const TradingApp = () => {
                         if (data.swings) {
                             data.swings.forEach(s => {
                                 markers.push({
-                                    time: s.time + 7 * 3600,
+                                    time: s.time,
                                     position: s.type === 'high' ? 'aboveBar' : 'belowBar',
                                     color: s.type === 'high' ? '#e74c3c' : '#2ecc71',
                                     shape: 'circle',
@@ -909,7 +780,7 @@ const TradingApp = () => {
                             const labels = ['X', 'A', 'B', 'C', 'D'];
                             pts.forEach((pt, idx) => {
                                 markers.push({
-                                    time: pt.time + 7 * 3600,
+                                    time: pt.time,
                                     position: pt.type === 'high' ? 'aboveBar' : 'belowBar',
                                     color: '#ffb703',
                                     shape: idx === 4 ? 'pin' : 'square',
@@ -919,7 +790,7 @@ const TradingApp = () => {
                             
                             const D = pts[4];
                             markers.push({
-                                time: D.time + 7 * 3600,
+                                time: D.time,
                                 position: D.type === 'high' ? 'aboveBar' : 'belowBar',
                                 color: data.harmonic.signal === 'buy' ? '#2ecc71' : '#e74c3c',
                                 shape: data.harmonic.signal === 'buy' ? 'arrowUp' : 'arrowDown',
@@ -931,7 +802,7 @@ const TradingApp = () => {
                             const pts = data.elliott.points;
                             pts.forEach((pt, idx) => {
                                 markers.push({
-                                    time: pt.time + 7 * 3600,
+                                    time: pt.time,
                                     position: pt.type === 'high' ? 'aboveBar' : 'belowBar',
                                     color: '#00b4d8',
                                     shape: 'circle',
@@ -941,7 +812,7 @@ const TradingApp = () => {
                             
                             const lastPt = pts[pts.length - 1];
                             markers.push({
-                                time: lastPt.time + 7 * 3600,
+                                time: lastPt.time,
                                 position: lastPt.type === 'high' ? 'aboveBar' : 'belowBar',
                                 color: data.elliott.signal === 'buy' ? '#2ecc71' : '#e74c3c',
                                 shape: data.elliott.signal === 'buy' ? 'arrowUp' : 'arrowDown',
@@ -951,8 +822,7 @@ const TradingApp = () => {
                     }
                     
                     markers.sort((a, b) => a.time - b.time);
-                    baseMarkersRef.current[paneId] = markers;
-                    updateChartMarkers(paneId);
+                    series.setMarkers(markers);
                 }
             }
         } catch (err) {
@@ -987,9 +857,9 @@ const TradingApp = () => {
             const chart = LightweightCharts.createChart(container, {
                 layout: {
                     background: { type: LightweightCharts.ColorType.Solid, color: '#0c1220' },
-                    textColor: '#cbd5e1',
-                    fontSize: 12,
-                    fontFamily: 'Inter, Outfit, sans-serif',
+                    textColor: '#94a3b8',
+                    fontSize: 11,
+                    fontFamily: 'Inter',
                 },
                 grid: {
                     vertLines: { color: 'rgba(38, 50, 80, 0.2)' },
@@ -1251,40 +1121,93 @@ const TradingApp = () => {
         };
     }, [activeSymbol, chartLayout, JSON.stringify(paneTimeframes)]);
 
-    // Multi-Timeframe live ticks updater
+    // WebSocket for live prices & chart ticks
     useEffect(() => {
-        const updateLastCandles = async () => {
-            const activePaneIds = chartLayout === 'single' ? [0] : chartLayout === 'dual' ? [0, 1] : [0, 1, 2, 3];
-            
-            for (const pId of activePaneIds) {
-                const series = candlestickSeriesesRef.current[pId];
-                if (!series) continue;
+        let ws = null;
+        let reconnectTimeout = null;
+        let isClosed = false;
 
-                const paneTf = paneTimeframes[pId] || 'H1';
+        const connectWS = () => {
+            if (isClosed) return;
+            
+            const activePaneIds = chartLayout === 'single' ? [0] : chartLayout === 'dual' ? [0, 1] : [0, 1, 2, 3];
+            const activeTfs = activePaneIds.map(pId => paneTimeframes[pId] || 'H1');
+            
+            // Access symbols list safely
+            const currentWatchlist = watchlistRef.current || [];
+            const watchlistSymbols = currentWatchlist.map(w => w.symbol);
+            
+            if (watchlistSymbols.length === 0) {
+                // Watchlist might not be loaded yet, retry in 1s
+                reconnectTimeout = setTimeout(connectWS, 1000);
+                return;
+            }
+
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/ws/live-data?symbol=${activeSymbol}&timeframes=${activeTfs.join(',')}&watchlist=${watchlistSymbols.join(',')}`;
+
+            ws = new WebSocket(wsUrl);
+
+            ws.onmessage = (event) => {
                 try {
-                    const res = await fetch(`/api/mt5/candles?symbol=${activeSymbol}&timeframe=${paneTf}&count=1`);
-                    if (res.ok) {
-                        const candles = await res.json();
-                        if (candles && candles.length > 0) {
-                            const candle = candles[0];
-                            series.update({
-                                time: candle.time + 7 * 3600,
-                                open: candle.open,
-                                high: candle.high,
-                                low: candle.low,
-                                close: candle.close
-                            });
-                        }
+                    const data = JSON.parse(event.data);
+                    
+                    // 1. Update watchlist prices
+                    if (data.watchlist) {
+                        setPrices(prevPrices => ({
+                            ...prevPrices,
+                            ...data.watchlist
+                        }));
+                    }
+
+                    // 2. Update chart ticks
+                    if (data.charts) {
+                        activePaneIds.forEach(pId => {
+                            const paneTf = paneTimeframes[pId] || 'H1';
+                            const tick = data.charts[paneTf];
+                            const series = candlestickSeriesesRef.current[pId];
+                            if (tick && series) {
+                                series.update({
+                                    time: tick.time,
+                                    open: tick.open,
+                                    high: tick.high,
+                                    low: tick.low,
+                                    close: tick.close
+                                });
+                            }
+                        });
                     }
                 } catch (err) {
-                    console.error(`Error updating live candle for pane ${pId}:`, err);
+                    console.error("Error parsing WebSocket message:", err);
                 }
-            }
+            };
+
+            ws.onerror = (err) => {
+                console.error("WebSocket error:", err);
+                ws.close();
+            };
+
+            ws.onclose = () => {
+                if (!isClosed) {
+                    reconnectTimeout = setTimeout(connectWS, 3000);
+                }
+            };
         };
 
-        const liveUpdateInterval = setInterval(updateLastCandles, 1000);
-        return () => clearInterval(liveUpdateInterval);
-    }, [activeSymbol, chartLayout, JSON.stringify(paneTimeframes)]);
+        connectWS();
+
+        return () => {
+            isClosed = true;
+            if (ws) {
+                try {
+                    ws.close();
+                } catch (e) {}
+            }
+            if (reconnectTimeout) {
+                clearTimeout(reconnectTimeout);
+            }
+        };
+    }, [activeSymbol, chartLayout, JSON.stringify(paneTimeframes), watchlist.map(w => w.symbol).join(",")]);
 
     // Multi-Timeframe live patterns & ZigZag swing updater
     useEffect(() => {
@@ -1330,9 +1253,9 @@ const TradingApp = () => {
         const chart = LightweightCharts.createChart(container, {
             layout: {
                 background: { type: LightweightCharts.ColorType.Solid, color: '#0c1220' },
-                textColor: '#cbd5e1',
-                fontSize: 12,
-                fontFamily: 'Inter, Outfit, sans-serif',
+                textColor: '#94a3b8',
+                fontSize: 11,
+                fontFamily: 'Inter',
             },
             grid: {
                 vertLines: { color: 'rgba(38, 50, 80, 0.2)' },
@@ -1374,7 +1297,7 @@ const TradingApp = () => {
 
         // Format equity curve data
         const chartData = backtestResult.equity_curve.map(item => ({
-            time: item.time + 7 * 3600,
+            time: item.time,
             value: item.value
         }));
         
@@ -1386,18 +1309,23 @@ const TradingApp = () => {
         backtestChartRef.current = chart;
         backtestAreaSeriesRef.current = areaSeries;
 
-        const resizeObserver = new ResizeObserver(() => {
+        const handleResize = () => {
             if (chart && container) {
                 chart.applyOptions({
                     width: container.clientWidth,
                     height: container.clientHeight
                 });
             }
-        });
-        resizeObserver.observe(container);
+        };
+
+        window.addEventListener('resize', handleResize);
+        
+        // Fire resize slightly after mount to fit properly
+        const resizeTimeout = setTimeout(handleResize, 150);
 
         return () => {
-            resizeObserver.disconnect();
+            window.removeEventListener('resize', handleResize);
+            clearTimeout(resizeTimeout);
             if (chart) {
                 try {
                     chart.remove();
@@ -1436,9 +1364,9 @@ const TradingApp = () => {
         const chart = LightweightCharts.createChart(container, {
             layout: {
                 background: { type: LightweightCharts.ColorType.Solid, color: '#0c1220' },
-                textColor: '#cbd5e1',
-                fontSize: 12,
-                fontFamily: 'Inter, Outfit, sans-serif',
+                textColor: '#94a3b8',
+                fontSize: 11,
+                fontFamily: 'Inter',
             },
             grid: {
                 vertLines: { color: 'rgba(38, 50, 80, 0.2)' },
@@ -1474,7 +1402,7 @@ const TradingApp = () => {
 
         // Format candlestick data
         const candleData = backtestResult.candles.map(item => ({
-            time: item.time + 7 * 3600,
+            time: item.time,
             open: item.open,
             high: item.high,
             low: item.low,
@@ -1484,26 +1412,57 @@ const TradingApp = () => {
         candleData.sort((a, b) => a.time - b.time);
         candlestickSeries.setData(candleData);
 
-        // Do not generate buy/sell markers overlay by default to keep the graph empty
-        candlestickSeries.setMarkers([]);
+        // Generate buy/sell markers overlay
+        const markers = [];
+        if (backtestResult.trades && backtestResult.trades.length > 0) {
+            backtestResult.trades.forEach(trade => {
+                // Entry Marker
+                if (trade.open_timestamp) {
+                    markers.push({
+                        time: trade.open_timestamp,
+                        position: trade.type === 'buy' ? 'belowBar' : 'aboveBar',
+                        color: trade.type === 'buy' ? '#2ecc71' : '#e74c3c',
+                        shape: trade.type === 'buy' ? 'arrowUp' : 'arrowDown',
+                        text: `${trade.type.toUpperCase()} (#${trade.ticket}) @ ${trade.open_price}`
+                    });
+                }
+                // Exit Marker
+                if (trade.close_timestamp) {
+                    markers.push({
+                        time: trade.close_timestamp,
+                        position: trade.type === 'buy' ? 'aboveBar' : 'belowBar',
+                        color: trade.profit >= 0 ? '#2ecc71' : '#e74c3c',
+                        shape: 'pin',
+                        text: `CLOSE (#${trade.ticket}) $${trade.profit >= 0 ? '+' : ''}${trade.profit}`
+                    });
+                }
+            });
+        }
+
+        // Sort markers by time chronologically
+        markers.sort((a, b) => a.time - b.time);
+        candlestickSeries.setMarkers(markers);
 
         chart.timeScale().fitContent();
 
         backtestPriceChartRef.current = chart;
         backtestCandlestickSeriesRef.current = candlestickSeries;
 
-        const resizeObserver = new ResizeObserver(() => {
+        const handleResize = () => {
             if (chart && container) {
                 chart.applyOptions({
                     width: container.clientWidth,
                     height: container.clientHeight
                 });
             }
-        });
-        resizeObserver.observe(container);
+        };
+
+        window.addEventListener('resize', handleResize);
+        const resizeTimeout = setTimeout(handleResize, 150);
 
         return () => {
-            resizeObserver.disconnect();
+            window.removeEventListener('resize', handleResize);
+            clearTimeout(resizeTimeout);
             if (chart) {
                 try {
                     chart.remove();
@@ -1513,153 +1472,6 @@ const TradingApp = () => {
             backtestCandlestickSeriesRef.current = null;
         };
     }, [activeTab, backtestSubTab, backtestResult, backtestLoading]);
-
-    // Draw backtest trade TP, SL, Open, Close price points, and PnL when selectedBacktestTrade changes
-    useEffect(() => {
-        let oldSeries = [];
-        let oldPriceLines = [];
-        if (backtestPriceLinesRef.current) {
-            if (Array.isArray(backtestPriceLinesRef.current)) {
-                oldSeries = backtestPriceLinesRef.current;
-            } else {
-                oldSeries = backtestPriceLinesRef.current.series || [];
-                oldPriceLines = backtestPriceLinesRef.current.priceLines || [];
-            }
-        }
-
-        oldSeries.forEach(series => {
-            if (backtestPriceChartRef.current) {
-                try {
-                    backtestPriceChartRef.current.removeSeries(series);
-                } catch (e) {}
-            }
-        });
-
-        if (backtestCandlestickSeriesRef.current) {
-            // Remove previous price lines
-            oldPriceLines.forEach(pl => {
-                try {
-                    backtestCandlestickSeriesRef.current.removePriceLine(pl);
-                } catch (e) {}
-            });
-            // Clear markers on the main candlestick series
-            backtestCandlestickSeriesRef.current.setMarkers([]);
-        }
-        backtestPriceLinesRef.current = { series: [], priceLines: [] };
-
-        if (!selectedBacktestTrade || !backtestPriceChartRef.current) return;
-
-        const chart = backtestPriceChartRef.current;
-        const decimals = (backtestForm.symbol && backtestForm.symbol.includes('EURUSD')) ? 5 : 2;
-        const formatP = (val) => Number(val).toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
-
-        const openTime = selectedBacktestTrade.open_timestamp ? selectedBacktestTrade.open_timestamp + 7 * 3600 : null;
-        const closeTime = selectedBacktestTrade.close_timestamp ? selectedBacktestTrade.close_timestamp + 7 * 3600 : null;
-        
-        const seriesList = [];
-        const priceLinesList = [];
-        const markersList = [];
-
-        // 1. Open Marker
-        if (selectedBacktestTrade.open_price && openTime) {
-            markersList.push({
-                time: openTime,
-                position: selectedBacktestTrade.type === 'buy' ? 'belowBar' : 'aboveBar',
-                color: selectedBacktestTrade.type === 'buy' ? '#2ecc71' : '#e74c3c',
-                shape: selectedBacktestTrade.type === 'buy' ? 'arrowUp' : 'arrowDown',
-                size: 1.5,
-                text: `${selectedBacktestTrade.type.toUpperCase()} #${selectedBacktestTrade.ticket} @ ${formatP(selectedBacktestTrade.open_price)}`
-            });
-        }
-
-        // 2. Close Marker
-        if (selectedBacktestTrade.close_price && closeTime) {
-            markersList.push({
-                time: closeTime,
-                position: selectedBacktestTrade.type === 'buy' ? 'aboveBar' : 'belowBar',
-                color: selectedBacktestTrade.profit >= 0 ? '#2ecc71' : '#e74c3c',
-                shape: 'pin',
-                size: 1.5,
-                text: `CLOSE #${selectedBacktestTrade.ticket} @ ${formatP(selectedBacktestTrade.close_price)} (${selectedBacktestTrade.profit >= 0 ? '+' : ''}${formatP(selectedBacktestTrade.profit)} USD)`
-            });
-        }
-
-        if (backtestCandlestickSeriesRef.current && markersList.length > 0) {
-            markersList.sort((a, b) => a.time - b.time);
-            backtestCandlestickSeriesRef.current.setMarkers(markersList);
-        }
-
-        // 3. SL Price Line
-        if (selectedBacktestTrade.sl && selectedBacktestTrade.sl > 0 && backtestCandlestickSeriesRef.current) {
-            const slPriceLine = backtestCandlestickSeriesRef.current.createPriceLine({
-                price: selectedBacktestTrade.sl,
-                color: '#e74c3c',
-                lineWidth: 1.5,
-                lineStyle: LightweightCharts.LineStyle.Dashed,
-                axisLabelVisible: true,
-                title: `SL: ${formatP(selectedBacktestTrade.sl)}`
-            });
-            priceLinesList.push(slPriceLine);
-        }
-
-        // 4. TP Price Line
-        if (selectedBacktestTrade.tp && selectedBacktestTrade.tp > 0 && backtestCandlestickSeriesRef.current) {
-            const tpPriceLine = backtestCandlestickSeriesRef.current.createPriceLine({
-                price: selectedBacktestTrade.tp,
-                color: '#2ecc71',
-                lineWidth: 1.5,
-                lineStyle: LightweightCharts.LineStyle.Dashed,
-                axisLabelVisible: true,
-                title: `TP: ${formatP(selectedBacktestTrade.tp)}`
-            });
-            priceLinesList.push(tpPriceLine);
-        }
-
-        // 4.1 Entry Price Line
-        if (selectedBacktestTrade.open_price && backtestCandlestickSeriesRef.current) {
-            const openPriceLine = backtestCandlestickSeriesRef.current.createPriceLine({
-                price: selectedBacktestTrade.open_price,
-                color: '#00b4d8',
-                lineWidth: 1.5,
-                lineStyle: LightweightCharts.LineStyle.Dotted,
-                axisLabelVisible: true,
-                title: `Entry: ${formatP(selectedBacktestTrade.open_price)}`
-            });
-            priceLinesList.push(openPriceLine);
-        }
-
-        // 4.2 Close Price Line (with PnL)
-        if (selectedBacktestTrade.close_price && backtestCandlestickSeriesRef.current) {
-            const closePriceLine = backtestCandlestickSeriesRef.current.createPriceLine({
-                price: selectedBacktestTrade.close_price,
-                color: selectedBacktestTrade.profit >= 0 ? '#2ecc71' : '#e74c3c',
-                lineWidth: 1.5,
-                lineStyle: LightweightCharts.LineStyle.Dotted,
-                axisLabelVisible: true,
-                title: `Close: ${formatP(selectedBacktestTrade.close_price)} (PnL: ${selectedBacktestTrade.profit >= 0 ? '+' : ''}${formatP(selectedBacktestTrade.profit)} USD)`
-            });
-            priceLinesList.push(closePriceLine);
-        }
-
-        // 5. Connect Open & Close with a dashed line (green/red based on win/loss)
-        if (selectedBacktestTrade.open_price && selectedBacktestTrade.close_price && openTime && closeTime) {
-            const pathSeries = chart.addLineSeries({
-                color: selectedBacktestTrade.profit >= 0 ? '#2ecc71' : '#e74c3c',
-                lineWidth: 2,
-                lineStyle: LightweightCharts.LineStyle.Dashed,
-                priceLineVisible: false,
-                lastValueVisible: false,
-                crosshairMarkerVisible: false
-            });
-            pathSeries.setData([
-                { time: openTime, value: selectedBacktestTrade.open_price },
-                { time: closeTime, value: selectedBacktestTrade.close_price }
-            ]);
-            seriesList.push(pathSeries);
-        }
-
-        backtestPriceLinesRef.current = { series: seriesList, priceLines: priceLinesList };
-    }, [selectedBacktestTrade, activeTab, backtestSubTab, backtestResult, backtestLoading]);
 
     // Resizing trigger for backtest chart on sidebars animation toggles
     useEffect(() => {
@@ -1701,7 +1513,6 @@ const TradingApp = () => {
 
         setBacktestLoading(true);
         setBacktestResult(null);
-        setSelectedBacktestTrade(null);
 
         try {
             const res = await fetch("/api/backtest", {
@@ -1716,8 +1527,7 @@ const TradingApp = () => {
                     lot_size: parseFloat(backtestForm.lot_size) || 0.1,
                     sl_points: parseFloat(backtestForm.sl_points) || 0.0,
                     tp_points: parseFloat(backtestForm.tp_points) || 0.0,
-                    initial_balance: parseFloat(backtestForm.initial_balance) || 10000.0,
-                    allowed_sessions: backtestForm.allowed_sessions || "all"
+                    initial_balance: parseFloat(backtestForm.initial_balance) || 10000.0
                 })
             });
 
@@ -2037,144 +1847,30 @@ const TradingApp = () => {
         setSelectedHistoryOrder(order);
     };
 
-    // Render backtest history deals log table
-    const renderBacktestDealsTable = (maxHeight = '450px', showTitle = true) => {
-        if (!backtestResult || !backtestResult.trades) return null;
-        
-        const decimals = (backtestForm.symbol && backtestForm.symbol.includes('EURUSD')) ? 5 : 2;
-        
-        return (
-            <div className="backtest-table-card" style={{ marginTop: '16px' }}>
-                {showTitle && (
-                    <h4 style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                        📜 บันทึกธุรกรรมประวัติศาสตร์การซื้อขายย้อนหลังอย่างละเอียด (คลิกที่แถวเพื่อแสดงรายละเอียด TP, SL บนกราฟ)
-                    </h4>
-                )}
-                
-                {backtestResult.trades.length === 0 ? (
-                    <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '11.5px', padding: '20px 0' }}>
-                        ไม่มีการเปิดธุรกรรมการเทรดใดๆ เกิดขึ้นในตลอดข้อมูลประวัติศาสตร์ lookback นี้
-                    </div>
-                ) : (
-                    <div className="backtest-table-wrapper" style={{ maxHeight: maxHeight }}>
-                        <table className="trading-table">
-                            <thead>
-                                <tr>
-                                    <th>Ticket</th>
-                                    <th>ประเภท</th>
-                                    <th>ขนาด Lot</th>
-                                    <th>ราคาเปิด</th>
-                                    <th>ราคาปิด</th>
-                                    <th>เวลาเปิด</th>
-                                    <th>เวลาปิด</th>
-                                    <th>ผลลัพธ์</th>
-                                    <th>กำไร (USD)</th>
-                                    <th>เหตุผลปิดดีล</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {backtestResult.trades.map((t, idx) => {
-                                    const isSelected = selectedBacktestTrade && selectedBacktestTrade.ticket === t.ticket;
-                                    return (
-                                        <tr 
-                                            key={`${t.ticket}-${idx}`}
-                                            onClick={() => setSelectedBacktestTrade(selectedBacktestTrade && selectedBacktestTrade.ticket === t.ticket ? null : t)}
-                                            className={isSelected ? 'selected-history-row' : ''}
-                                            style={{ cursor: 'pointer' }}
-                                        >
-                                            <td style={{ fontFamily: 'monospace' }}>#{t.ticket}</td>
-                                            <td>
-                                                <span className={t.type === 'buy' ? 'buy-badge' : 'sell-badge'}>
-                                                    {t.type.toUpperCase()}
-                                                </span>
-                                            </td>
-                                            <td style={{ fontFamily: 'monospace' }}>{backtestForm.lot_size}</td>
-                                            <td style={{ fontFamily: 'monospace' }}>{(t.open_price ?? 0).toLocaleString('en-US', { minimumFractionDigits: decimals })}</td>
-                                            <td style={{ fontFamily: 'monospace' }}>{(t.close_price ?? 0).toLocaleString('en-US', { minimumFractionDigits: decimals })}</td>
-                                            <td style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{t.open_time}</td>
-                                            <td style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>{t.close_time}</td>
-                                            <td>
-                                                <span className={t.result === 'win' ? 'result-win-badge' : 'result-loss-badge'}>
-                                                    {t.result.toUpperCase()}
-                                                </span>
-                                            </td>
-                                            <td className={(t.profit ?? 0) >= 0 ? 'price-up' : 'price-down'} style={{ fontWeight: 700, fontFamily: 'monospace' }}>
-                                                {(t.profit ?? 0) >= 0 ? '+' : ''}${(t.profit ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                                            </td>
-                                            <td style={{ fontWeight: 600, fontSize: '11px', color: t.reason === 'Take Profit' ? 'var(--bull-green)' : t.reason === 'Stop Loss' ? 'var(--bear-red)' : 'var(--text-secondary)' }}>
-                                                {t.reason}
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
-                    </div>
-                )}
-            </div>
-        );
-    };
-
     // Draw order TP, SL, Open, and Close price points when selectedHistoryOrder changes
     useEffect(() => {
-        // Clear existing history price points and price lines from all panes
-        if (historyPriceLinesRef.current) {
-            Object.entries(historyPriceLinesRef.current).forEach(([pId, data]) => {
-                const chart = chartsRef.current[pId];
-                const candlestickSeries = candlestickSeriesesRef.current[pId];
-                if (data) {
-                    let oldSeries = [];
-                    let oldPriceLines = [];
-                    if (Array.isArray(data)) {
-                        oldSeries = data;
-                    } else {
-                        oldSeries = data.series || [];
-                        oldPriceLines = data.priceLines || [];
-                    }
-                    
-                    if (chart) {
-                        oldSeries.forEach(s => {
-                            try {
-                                chart.removeSeries(s);
-                            } catch (e) {}
-                        });
-                    }
-                    if (candlestickSeries) {
-                        oldPriceLines.forEach(pl => {
-                            try {
-                                candlestickSeries.removePriceLine(pl);
-                            } catch (e) {}
-                        });
-                    }
-                }
-            });
-        }
-        historyPriceLinesRef.current = {};
-
-        // Update all active panes' markers to reflect current selection state (or lack thereof)
-        const activePaneIds = chartLayout === 'single' ? [0] : chartLayout === 'dual' ? [0, 1] : [0, 1, 2, 3];
-        activePaneIds.forEach(pId => {
-            updateChartMarkers(pId);
+        // Clear existing history price points from all panes
+        Object.entries(historyPriceLinesRef.current).forEach(([pId, seriesList]) => {
+            const chart = chartsRef.current[pId];
+            if (chart && seriesList) {
+                seriesList.forEach(series => {
+                     try {
+                         chart.removeSeries(series);
+                     } catch (e) {}
+                });
+            }
         });
+        historyPriceLinesRef.current = {};
 
         if (!selectedHistoryOrder || selectedHistoryOrder.symbol !== activeSymbol) return;
 
+        const activePaneIds = chartLayout === 'single' ? [0] : chartLayout === 'dual' ? [0, 1] : [0, 1, 2, 3];
         const decimals = selectedHistoryOrder.symbol.includes('EURUSD') ? 5 : 2;
         const formatP = (val) => Number(val).toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 
         // Helper to parse time string YYYY-MM-DD HH:MM:SS to Unix timestamp
         const parseToUnix = (dateStr) => {
             if (!dateStr) return null;
-            const parts = dateStr.split(/[- :\/]/);
-            if (parts.length >= 6) {
-                const y = parseInt(parts[0], 10);
-                const m = parseInt(parts[1], 10) - 1; // 0-based month
-                const d = parseInt(parts[2], 10);
-                const hr = parseInt(parts[3], 10);
-                const min = parseInt(parts[4], 10);
-                const sec = parseInt(parts[5], 10);
-                return Math.floor(Date.UTC(y, m, d, hr, min, sec) / 1000);
-            }
             const parsed = new Date(dateStr.replace(/-/g, '/'));
             return Math.floor(parsed.getTime() / 1000);
         };
@@ -2194,17 +1890,11 @@ const TradingApp = () => {
             return Math.floor(timestamp / seconds) * seconds;
         };
 
-        // Shift timestamps by +7 hours to match Thailand time (GMT+7)
-        const openTimeUnix = selectedHistoryOrder.open_time_raw 
-            ? selectedHistoryOrder.open_time_raw + 7 * 3600 
-            : parseToUnix(selectedHistoryOrder.open_time);
-        const closeTimeUnix = selectedHistoryOrder.close_time_raw 
-            ? selectedHistoryOrder.close_time_raw + 7 * 3600 
-            : parseToUnix(selectedHistoryOrder.close_time);
+        const openTimeUnix = parseToUnix(selectedHistoryOrder.open_time);
+        const closeTimeUnix = parseToUnix(selectedHistoryOrder.close_time);
 
         activePaneIds.forEach(pId => {
             const chart = chartsRef.current[pId];
-            const candlestickSeries = candlestickSeriesesRef.current[pId];
             if (!chart) return;
 
             const paneTf = paneTimeframes[pId] || 'H1';
@@ -2212,91 +1902,92 @@ const TradingApp = () => {
             const alignedCloseTime = closeTimeUnix ? alignTimeToTimeframe(closeTimeUnix, paneTf) : null;
 
             const seriesList = [];
-            const priceLinesList = [];
 
-            // 1. SL Price Line
-            if (candlestickSeries && selectedHistoryOrder.sl && selectedHistoryOrder.sl > 0) {
-                const slPriceLine = candlestickSeries.createPriceLine({
-                    price: selectedHistoryOrder.sl,
-                    color: '#e74c3c',
-                    lineWidth: 1.5,
-                    lineStyle: LightweightCharts.LineStyle.Dashed,
-                    axisLabelVisible: true,
-                    title: `SL: ${formatP(selectedHistoryOrder.sl)}`
-                });
-                priceLinesList.push(slPriceLine);
-            }
-
-            // 2. TP Price Line
-            if (candlestickSeries && selectedHistoryOrder.tp && selectedHistoryOrder.tp > 0) {
-                const tpPriceLine = candlestickSeries.createPriceLine({
-                    price: selectedHistoryOrder.tp,
-                    color: '#2ecc71',
-                    lineWidth: 1.5,
-                    lineStyle: LightweightCharts.LineStyle.Dashed,
-                    axisLabelVisible: true,
-                    title: `TP: ${formatP(selectedHistoryOrder.tp)}`
-                });
-                priceLinesList.push(tpPriceLine);
-            }
-
-            // 2.1 Entry Price Line
-            if (candlestickSeries && selectedHistoryOrder.open_price) {
-                const openPriceLine = candlestickSeries.createPriceLine({
-                    price: selectedHistoryOrder.open_price,
+            // 1. Open Point (plotted at open time and open price)
+            if (selectedHistoryOrder.open_price && alignedOpenTime) {
+                const openSeries = chart.addLineSeries({
                     color: '#00b4d8',
-                    lineWidth: 1.5,
-                    lineStyle: LightweightCharts.LineStyle.Dotted,
-                    axisLabelVisible: true,
-                    title: `Entry: ${formatP(selectedHistoryOrder.open_price)}`
-                });
-                priceLinesList.push(openPriceLine);
-            }
-
-            // 2.2 Close Price Line (if closed)
-            if (candlestickSeries && selectedHistoryOrder.close_price) {
-                const closePriceLine = candlestickSeries.createPriceLine({
-                    price: selectedHistoryOrder.close_price,
-                    color: selectedHistoryOrder.profit >= 0 ? '#2ecc71' : '#e74c3c',
-                    lineWidth: 1.5,
-                    lineStyle: LightweightCharts.LineStyle.Dotted,
-                    axisLabelVisible: true,
-                    title: `Close: ${formatP(selectedHistoryOrder.close_price)} (PnL: ${selectedHistoryOrder.profit >= 0 ? '+' : ''}${Number(selectedHistoryOrder.profit).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD)`
-                });
-                priceLinesList.push(closePriceLine);
-            }
-
-            // 2.3 Current Price Line (if open position)
-            if (candlestickSeries && !selectedHistoryOrder.close_price && selectedHistoryOrder.current_price) {
-                const currentPriceLine = candlestickSeries.createPriceLine({
-                    price: selectedHistoryOrder.current_price,
-                    color: selectedHistoryOrder.profit >= 0 ? '#2ecc71' : '#e74c3c',
-                    lineWidth: 1.5,
-                    lineStyle: LightweightCharts.LineStyle.Dotted,
-                    axisLabelVisible: true,
-                    title: `Current: ${formatP(selectedHistoryOrder.current_price)} (PnL: ${selectedHistoryOrder.profit >= 0 ? '+' : ''}${Number(selectedHistoryOrder.profit).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD)`
-                });
-                priceLinesList.push(currentPriceLine);
-            }
-
-            // 3. Connect Open & Close with a dashed line (green/red based on win/loss)
-            if (selectedHistoryOrder.open_price && selectedHistoryOrder.close_price && alignedOpenTime && alignedCloseTime) {
-                const pathSeries = chart.addLineSeries({
-                    color: selectedHistoryOrder.profit >= 0 ? '#2ecc71' : '#e74c3c',
-                    lineWidth: 2,
-                    lineStyle: LightweightCharts.LineStyle.Dashed,
+                    lineWidth: 0,
                     priceLineVisible: false,
                     lastValueVisible: false,
                     crosshairMarkerVisible: false
                 });
-                pathSeries.setData([
-                    { time: alignedOpenTime, value: selectedHistoryOrder.open_price },
-                    { time: alignedCloseTime, value: selectedHistoryOrder.close_price }
-                ]);
-                seriesList.push(pathSeries);
+                openSeries.setData([{ time: alignedOpenTime, value: selectedHistoryOrder.open_price }]);
+                openSeries.setMarkers([{
+                    time: alignedOpenTime,
+                    position: 'inBar',
+                    color: '#00b4d8',
+                    shape: 'circle',
+                    size: 1.5,
+                    text: `Open: ${formatP(selectedHistoryOrder.open_price)}`
+                }]);
+                seriesList.push(openSeries);
             }
 
-            historyPriceLinesRef.current[pId] = { series: seriesList, priceLines: priceLinesList };
+            // 2. Close Point (plotted at close time and close price)
+            if (selectedHistoryOrder.close_price && alignedCloseTime) {
+                const closeSeries = chart.addLineSeries({
+                    color: '#ffb703',
+                    lineWidth: 0,
+                    priceLineVisible: false,
+                    lastValueVisible: false,
+                    crosshairMarkerVisible: false
+                });
+                closeSeries.setData([{ time: alignedCloseTime, value: selectedHistoryOrder.close_price }]);
+                closeSeries.setMarkers([{
+                    time: alignedCloseTime,
+                    position: 'inBar',
+                    color: '#ffb703',
+                    shape: 'circle',
+                    size: 1.5,
+                    text: `Close: ${formatP(selectedHistoryOrder.close_price)}`
+                }]);
+                seriesList.push(closeSeries);
+            }
+
+            // 3. SL Point (plotted at open time and SL price)
+            if (selectedHistoryOrder.sl && selectedHistoryOrder.sl > 0 && alignedOpenTime) {
+                const slSeries = chart.addLineSeries({
+                    color: '#e74c3c',
+                    lineWidth: 0,
+                    priceLineVisible: false,
+                    lastValueVisible: false,
+                    crosshairMarkerVisible: false
+                });
+                slSeries.setData([{ time: alignedOpenTime, value: selectedHistoryOrder.sl }]);
+                slSeries.setMarkers([{
+                    time: alignedOpenTime,
+                    position: 'inBar',
+                    color: '#e74c3c',
+                    shape: 'circle',
+                    size: 1.2,
+                    text: `SL: ${formatP(selectedHistoryOrder.sl)}`
+                }]);
+                seriesList.push(slSeries);
+            }
+
+            // 4. TP Point (plotted at open time and TP price)
+            if (selectedHistoryOrder.tp && selectedHistoryOrder.tp > 0 && alignedOpenTime) {
+                const tpSeries = chart.addLineSeries({
+                    color: '#2ecc71',
+                    lineWidth: 0,
+                    priceLineVisible: false,
+                    lastValueVisible: false,
+                    crosshairMarkerVisible: false
+                });
+                tpSeries.setData([{ time: alignedOpenTime, value: selectedHistoryOrder.tp }]);
+                tpSeries.setMarkers([{
+                    time: alignedOpenTime,
+                    position: 'inBar',
+                    color: '#2ecc71',
+                    shape: 'circle',
+                    size: 1.2,
+                    text: `TP: ${formatP(selectedHistoryOrder.tp)}`
+                }]);
+                seriesList.push(tpSeries);
+            }
+
+            historyPriceLinesRef.current[pId] = seriesList;
         });
     }, [selectedHistoryOrder, activeSymbol, chartLayout, JSON.stringify(paneTimeframes)]);
 
@@ -2343,14 +2034,30 @@ const TradingApp = () => {
             lot_size: bot.lot_size,
             sl_points: bot.sl_points,
             tp_points: bot.tp_points,
-            pj_tp_target: bot.pj_tp_target || "manual",
             use_trend_filter: bot.use_trend_filter || false,
             use_mtf_filter: bot.use_mtf_filter || false,
             use_atr_sizing: bot.use_atr_sizing || false,
             risk_percent: bot.risk_percent || 1.0,
             allowed_sessions: bot.allowed_sessions || "all",
             use_news_filter: bot.use_news_filter || false,
-            max_hold_hours: bot.max_hold_hours || 0.0
+            stoch_rsi_len: bot.stoch_rsi_len !== undefined ? bot.stoch_rsi_len : 13,
+            stoch_len: bot.stoch_len !== undefined ? bot.stoch_len : 13,
+            stoch_k: bot.stoch_k !== undefined ? bot.stoch_k : 3,
+            stoch_d: bot.stoch_d !== undefined ? bot.stoch_d : 3,
+            macd_fast: bot.macd_fast !== undefined ? bot.macd_fast : 12,
+            macd_slow: bot.macd_slow !== undefined ? bot.macd_slow : 26,
+            macd_signal: bot.macd_signal !== undefined ? bot.macd_signal : 9,
+            pj_min_score: bot.pj_min_score !== undefined ? bot.pj_min_score : 6,
+            pj_use_volume: bot.pj_use_volume !== undefined ? bot.pj_use_volume : false,
+            pj_vol_multiplier: bot.pj_vol_multiplier !== undefined ? bot.pj_vol_multiplier : 2.0,
+            pj_vwap_anchor: bot.pj_vwap_anchor !== undefined ? bot.pj_vwap_anchor : "Session",
+            pj_atr_mult: bot.pj_atr_mult !== undefined ? bot.pj_atr_mult : 1.5,
+            pj_use_dyn_atr: bot.pj_use_dyn_atr !== undefined ? bot.pj_use_dyn_atr : true,
+            pj_tp_target: bot.pj_tp_target !== undefined ? bot.pj_tp_target : "manual",
+            ema_fast: bot.ema_fast !== undefined ? bot.ema_fast : 50,
+            ema_slow: bot.ema_slow !== undefined ? bot.ema_slow : 200,
+            adx_len: bot.adx_len !== undefined ? bot.adx_len : 25,
+            adx_threshold: bot.adx_threshold !== undefined ? bot.adx_threshold : 30
         });
         setSelectedAlgos((bot.algorithms || bot.algorithm || "").split(",").map(a => a.trim()).filter(Boolean));
         setSignalMode(bot.signal_mode || "or");
@@ -2373,7 +2080,6 @@ const TradingApp = () => {
                     lot_size: parseFloat(botForm.lot_size),
                     sl_points: parseFloat(botForm.sl_points) || 0.0,
                     tp_points: parseFloat(botForm.tp_points) || 0.0,
-                    pj_tp_target: botForm.pj_tp_target || "manual",
                     signal_mode: signalMode,
                     use_trend_filter: botForm.use_trend_filter || false,
                     use_mtf_filter: botForm.use_mtf_filter || false,
@@ -2381,7 +2087,24 @@ const TradingApp = () => {
                     risk_percent: parseFloat(botForm.risk_percent) || 1.0,
                     allowed_sessions: botForm.allowed_sessions || "all",
                     use_news_filter: botForm.use_news_filter || false,
-                    max_hold_hours: parseFloat(botForm.max_hold_hours) || 0.0
+                    stoch_rsi_len: parseInt(botForm.stoch_rsi_len) || 13,
+                    stoch_len: parseInt(botForm.stoch_len) || 13,
+                    stoch_k: parseInt(botForm.stoch_k) || 3,
+                    stoch_d: parseInt(botForm.stoch_d) || 3,
+                    macd_fast: parseInt(botForm.macd_fast) || 12,
+                    macd_slow: parseInt(botForm.macd_slow) || 26,
+                    macd_signal: parseInt(botForm.macd_signal) || 9,
+                    pj_min_score: parseInt(botForm.pj_min_score) || 6,
+                    pj_use_volume: botForm.pj_use_volume || false,
+                    pj_vol_multiplier: parseFloat(botForm.pj_vol_multiplier) || 2.0,
+                    pj_vwap_anchor: botForm.pj_vwap_anchor || "Session",
+                    pj_atr_mult: parseFloat(botForm.pj_atr_mult) || 1.5,
+                    pj_use_dyn_atr: botForm.pj_use_dyn_atr || false,
+                    pj_tp_target: botForm.pj_tp_target || "manual",
+                    ema_fast: parseInt(botForm.ema_fast) || 50,
+                    ema_slow: parseInt(botForm.ema_slow) || 200,
+                    adx_len: parseInt(botForm.adx_len) || 25,
+                    adx_threshold: parseInt(botForm.adx_threshold) || 30
                 })
             });
             if (res.ok) {
@@ -2404,98 +2127,6 @@ const TradingApp = () => {
             alert(`เกิดข้อผิดพลาด: ${err.message}`);
         }
     };
-
-    const handleAutoTradeAdvisor = async () => {
-        const advisorBot = bots.find(b => b.name === "Auto Advisor XAUUSD");
-        const isAdvisorRunning = advisorBot ? advisorBot.is_running : false;
-        
-        if (isAdvisorRunning) {
-            if (!confirm("คุณต้องการปิดการใช้งานบอท AI เทรดอัตโนมัติ (Auto Advisor XAUUSD) ใช่หรือไม่?")) return;
-            handleToggleBot(advisorBot.id);
-        } else {
-            if (!confirm("คุณต้องการอนุญาตให้ระบบ AI วิเคราะห์ตลาดทองคำล่าสุด คํานวณความเสี่ยง และเปิดสร้างพร้อมรันบอทเทรดอัตโนมัติ (Auto Advisor XAUUSD) ทันทีใช่หรือไม่?")) return;
-            try {
-                const res = await fetch("/api/bots/auto-advisor", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" }
-                });
-                if (res.ok) {
-                    const data = await res.json();
-                    alert(data.message || "ตั้งค่าและเปิดรันบอทเทรดอัตโนมัติสำเร็จ!");
-                    fetchBots();
-                } else {
-                    let errMsg = "Unknown error";
-                    try {
-                        const err = await res.json();
-                        errMsg = err.detail || err.message || JSON.stringify(err);
-                    } catch (_) {
-                        try {
-                            errMsg = await res.text();
-                        } catch (__) {}
-                    }
-                    alert(`ล้มเหลวในการตั้งค่าบอทอัตโนมัติ: ${errMsg}`);
-                }
-            } catch (err) {
-                alert(`เกิดข้อผิดพลาด: ${err.message}`);
-            }
-        }
-    };
-    
-    const fetchIndicatorSignals = async (showLoading = false) => {
-        if (showLoading) setLoadingSignals(true);
-        try {
-            const res = await fetch(`/api/bots/advisor-signals?symbol=${activeSymbol}&timeframe=${timeframe}`);
-            if (res.ok) {
-                const data = await res.json();
-                if (data.success) {
-                    setIndicatorSignals(data.indicators || []);
-                }
-            }
-        } catch (err) {
-            console.error("Error fetching indicator signals:", err);
-        } finally {
-            if (showLoading) setLoadingSignals(false);
-        }
-    };
-
-    const handleAutoStartIndicatorBot = async (algoId, algoName) => {
-        if (!confirm(`คุณต้องการเปิดบอทอัตโนมัติสำหรับอินดิเคเตอร์ ${algoName} ทันทีใช่หรือไม่?`)) return;
-        try {
-            const res = await fetch(`/api/bots/auto-advisor?algorithm=${algoId}&symbol=${activeSymbol}&timeframe=${timeframe}`, {
-                method: "POST"
-            });
-            if (res.ok) {
-                const data = await res.json();
-                alert(data.message || `เปิดบอทอัตโนมัติสำหรับ ${algoName} สำเร็จ!`);
-                fetchBots();
-            } else {
-                let errMsg = "Unknown error";
-                try {
-                    const err = await res.json();
-                    errMsg = err.detail || err.message || JSON.stringify(err);
-                } catch (_) {
-                    try {
-                        errMsg = await res.text();
-                    } catch (__) {}
-                }
-                alert(`ล้มเหลวในการตั้งค่าบอทอัตโนมัติ: ${errMsg}`);
-            }
-        } catch (err) {
-            alert(`เกิดข้อผิดพลาด: ${err.message}`);
-        }
-    };
-
-    useEffect(() => {
-        if (!indicatorSignalsOpen) return;
-        
-        fetchIndicatorSignals(indicatorSignals.length === 0);
-        
-        const interval = setInterval(() => {
-            fetchIndicatorSignals(false);
-        }, 10000);
-        
-        return () => clearInterval(interval);
-    }, [indicatorSignalsOpen, activeSymbol, timeframe]);
 
     const handleToggleBot = async (botId) => {
         try {
@@ -2776,33 +2407,76 @@ const TradingApp = () => {
             };
         }
 
-        const parseCloseTime = (str) => {
-            if (!str) return null;
-            return new Date(str.replace(/-/g, '/'));
-        };
+        // Apply filters dynamically before computing statistics
+        let filteredTrades = tradeHistory;
 
-        const now = new Date();
-        const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        const startOfWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-        const startOfMonth = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-        const startOfYear = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
-
-        const filteredTrades = tradeHistory.filter(t => {
-            if (!t.close_time) return false;
-            const closeDate = parseCloseTime(t.close_time);
-            if (!closeDate) return false;
-
-            if (analyticsTimeFilter === 'day') {
-                return closeDate >= startOfDay;
-            } else if (analyticsTimeFilter === 'week') {
-                return closeDate >= startOfWeek;
-            } else if (analyticsTimeFilter === 'month') {
-                return closeDate >= startOfMonth;
-            } else if (analyticsTimeFilter === 'year') {
-                return closeDate >= startOfYear;
+        // Timeframe filter
+        if (timeFilter !== 'all') {
+            const now = new Date();
+            if (timeFilter === 'day') {
+                const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+                const startOfTodaySec = Math.floor(startOfToday.getTime() / 1000);
+                filteredTrades = filteredTrades.filter(t => {
+                    const closeSec = t.close_time_raw || 0;
+                    return closeSec >= startOfTodaySec;
+                });
+            } else if (timeFilter === 'week') {
+                const day = now.getDay();
+                const diff = now.getDate() - day + (day === 0 ? -6 : 1);
+                const startOfWeek = new Date(now.setDate(diff));
+                startOfWeek.setHours(0, 0, 0, 0);
+                const startOfWeekSec = Math.floor(startOfWeek.getTime() / 1000);
+                filteredTrades = filteredTrades.filter(t => {
+                    const closeSec = t.close_time_raw || 0;
+                    return closeSec >= startOfWeekSec;
+                });
+            } else if (timeFilter === 'month') {
+                const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0);
+                const startOfMonthSec = Math.floor(startOfMonth.getTime() / 1000);
+                filteredTrades = filteredTrades.filter(t => {
+                    const closeSec = t.close_time_raw || 0;
+                    return closeSec >= startOfMonthSec;
+                });
+            } else if (timeFilter === 'custom') {
+                let customStartSec = 0;
+                let customEndSec = Infinity;
+                if (customStartDate) {
+                    const parts = customStartDate.split('-');
+                    const sDate = new Date(parts[0], parts[1] - 1, parts[2], 0, 0, 0);
+                    customStartSec = Math.floor(sDate.getTime() / 1000);
+                }
+                if (customEndDate) {
+                    const parts = customEndDate.split('-');
+                    const eDate = new Date(parts[0], parts[1] - 1, parts[2], 23, 59, 59);
+                    customEndSec = Math.floor(eDate.getTime() / 1000);
+                }
+                filteredTrades = filteredTrades.filter(t => {
+                    const closeSec = t.close_time_raw || 0;
+                    return closeSec >= customStartSec && closeSec <= customEndSec;
+                });
             }
-            return true; // 'all'
-        });
+        }
+
+        // Session filter
+        if (sessionFilter !== 'all') {
+            filteredTrades = filteredTrades.filter(t => {
+                let openHour = 0;
+                if (t.open_time_raw) {
+                    openHour = new Date(t.open_time_raw * 1000).getUTCHours();
+                } else if (t.open_time) {
+                    const parts = t.open_time.split(/[- :]/);
+                    if (parts.length >= 6) {
+                        const d = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2], parts[3], parts[4], parts[5]));
+                        openHour = d.getUTCHours();
+                    }
+                }
+                if (sessionFilter === 'asian') return openHour >= 0 && openHour < 8;
+                if (sessionFilter === 'london') return openHour >= 8 && openHour < 16;
+                if (sessionFilter === 'newyork') return openHour >= 13 && openHour < 21;
+                if (sessionFilter === 'overlap') return openHour >= 13 && openHour < 16;
+                return true;
+            });
+        }
 
         if (filteredTrades.length === 0) {
             return { 
@@ -2812,6 +2486,14 @@ const TradingApp = () => {
                 maxConWins: 0, maxConLosses: 0, botStats: [], sessionStats: [] 
             };
         }
+
+        // Group by session
+        const sessionGroups = {
+            asian: { key: 'asian', name: 'เอเชีย (Asian: 00-08 UTC)', totalTrades: 0, winCount: 0, loseCount: 0, totalProfit: 0.0, bots: {} },
+            london: { key: 'london', name: 'ลอนดอน (London: 08-16 UTC)', totalTrades: 0, winCount: 0, loseCount: 0, totalProfit: 0.0, bots: {} },
+            newyork: { key: 'newyork', name: 'นิวยอร์ก (NY: 13-21 UTC)', totalTrades: 0, winCount: 0, loseCount: 0, totalProfit: 0.0, bots: {} },
+            overlap: { key: 'overlap', name: 'ทับซ้อน (London+NY Overlap: 13-16 UTC)', totalTrades: 0, winCount: 0, loseCount: 0, totalProfit: 0.0, bots: {} }
+        };
 
         const todayStr = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD local timezone
         const currentMonthStr = todayStr.substring(0, 7); // YYYY-MM
@@ -2834,13 +2516,6 @@ const TradingApp = () => {
 
         // Group by bot
         const botGroups = {};
-
-        // Group by session
-        const sessions = {
-            morning: { key: 'morning', name: 'ช่วงเช้า (Morning: 06:00 - 12:00)', totalTrades: 0, winCount: 0, loseCount: 0, totalProfit: 0.0, grossProfit: 0.0, grossLoss: 0.0, best: -999999.0, worst: 999999.0, icon: 'sun', bots: {} },
-            afternoon: { key: 'afternoon', name: 'ช่วงบ่าย (Afternoon: 12:00 - 18:00)', totalTrades: 0, winCount: 0, loseCount: 0, totalProfit: 0.0, grossProfit: 0.0, grossLoss: 0.0, best: -999999.0, worst: 999999.0, icon: 'sunset', bots: {} },
-            evening: { key: 'evening', name: 'ช่วงค่ำ/ดึก (Evening/Night: 18:00 - 06:00)', totalTrades: 0, winCount: 0, loseCount: 0, totalProfit: 0.0, grossProfit: 0.0, grossLoss: 0.0, best: -999999.0, worst: 999999.0, icon: 'moon', bots: {} }
-        };
 
         for (const t of filteredTrades) {
             total += t.profit;
@@ -2868,6 +2543,23 @@ const TradingApp = () => {
                 monthProfit += t.profit;
             }
             
+            // Session determination
+            let openHour = 0;
+            if (t.open_time_raw) {
+                openHour = new Date(t.open_time_raw * 1000).getUTCHours();
+            } else if (t.open_time) {
+                const parts = t.open_time.split(/[- :]/);
+                if (parts.length >= 6) {
+                    const d = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2], parts[3], parts[4], parts[5]));
+                    openHour = d.getUTCHours();
+                }
+            }
+
+            const isAsian = openHour >= 0 && openHour < 8;
+            const isLondon = openHour >= 8 && openHour < 16;
+            const isNY = openHour >= 13 && openHour < 21;
+            const isOverlap = openHour >= 13 && openHour < 16;
+
             // Clean strategy suffix
             const cleanComment = t.comment ? t.comment.replace(/\s*\[.*?\]$/, '') : '';
             const isManualComment = (c) => {
@@ -2876,6 +2568,63 @@ const TradingApp = () => {
                 return lower === 'manual' || lower === 'simulation' || lower === 'เทรดเอง (manual)' || lower.includes('real close') || lower.includes('close via') || lower.includes('mt5 trader');
             };
             const sourceName = cleanComment ? (isManualComment(cleanComment) ? 'เทรดเอง (Manual)' : cleanComment) : 'เทรดเอง (Manual)';
+
+            if (isAsian) {
+                sessionGroups.asian.totalTrades++;
+                sessionGroups.asian.totalProfit += t.profit;
+                if (t.profit > 0) sessionGroups.asian.winCount++;
+                else sessionGroups.asian.loseCount++;
+
+                if (!sessionGroups.asian.bots[sourceName]) {
+                    sessionGroups.asian.bots[sourceName] = { name: sourceName, totalTrades: 0, winCount: 0, loseCount: 0, totalProfit: 0.0 };
+                }
+                sessionGroups.asian.bots[sourceName].totalTrades++;
+                sessionGroups.asian.bots[sourceName].totalProfit += t.profit;
+                if (t.profit > 0) sessionGroups.asian.bots[sourceName].winCount++;
+                else sessionGroups.asian.bots[sourceName].loseCount++;
+            }
+            if (isLondon) {
+                sessionGroups.london.totalTrades++;
+                sessionGroups.london.totalProfit += t.profit;
+                if (t.profit > 0) sessionGroups.london.winCount++;
+                else sessionGroups.london.loseCount++;
+
+                if (!sessionGroups.london.bots[sourceName]) {
+                    sessionGroups.london.bots[sourceName] = { name: sourceName, totalTrades: 0, winCount: 0, loseCount: 0, totalProfit: 0.0 };
+                }
+                sessionGroups.london.bots[sourceName].totalTrades++;
+                sessionGroups.london.bots[sourceName].totalProfit += t.profit;
+                if (t.profit > 0) sessionGroups.london.bots[sourceName].winCount++;
+                else sessionGroups.london.bots[sourceName].loseCount++;
+            }
+            if (isNY) {
+                sessionGroups.newyork.totalTrades++;
+                sessionGroups.newyork.totalProfit += t.profit;
+                if (t.profit > 0) sessionGroups.newyork.winCount++;
+                else sessionGroups.newyork.loseCount++;
+
+                if (!sessionGroups.newyork.bots[sourceName]) {
+                    sessionGroups.newyork.bots[sourceName] = { name: sourceName, totalTrades: 0, winCount: 0, loseCount: 0, totalProfit: 0.0 };
+                }
+                sessionGroups.newyork.bots[sourceName].totalTrades++;
+                sessionGroups.newyork.bots[sourceName].totalProfit += t.profit;
+                if (t.profit > 0) sessionGroups.newyork.bots[sourceName].winCount++;
+                else sessionGroups.newyork.bots[sourceName].loseCount++;
+            }
+            if (isOverlap) {
+                sessionGroups.overlap.totalTrades++;
+                sessionGroups.overlap.totalProfit += t.profit;
+                if (t.profit > 0) sessionGroups.overlap.winCount++;
+                else sessionGroups.overlap.loseCount++;
+
+                if (!sessionGroups.overlap.bots[sourceName]) {
+                    sessionGroups.overlap.bots[sourceName] = { name: sourceName, totalTrades: 0, winCount: 0, loseCount: 0, totalProfit: 0.0 };
+                }
+                sessionGroups.overlap.bots[sourceName].totalTrades++;
+                sessionGroups.overlap.bots[sourceName].totalProfit += t.profit;
+                if (t.profit > 0) sessionGroups.overlap.bots[sourceName].winCount++;
+                else sessionGroups.overlap.bots[sourceName].loseCount++;
+            }
             
             if (!botGroups[sourceName]) {
                 botGroups[sourceName] = { name: sourceName, totalTrades: 0, winCount: 0, loseCount: 0, totalProfit: 0.0 };
@@ -2887,45 +2636,6 @@ const TradingApp = () => {
                 botGroups[sourceName].winCount += 1;
             } else {
                 botGroups[sourceName].loseCount += 1;
-            }
-
-            // Session P&L calculations
-            if (t.close_time && t.close_time.length >= 13) {
-                const hour = parseInt(t.close_time.substring(11, 13));
-                let sessKey = 'evening';
-                if (hour >= 6 && hour < 12) {
-                    sessKey = 'morning';
-                } else if (hour >= 12 && hour < 18) {
-                    sessKey = 'afternoon';
-                }
-                
-                const s = sessions[sessKey];
-                s.totalTrades += 1;
-                s.totalProfit += t.profit;
-                if (t.profit > 0) {
-                    s.winCount += 1;
-                    s.grossProfit += t.profit;
-                } else {
-                    s.loseCount += 1;
-                    s.grossLoss += Math.abs(t.profit);
-                }
-                if (t.profit > s.best) s.best = t.profit;
-                if (t.profit < s.worst) s.worst = t.profit;
-
-                // Track bot stats within session
-                if (!s.bots[sourceName]) {
-                    s.bots[sourceName] = { name: sourceName, totalTrades: 0, winCount: 0, loseCount: 0, totalProfit: 0.0, grossProfit: 0.0, grossLoss: 0.0 };
-                }
-                const sb = s.bots[sourceName];
-                sb.totalTrades += 1;
-                sb.totalProfit += t.profit;
-                if (t.profit > 0) {
-                    sb.winCount += 1;
-                    sb.grossProfit += t.profit;
-                } else {
-                    sb.loseCount += 1;
-                    sb.grossLoss += Math.abs(t.profit);
-                }
             }
         }
 
@@ -2939,14 +2649,18 @@ const TradingApp = () => {
         const riskRewardRatio = parseFloat(avgLoss) > 0 ? (parseFloat(avgWin) / parseFloat(avgLoss)).toFixed(2) : "1.00";
 
         // Calculate consecutive win/loss streaks (sort chronologically first)
-        const sortedTrades = [...filteredTrades].sort((a, b) => new Date(a.close_time) - new Date(b.close_time));
+        const sortedTrades = [...filteredTrades].sort((a, b) => {
+            const timeA = a.close_time_raw || new Date(a.close_time).getTime() / 1000;
+            const timeB = b.close_time_raw || new Date(b.close_time).getTime() / 1000;
+            return timeA - timeB;
+        });
         let maxConWins = 0;
         let maxConLosses = 0;
         let currentConWins = 0;
         let currentConLosses = 0;
 
         for (const t of sortedTrades) {
-            if ((t.profit ?? 0) >= 0) {
+            if (t.profit >= 0) {
                 currentConWins++;
                 if (currentConWins > maxConWins) maxConWins = currentConWins;
                 currentConLosses = 0;
@@ -2970,33 +2684,21 @@ const TradingApp = () => {
             };
         }).sort((a, b) => parseFloat(b.totalProfit) - parseFloat(a.totalProfit));
 
-        const sessionStats = Object.values(sessions).map(sess => {
-            const winRate = sess.totalTrades > 0 ? (sess.winCount / sess.totalTrades * 100).toFixed(1) : '0.0';
-            const profitFactor = sess.grossLoss > 0 ? (sess.grossProfit / sess.grossLoss).toFixed(2) : (sess.grossProfit > 0 ? 'Max' : '0.00');
-            const avgProfit = sess.totalTrades > 0 ? (sess.totalProfit / sess.totalTrades).toFixed(2) : '0.00';
-            
-            const botsArr = Object.values(sess.bots).map(b => {
-                const bWinRate = b.totalTrades > 0 ? (b.winCount / b.totalTrades * 100).toFixed(1) : '0.0';
-                const bProfitFactor = b.grossLoss > 0 ? (b.grossProfit / b.grossLoss).toFixed(2) : (b.grossProfit > 0 ? 'Max' : '0.00');
-                const bAvgProfit = b.totalTrades > 0 ? (b.totalProfit / b.totalTrades).toFixed(2) : '0.00';
+        const sessionStats = Object.values(sessionGroups).map(sess => {
+            const sessWinRate = sess.totalTrades > 0 ? (sess.winCount / sess.totalTrades * 100).toFixed(1) : '0.0';
+            const botBreakdown = Object.values(sess.bots).map(b => {
                 return {
                     ...b,
-                    winRate: bWinRate,
-                    profitFactor: bProfitFactor,
-                    avgProfit: bAvgProfit,
+                    winRate: b.totalTrades > 0 ? (b.winCount / b.totalTrades * 100).toFixed(1) : '0.0',
                     totalProfit: b.totalProfit.toFixed(2)
                 };
             }).sort((a, b) => parseFloat(b.totalProfit) - parseFloat(a.totalProfit));
 
             return {
                 ...sess,
-                winRate: winRate,
-                profitFactor: profitFactor,
-                avgProfit: avgProfit,
-                best: sess.totalTrades > 0 ? sess.best.toFixed(2) : '0.00',
-                worst: sess.totalTrades > 0 ? sess.worst.toFixed(2) : '0.00',
+                winRate: sessWinRate,
                 totalProfit: sess.totalProfit.toFixed(2),
-                bots: botsArr
+                bots: botBreakdown
             };
         });
 
@@ -3022,6 +2724,124 @@ const TradingApp = () => {
             botStats: botStats,
             sessionStats: sessionStats
         };
+    };
+
+    const renderFilterBar = () => {
+        return (
+            <div className="sidebar-panel-card" style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '16px',
+                padding: '12px 16px',
+                marginBottom: '16px',
+                border: '1px solid rgba(255,255,255,0.06)',
+                background: 'rgba(255,255,255,0.01)',
+                borderRadius: '8px'
+            }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '12px' }}>
+                    {/* Timeframe selector buttons */}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', marginRight: '4px' }}>
+                            ช่วงเวลา (Timeframe):
+                        </span>
+                        {[
+                            { id: 'all', label: 'ทั้งหมด (All)' },
+                            { id: 'day', label: 'วันนี้ (Day)' },
+                            { id: 'week', label: 'สัปดาห์นี้ (Week)' },
+                            { id: 'month', label: 'เดือนนี้ (Month)' },
+                            { id: 'custom', label: 'เลือกช่วงเวลาเอง (Custom)' }
+                        ].map(item => {
+                            const isActive = timeFilter === item.id;
+                            return (
+                                <button
+                                    key={item.id}
+                                    onClick={() => setTimeFilter(item.id)}
+                                    style={{
+                                        padding: '6px 12px',
+                                        fontSize: '11px',
+                                        fontWeight: 'bold',
+                                        borderRadius: '4px',
+                                        border: isActive ? '1px solid var(--accent-gold)' : '1px solid rgba(255,255,255,0.08)',
+                                        background: isActive ? 'rgba(255, 183, 3, 0.12)' : 'rgba(255,255,255,0.02)',
+                                        color: isActive ? 'var(--accent-gold)' : 'var(--text-secondary)',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.2s ease'
+                                    }}
+                                >
+                                    {item.label}
+                                </button>
+                            );
+                        })}
+                    </div>
+
+                    {/* Custom date range picker (only shown if custom is selected) */}
+                    {timeFilter === 'custom' && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(255,255,255,0.02)', padding: '6px 12px', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                            <input
+                                type="date"
+                                value={customStartDate}
+                                onChange={(e) => setCustomStartDate(e.target.value)}
+                                style={{
+                                    background: 'transparent',
+                                    border: 'none',
+                                    color: 'var(--text-primary)',
+                                    fontSize: '11px',
+                                    outline: 'none',
+                                    cursor: 'pointer'
+                                }}
+                            />
+                            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>ถึง</span>
+                            <input
+                                type="date"
+                                value={customEndDate}
+                                onChange={(e) => setCustomEndDate(e.target.value)}
+                                style={{
+                                    background: 'transparent',
+                                    border: 'none',
+                                    color: 'var(--text-primary)',
+                                    fontSize: '11px',
+                                    outline: 'none',
+                                    cursor: 'pointer'
+                                }}
+                            />
+                        </div>
+                    )}
+                </div>
+
+                {/* Session selector */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                        เซสชัน (Session):
+                    </span>
+                    <select
+                        value={sessionFilter}
+                        onChange={(e) => setSessionFilter(e.target.value)}
+                        style={{
+                            padding: '6px 12px',
+                            fontSize: '11px',
+                            fontWeight: 'bold',
+                            borderRadius: '4px',
+                            border: '1px solid rgba(255,255,255,0.08)',
+                            background: 'rgba(255,255,255,0.02)',
+                            color: 'var(--text-secondary)',
+                            cursor: 'pointer',
+                            outline: 'none',
+                            transition: 'all 0.2s ease',
+                            appearance: 'auto'
+                        }}
+                    >
+                        <option value="all" style={{ background: '#0d1117', color: '#fff' }}>ทุกเซสชัน (All Sessions)</option>
+                        <option value="asian" style={{ background: '#0d1117', color: '#fff' }}>เอเชีย (Asian: 00-08 UTC)</option>
+                        <option value="london" style={{ background: '#0d1117', color: '#fff' }}>ลอนดอน (London: 08-16 UTC)</option>
+                        <option value="newyork" style={{ background: '#0d1117', color: '#fff' }}>นิวยอร์ก (NY: 13-21 UTC)</option>
+                        <option value="overlap" style={{ background: '#0d1117', color: '#fff' }}>ทับซ้อน (London+NY Overlap: 13-16 UTC)</option>
+                    </select>
+                </div>
+
+            </div>
+        );
     };
 
     const analytics = calculateAnalytics();
@@ -3219,29 +3039,8 @@ const TradingApp = () => {
                             <Icon name="trend-up" size={18} />
                             <span>การวิเคราะห์ประสิทธิภาพเชิงลึกพอร์ตการลงทุน (Deep Analytics)</span>
                         </h2>
-                        {/* Time Filter Segmented Control */}
-                        <div style={{ display: 'flex', gap: '4px', background: 'var(--bg-main)', padding: '4px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
-                            {['all', 'day', 'week', 'month', 'year'].map(filter => (
-                                <button
-                                    key={filter}
-                                    onClick={() => setAnalyticsTimeFilter(filter)}
-                                    style={{
-                                        padding: '4px 10px',
-                                        fontSize: '11px',
-                                        fontWeight: 'bold',
-                                        borderRadius: '4px',
-                                        border: 'none',
-                                        background: analyticsTimeFilter === filter ? 'var(--accent-gold)' : 'transparent',
-                                        color: analyticsTimeFilter === filter ? '#000' : 'var(--text-muted)',
-                                        cursor: 'pointer',
-                                        transition: 'all 0.2s ease'
-                                    }}
-                                >
-                                    {filter === 'all' ? 'ทั้งหมด' : filter === 'day' ? 'วันนี้' : filter === 'week' ? 'สัปดาห์นี้' : filter === 'month' ? 'เดือนนี้' : 'ปีนี้'}
-                                </button>
-                            ))}
-                        </div>
                     </div>
+                    {renderFilterBar()}
                     {/* Top Summary Cards */}
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
                         <div className="sidebar-panel-card" style={{ padding: '16px', textAlign: 'center' }}>
@@ -3324,226 +3123,11 @@ const TradingApp = () => {
                         </div>
                     </div>
 
-                    {/* Trading Sessions Performance Analytics Card */}
-                    <div className="sidebar-panel-card" style={{ padding: '20px', border: '1px solid rgba(255,255,255,0.06)' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                            <h3 style={{ fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0, color: 'var(--text-secondary)' }}>
-                                วิเคราะห์สถิติกำไรและประสิทธิภาพแยกตามช่วงเวลาเทรด (Trading Session Analytics)
-                            </h3>
-                        </div>
-
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '20px' }}>
-                            {analytics.sessionStats.map((sess, idx) => {
-                                const netProfit = parseFloat(sess.totalProfit);
-                                const profitColor = netProfit > 0 ? 'var(--bull-green)' : netProfit < 0 ? 'var(--bear-red)' : 'var(--text-muted)';
-                                const winRateVal = parseFloat(sess.winRate);
-                                
-                                return (
-                                                    <div key={idx} style={{ 
-                                                        background: 'rgba(255, 255, 255, 0.02)', 
-                                                        border: '1px solid rgba(255, 255, 255, 0.04)', 
-                                                        borderRadius: '8px', 
-                                                        padding: '12px 16px',
-                                                        display: 'flex',
-                                                        flexDirection: 'column',
-                                                        gap: '6px'
-                                                    }}>
-                                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                                            <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                                <span style={{ color: sess.icon === 'sun' ? '#ffb703' : sess.icon === 'sunset' ? '#fb8500' : '#8ecae6', display: 'inline-flex' }}>
-                                                                    <Icon name={sess.icon} size={14} />
-                                                                </span>
-                                                                <span>{sess.name.split(' (')[0]}</span>
-                                                            </span>
-                                                            <span style={{ fontSize: '9px', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
-                                                                {sess.name.match(/\(([^)]+)\)/)?.[1] || ''}
-                                                            </span>
-                                                        </div>
-                                                        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginTop: '4px' }}>
-                                                            <span style={{ fontSize: '18px', fontWeight: 700, fontFamily: 'monospace', color: profitColor }}>
-                                                                {netProfit >= 0 ? '+' : ''}${sess.totalProfit}
-                                                            </span>
-                                                            <span style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--text-secondary)' }}>
-                                                                Win Rate: <span style={{ color: winRateVal >= 60 ? 'var(--bull-green)' : winRateVal >= 45 ? 'var(--accent-gold)' : 'var(--bear-red)', fontFamily: 'monospace' }}>{sess.winRate}%</span>
-                                                            </span>
-                                                        </div>
-                                                        <div style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between', marginTop: '2px' }}>
-                                                            <span>เทรดทั้งหมด: <strong style={{ color: 'var(--text-secondary)', fontFamily: 'monospace' }}>{sess.totalTrades}</strong> ไม้</span>
-                                                            <span>ชนะ/แพ้: <strong style={{ color: 'var(--bull-green)', fontFamily: 'monospace' }}>{sess.winCount}</strong> / <strong style={{ color: 'var(--bear-red)', fontFamily: 'monospace' }}>{sess.loseCount}</strong></span>
-                                                        </div>
-                                                    </div>
-                                );
-                            })}
-                        </div>
-
-                        {analytics.sessionStats.length === 0 ? (
-                            <div style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted)' }}>
-                                ไม่มีข้อมูลสถิติช่วงเวลาเทรดในขณะนี้
-                            </div>
-                        ) : (
-                            <table className="trading-table">
-                                <thead>
-                                                    <tr>
-                                                        <th>ช่วงเวลาเทรด (Trading Session)</th>
-                                                        <th style={{ textAlign: 'center' }}>จำนวนออเดอร์ (Trades)</th>
-                                                        <th style={{ textAlign: 'center' }}>สถิติ ชนะ / แพ้ (W / L)</th>
-                                                        <th style={{ textAlign: 'center' }}>อัตราการชนะ (Win Rate)</th>
-                                                        <th style={{ textAlign: 'center' }}>Profit Factor</th>
-                                                        <th style={{ textAlign: 'center' }}>เฉลี่ยต่อไม้ (Avg P&L)</th>
-                                                        <th style={{ textAlign: 'center' }}>ดีสุด / แย่สุด (Best/Worst)</th>
-                                                        <th style={{ textAlign: 'right' }}>กำไร/ขาดทุนสุทธิ (Net P&L)</th>
-                                                    </tr>
-                                </thead>
-                                <tbody>
-                                                    {analytics.sessionStats.map((sess, index) => {
-                                                        const winRateVal = parseFloat(sess.winRate);
-                                                        let winRateColor = 'var(--text-muted)';
-                                                        if (winRateVal >= 60) winRateColor = 'var(--bull-green)';
-                                                        else if (winRateVal >= 45) winRateColor = 'var(--accent-gold)';
-                                                        else if (winRateVal > 0) winRateColor = 'var(--bear-red)';
-
-                                                        const netProfit = parseFloat(sess.totalProfit);
-                                                        const profitColorClass = netProfit > 0 ? 'price-up' : netProfit < 0 ? 'price-down' : '';
-                                                        const isExpanded = !!expandedSessions[sess.key];
-
-                                                        return (
-                                                            <React.Fragment key={index}>
-                                                                <tr style={{ background: isExpanded ? 'rgba(255, 255, 255, 0.02)' : '' }}>
-                                                                    <td 
-                                                                        style={{ fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', userSelect: 'none' }} 
-                                                                        onClick={() => {
-                                                                            setExpandedSessions(prev => ({
-                                                                                ...prev,
-                                                                                [sess.key]: !prev[sess.key]
-                                                                            }));
-                                                                        }}
-                                                                    >
-                                                                        <span style={{ color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', transition: 'transform 0.2s', transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}>
-                                                                            <Icon name={isExpanded ? "chevron-up" : "chevron-down"} size={14} />
-                                                                        </span>
-                                                                        <span style={{ color: sess.icon === 'sun' ? '#ffb703' : sess.icon === 'sunset' ? '#fb8500' : '#8ecae6', display: 'inline-flex', alignItems: 'center' }}>
-                                                                            <Icon name={sess.icon} size={14} />
-                                                                        </span>
-                                                                        <span>{sess.name}</span>
-                                                                    </td>
-                                                                    <td style={{ textAlign: 'center', fontFamily: 'monospace' }}>{sess.totalTrades}</td>
-                                                                    <td style={{ textAlign: 'center', fontFamily: 'monospace' }}>
-                                                                        <span style={{ color: 'var(--bull-green)' }}>{sess.winCount}</span>
-                                                                        <span style={{ color: 'var(--text-muted)', margin: '0 4px' }}>/</span>
-                                                                        <span style={{ color: 'var(--bear-red)' }}>{sess.loseCount}</span>
-                                                                    </td>
-                                                                    <td style={{ textAlign: 'center' }}>
-                                                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                                                                            <span style={{ fontWeight: 700, fontFamily: 'monospace', color: winRateColor }}>
-                                                                                {sess.winRate}%
-                                                                            </span>
-                                                                            <div style={{ width: '55px', height: '4px', background: 'rgba(255,255,255,0.06)', borderRadius: '2px', overflow: 'hidden' }}>
-                                                                                <div style={{ width: `${winRateVal}%`, height: '100%', background: winRateColor }}></div>
-                                                                            </div>
-                                                                        </div>
-                                                                    </td>
-                                                                    <td style={{ textAlign: 'center', fontFamily: 'monospace', fontWeight: 600, color: sess.profitFactor === 'Max' || parseFloat(sess.profitFactor) >= 1.5 ? 'var(--bull-green)' : parseFloat(sess.profitFactor) >= 1.0 ? 'var(--accent-gold)' : 'var(--bear-red)' }}>
-                                                                        {sess.profitFactor}
-                                                                    </td>
-                                                                    <td className={parseFloat(sess.avgProfit) >= 0 ? 'price-up' : 'price-down'} style={{ textAlign: 'center', fontFamily: 'monospace', fontWeight: 600 }}>
-                                                                        {parseFloat(sess.avgProfit) >= 0 ? '+' : ''}${sess.avgProfit}
-                                                                    </td>
-                                                                    <td style={{ textAlign: 'center', fontFamily: 'monospace', fontSize: '11px', color: 'var(--text-muted)' }}>
-                                                                        <span className="price-up">+${sess.best}</span>
-                                                                        <span style={{ margin: '0 4px' }}>|</span>
-                                                                        <span className="price-down">${sess.worst}</span>
-                                                                    </td>
-                                                                    <td className={profitColorClass} style={{ textAlign: 'right', fontWeight: 700, fontFamily: 'monospace' }}>
-                                                                        {netProfit >= 0 ? '+' : ''}${sess.totalProfit}
-                                                                    </td>
-                                                                </tr>
-                                                                {isExpanded && (
-                                                                    <tr>
-                                                                        <td colSpan="8" style={{ padding: '0 0 16px 28px', background: 'rgba(255, 255, 255, 0.01)' }}>
-                                                                            <div style={{ 
-                                                                                borderLeft: '2px solid var(--accent-gold)', 
-                                                                                paddingLeft: '16px', 
-                                                                                marginTop: '8px',
-                                                                                overflowX: 'auto'
-                                                                            }}>
-                                                                                <table className="trading-table" style={{ width: '100%', background: 'transparent', border: 'none', margin: '4px 0' }}>
-                                                                                    <thead>
-                                                                                        <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                                                                                            <th style={{ fontSize: '11px', color: 'var(--text-muted)', padding: '6px 8px' }}>ชื่อบอทเทรด / แหล่ง (Bot Name / Source)</th>
-                                                                                            <th style={{ fontSize: '11px', color: 'var(--text-muted)', padding: '6px 8px', textAlign: 'center' }}>จำนวนออเดอร์ (Trades)</th>
-                                                                                            <th style={{ fontSize: '11px', color: 'var(--text-muted)', padding: '6px 8px', textAlign: 'center' }}>สถิติ ชนะ / แพ้ (W / L)</th>
-                                                                                            <th style={{ fontSize: '11px', color: 'var(--text-muted)', padding: '6px 8px', textAlign: 'center' }}>อัตราการชนะ (Win Rate)</th>
-                                                                                            <th style={{ fontSize: '11px', color: 'var(--text-muted)', padding: '6px 8px', textAlign: 'center' }}>Profit Factor</th>
-                                                                                            <th style={{ fontSize: '11px', color: 'var(--text-muted)', padding: '6px 8px', textAlign: 'center' }}>เฉลี่ยต่อไม้ (Avg P&L)</th>
-                                                                                            <th style={{ fontSize: '11px', color: 'var(--text-muted)', padding: '6px 8px', textAlign: 'right' }}>กำไรสุทธิ (Net P&L)</th>
-                                                                                        </tr>
-                                                                                    </thead>
-                                                                                    <tbody>
-                                                                                        {sess.bots.length === 0 ? (
-                                                                                            <tr>
-                                                                                                <td colSpan="7" style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '11px', padding: '12px' }}>
-                                                                                                    ไม่มีการเทรดของบอทในช่วงเวลานี้
-                                                                                                </td>
-                                                                                            </tr>
-                                                                                        ) : (
-                                                                                            sess.bots.map((bot, bIdx) => {
-                                                                                                const bWinRateVal = parseFloat(bot.winRate);
-                                                                                                let bWinRateColor = 'var(--text-muted)';
-                                                                                                if (bWinRateVal >= 60) bWinRateColor = 'var(--bull-green)';
-                                                                                                else if (bWinRateVal >= 45) bWinRateColor = 'var(--accent-gold)';
-                                                                                                else if (bWinRateVal > 0) bWinRateColor = 'var(--bear-red)';
-
-                                                                                                const bNetProfit = parseFloat(bot.totalProfit);
-                                                                                                const bProfitColorClass = bNetProfit > 0 ? 'price-up' : bNetProfit < 0 ? 'price-down' : '';
-
-                                                                                                return (
-                                                                                                    <tr key={bIdx} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)' }}>
-                                                                                                        <td style={{ fontSize: '11px', fontWeight: 600, color: bot.name === 'เทรดเอง (Manual)' ? 'var(--text-muted)' : 'var(--accent-gold)', padding: '6px 8px' }}>
-                                                                                                            {bot.name}
-                                                                                                        </td>
-                                                                                                        <td style={{ fontSize: '11px', textAlign: 'center', fontFamily: 'monospace', padding: '6px 8px' }}>{bot.totalTrades}</td>
-                                                                                                        <td style={{ fontSize: '11px', textAlign: 'center', fontFamily: 'monospace', padding: '6px 8px' }}>
-                                                                                                            <span style={{ color: 'var(--bull-green)' }}>{bot.winCount}</span>
-                                                                                                            <span style={{ color: 'var(--text-muted)', margin: '0 4px' }}>/</span>
-                                                                                                            <span style={{ color: 'var(--bear-red)' }}>{bot.loseCount}</span>
-                                                                                                        </td>
-                                                                                                        <td style={{ fontSize: '11px', textAlign: 'center', padding: '6px 8px' }}>
-                                                                                                            <span style={{ fontWeight: 700, fontFamily: 'monospace', color: bWinRateColor }}>
-                                                                                                                {bot.winRate}%
-                                                                                                            </span>
-                                                                                                        </td>
-                                                                                                        <td style={{ fontSize: '11px', textAlign: 'center', fontFamily: 'monospace', fontWeight: 600, color: bot.profitFactor === 'Max' || parseFloat(bot.profitFactor) >= 1.5 ? 'var(--bull-green)' : parseFloat(bot.profitFactor) >= 1.0 ? 'var(--accent-gold)' : 'var(--bear-red)', padding: '6px 8px' }}>
-                                                                                                            {bot.profitFactor}
-                                                                                                        </td>
-                                                                                                        <td className={parseFloat(bot.avgProfit) >= 0 ? 'price-up' : 'price-down'} style={{ fontSize: '11px', textAlign: 'center', fontFamily: 'monospace', fontWeight: 600, padding: '6px 8px' }}>
-                                                                                                            {parseFloat(bot.avgProfit) >= 0 ? '+' : ''}${bot.avgProfit}
-                                                                                                        </td>
-                                                                                                        <td className={bProfitColorClass} style={{ fontSize: '11px', textAlign: 'right', fontWeight: 700, fontFamily: 'monospace', padding: '6px 8px' }}>
-                                                                                                            {bNetProfit >= 0 ? '+' : ''}${bot.totalProfit}
-                                                                                                        </td>
-                                                                                                    </tr>
-                                                                                                );
-                                                                                            })
-                                                                                        )}
-                                                                                    </tbody>
-                                                                                </table>
-                                                                            </div>
-                                                                        </td>
-                                                                    </tr>
-                                                                )}
-                                                            </React.Fragment>
-                                                        );
-                                                    })}
-                                </tbody>
-                            </table>
-                        )}
-                    </div>
-
                     {/* Bot breakdown metrics */}
                     <div className="sidebar-panel-card" style={{ padding: '20px', border: '1px solid rgba(255,255,255,0.06)' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                             <h3 style={{ fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0, color: 'var(--text-secondary)' }}>
-                                วิเคราะห์ประสิทธิภาพรายบอทเทรด (Bot Win Rate & Profit Analytics)
+                                วิเคราะห์ประสิทธิภาพรายบอท/แหล่ง (BOT WIN RATE & PROFIT ANALYTICS)
                             </h3>
                         </div>
                         
@@ -3591,6 +3175,151 @@ const TradingApp = () => {
                                                     {parseFloat(bot.totalProfit) >= 0 ? '+' : ''}${bot.totalProfit}
                                                 </td>
                                             </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        )}
+                    </div>
+
+                    {/* Session breakdown metrics */}
+                    <div className="sidebar-panel-card" style={{ padding: '20px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                            <h3 style={{ fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0, color: 'var(--text-secondary)' }}>
+                                วิเคราะห์ประสิทธิภาพรายเซสชันเวลา (Session Win Rate & Profit Analytics)
+                            </h3>
+                        </div>
+                        
+                        {!analytics.sessionStats || analytics.sessionStats.length === 0 ? (
+                            <div style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted)' }}>
+                                ไม่มีข้อมูลสถิติของเซสชันในขณะนี้
+                            </div>
+                        ) : (
+                            <table className="trading-table">
+                                <thead>
+                                    <tr>
+                                        <th>เซสชันการซื้อขาย (Trading Session)</th>
+                                        <th style={{ textAlign: 'center' }}>จำนวนออเดอร์ (Trades)</th>
+                                        <th style={{ textAlign: 'center' }}>ชนะ (Wins)</th>
+                                        <th style={{ textAlign: 'center' }}>แพ้ (Losses)</th>
+                                        <th style={{ textAlign: 'center' }}>อัตราการชนะ (Win Rate)</th>
+                                        <th style={{ textAlign: 'right' }}>กำไรรวม (Net Profit)</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {analytics.sessionStats.map((sess, index) => {
+                                        const winRateVal = parseFloat(sess.winRate);
+                                        const isExpanded = !!expandedSessions[sess.key];
+                                        
+                                        let winRateColor = 'var(--text-muted)';
+                                        if (winRateVal >= 60) winRateColor = 'var(--bull-green)';
+                                        else if (winRateVal >= 45) winRateColor = 'var(--accent-gold)';
+                                        else if (winRateVal > 0) winRateColor = 'var(--bear-red)';
+
+                                        return (
+                                            <React.Fragment key={sess.key || index}>
+                                                <tr 
+                                                    onClick={() => toggleSessionExpanded(sess.key)}
+                                                    style={{ cursor: 'pointer', transition: 'background-color 0.2s' }}
+                                                    className={isExpanded ? 'active-row' : ''}
+                                                >
+                                                    <td>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                                            <span style={{ 
+                                                                display: 'inline-block', 
+                                                                transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)', 
+                                                                transition: 'transform 0.15s ease',
+                                                                color: 'var(--accent-gold)',
+                                                                fontSize: '8px',
+                                                                marginRight: '2px'
+                                                            }}>
+                                                                ▶
+                                                            </span>
+                                                            {sess.name}
+                                                        </div>
+                                                    </td>
+                                                    <td style={{ textAlign: 'center', fontFamily: 'monospace' }}>{sess.totalTrades}</td>
+                                                    <td style={{ textAlign: 'center', fontFamily: 'monospace', color: 'var(--bull-green)' }}>{sess.winCount}</td>
+                                                    <td style={{ textAlign: 'center', fontFamily: 'monospace', color: 'var(--bear-red)' }}>{sess.loseCount}</td>
+                                                    <td style={{ textAlign: 'center' }}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                                                            <span style={{ fontWeight: 700, fontFamily: 'monospace', color: winRateColor }}>
+                                                                {sess.winRate}%
+                                                            </span>
+                                                            <div style={{ width: '60px', height: '4px', background: 'rgba(255,255,255,0.06)', borderRadius: '2px', overflow: 'hidden' }}>
+                                                                <div style={{ width: `${winRateVal}%`, height: '100%', background: winRateColor }}></div>
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                    <td 
+                                                        className={parseFloat(sess.totalProfit) >= 0 ? 'price-up' : 'price-down'}
+                                                        style={{ textAlign: 'right', fontWeight: 700, fontFamily: 'monospace' }}
+                                                    >
+                                                        {parseFloat(sess.totalProfit) >= 0 ? '+' : ''}${sess.totalProfit}
+                                                    </td>
+                                                </tr>
+                                                {isExpanded && (
+                                                    <tr>
+                                                        <td colSpan="6" style={{ padding: '0', background: 'rgba(0,0,0,0.15)' }}>
+                                                            <div style={{ 
+                                                                padding: '12px 16px', 
+                                                                background: 'rgba(255, 255, 255, 0.01)', 
+                                                                borderLeft: '3px solid var(--accent-gold)',
+                                                                margin: '8px 12px 12px 12px',
+                                                                borderRadius: '0 4px 4px 0'
+                                                            }}>
+                                                                <div style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--text-muted)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                                                    สถิติบอทรายเซสชัน (Bot Session breakdown)
+                                                                </div>
+                                                                {sess.bots && sess.bots.length > 0 ? (
+                                                                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
+                                                                        <thead>
+                                                                            <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', color: 'var(--text-muted)' }}>
+                                                                                <th style={{ textAlign: 'left', padding: '6px 4px' }}>ชื่อบอท (Bot Name)</th>
+                                                                                <th style={{ textAlign: 'center', padding: '6px 4px' }}>จำนวนออเดอร์ (Trades)</th>
+                                                                                <th style={{ textAlign: 'center', padding: '6px 4px' }}>ชนะ (Wins)</th>
+                                                                                <th style={{ textAlign: 'center', padding: '6px 4px' }}>แพ้ (Losses)</th>
+                                                                                <th style={{ textAlign: 'center', padding: '6px 4px' }}>อัตราการชนะ (Win Rate)</th>
+                                                                                <th style={{ textAlign: 'right', padding: '6px 4px' }}>กำไรรวม (Net Profit)</th>
+                                                                            </tr>
+                                                                        </thead>
+                                                                        <tbody>
+                                                                            {sess.bots.map((b, idx) => {
+                                                                                const bWinRateVal = parseFloat(b.winRate);
+                                                                                let bWinRateColor = 'var(--text-muted)';
+                                                                                if (bWinRateVal >= 60) bWinRateColor = 'var(--bull-green)';
+                                                                                else if (bWinRateVal >= 45) bWinRateColor = 'var(--accent-gold)';
+                                                                                else if (bWinRateVal > 0) bWinRateColor = 'var(--bear-red)';
+
+                                                                                return (
+                                                                                    <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', color: 'var(--text-secondary)' }}>
+                                                                                        <td style={{ padding: '6px 4px', fontWeight: 600, color: b.name === 'เทรดเอง (Manual)' ? 'var(--text-muted)' : 'var(--accent-gold)' }}>
+                                                                                            {b.name}
+                                                                                        </td>
+                                                                                        <td style={{ textAlign: 'center', padding: '6px 4px', fontFamily: 'monospace' }}>{b.totalTrades}</td>
+                                                                                        <td style={{ textAlign: 'center', padding: '6px 4px', fontFamily: 'monospace', color: 'var(--bull-green)' }}>{b.winCount}</td>
+                                                                                        <td style={{ textAlign: 'center', padding: '6px 4px', fontFamily: 'monospace', color: 'var(--bear-red)' }}>{b.loseCount}</td>
+                                                                                        <td style={{ textAlign: 'center', padding: '6px 4px', fontFamily: 'monospace', fontWeight: 'bold', color: bWinRateColor }}>
+                                                                                            {b.winRate}%
+                                                                                        </td>
+                                                                                        <td className={parseFloat(b.totalProfit) >= 0 ? 'price-up' : 'price-down'} style={{ textAlign: 'right', padding: '6px 4px', fontWeight: 700, fontFamily: 'monospace' }}>
+                                                                                            {parseFloat(b.totalProfit) >= 0 ? '+' : ''}${b.totalProfit}
+                                                                                        </td>
+                                                                                    </tr>
+                                                                                );
+                                                                            })}
+                                                                        </tbody>
+                                                                    </table>
+                                                                ) : (
+                                                                    <div style={{ color: 'var(--text-muted)', fontSize: '11px', fontStyle: 'italic', padding: '4px 0' }}>
+                                                                        ไม่มีข้อมูลสถิติของบอทในเซสชันนี้
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                )}
+                                            </React.Fragment>
                                         );
                                     })}
                                 </tbody>
@@ -3797,7 +3526,6 @@ const TradingApp = () => {
                                     <div className="backtest-checkbox-list">
                                         {[
                                             { value: 'smc_confluence_pro', label: 'SMC Confluence Pro 🌟' },
-                                            { value: 'pj_indicator', label: 'PJ Indicator 🔮' },
                                             { value: 'smc_order_block', label: 'SMC Order Block 🟩' },
                                             { value: 'smc_fvg_imbalance', label: 'SMC FVG Imbalance ⚡' },
                                             { value: 'smc_bos_choch', label: 'SMC BOS / CHoCH 📈' },
@@ -3903,21 +3631,6 @@ const TradingApp = () => {
                                     </div>
                                 </div>
 
-                                <div className="input-group" style={{ margin: '8px 0 0 0' }}>
-                                    <label>ช่วงเวลาเทรด (Trading Session)</label>
-                                    <select
-                                        value={backtestForm.allowed_sessions || "all"}
-                                        onChange={(e) => setBacktestForm({ ...backtestForm, allowed_sessions: e.target.value })}
-                                        style={{ height: '36px', fontSize: '12px', padding: '6px 10px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-color)', borderRadius: '4px', width: '100%' }}
-                                    >
-                                        <option value="all">24 ชั่วโมง (All Sessions)</option>
-                                        <option value="asian">Asian Only (00-08 UTC)</option>
-                                        <option value="london">London Only (08-16 UTC)</option>
-                                        <option value="newyork">NY Only (13-21 UTC)</option>
-                                        <option value="london_ny">London + NY Overlap (13-16 UTC)</option>
-                                    </select>
-                                </div>
-
                                 <button 
                                     type="submit"
                                     className="btn-primary"
@@ -3977,6 +3690,14 @@ const TradingApp = () => {
                                             <Icon name="refresh" size={14} />
                                             <span>📈 กราฟเงินทุน (Equity Curve)</span>
                                         </button>
+                                        <button
+                                            type="button"
+                                            className={`backtest-subtab-btn ${backtestSubTab === 'deals' ? 'active' : ''}`}
+                                            onClick={() => setBacktestSubTab('deals')}
+                                        >
+                                            <Icon name="history" size={14} />
+                                            <span>📜 บันทึกธุรกรรม (Deals Log Table)</span>
+                                        </button>
                                     </div>
 
                                     {/* Tab 1: Statistics Dashboard */}
@@ -3986,8 +3707,8 @@ const TradingApp = () => {
                                             <div className="backtest-stats-grid">
                                                 <div className="backtest-stat-card">
                                                     <span className="metric-label">กำไร/ขาดทุนสุทธิ (Net profit)</span>
-                                                    <span className={`metric-value ${(backtestResult.net_profit ?? 0) >= 0 ? 'price-up' : 'price-down'}`}>
-                                                        {(backtestResult.net_profit ?? 0) >= 0 ? '+' : ''}${(backtestResult.net_profit ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                                    <span className={`metric-value ${backtestResult.net_profit >= 0 ? 'price-up' : 'price-down'}`}>
+                                                        {backtestResult.net_profit >= 0 ? '+' : ''}${backtestResult.net_profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                                                     </span>
                                                 </div>
                                                 <div className="backtest-stat-card">
@@ -3996,24 +3717,24 @@ const TradingApp = () => {
                                                         {backtestResult.win_rate}%
                                                     </span>
                                                     <span style={{ fontSize: '9px', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
-                                                        ชนะ {(backtestResult.wins_count ?? 0)} | แพ้ {(backtestResult.losses_count ?? 0)}
+                                                        ชนะ {backtestResult.wins_count} | แพ้ {backtestResult.losses_count}
                                                     </span>
                                                     <div className="winrate-gauge-container">
                                                         <div className="winrate-gauge-bar">
-                                                            <div className="winrate-gauge-fill" style={{ width: `${backtestResult.win_rate ?? 0}%` }}></div>
+                                                            <div className="winrate-gauge-fill" style={{ width: `${backtestResult.win_rate}%` }}></div>
                                                         </div>
                                                     </div>
                                                 </div>
                                                 <div className="backtest-stat-card">
                                                     <span className="metric-label">ออเดอร์ทั้งหมด (Total deals)</span>
                                                     <span className="metric-value" style={{ color: 'var(--text-primary)' }}>
-                                                        {(backtestResult.total_trades ?? 0)} ไม้
+                                                        {backtestResult.total_trades} ไม้
                                                     </span>
                                                 </div>
                                                 <div className="backtest-stat-card">
                                                     <span className="metric-label">บาลานซ์สุทธิ (Final Balance)</span>
                                                     <span className="metric-value" style={{ color: 'var(--bull-green)' }}>
-                                                        ${(backtestResult.final_balance ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                                        ${backtestResult.final_balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                                                     </span>
                                                 </div>
                                             </div>
@@ -4025,25 +3746,25 @@ const TradingApp = () => {
                                                     <h5>📊 วิเคราะห์ผลตอบแทน (Returns Analysis)</h5>
                                                     <div className="backtest-detail-row">
                                                         <span className="backtest-detail-label">กำไรรวมทั้งหมด (Gross Profit)</span>
-                                                        <span className="backtest-detail-value price-up">+${(backtestResult.gross_profit ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                                        <span className="backtest-detail-value price-up">+${backtestResult.gross_profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                                                     </div>
                                                     <div className="backtest-detail-row">
                                                         <span className="backtest-detail-label">ขาดทุนรวมทั้งหมด (Gross Loss)</span>
-                                                        <span className="backtest-detail-value price-down">-${(backtestResult.gross_loss ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                                        <span className="backtest-detail-value price-down">-${backtestResult.gross_loss.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                                                     </div>
                                                     <div className="backtest-detail-row">
                                                         <span className="backtest-detail-label">ตัวประกอบกำไร (Profit Factor)</span>
                                                         <span className="backtest-detail-value" style={{ 
-                                                            color: (backtestResult.profit_factor ?? 0) >= 1.5 ? 'var(--bull-green)' : (backtestResult.profit_factor ?? 0) >= 1.0 ? 'var(--accent-gold)' : 'var(--bear-red)',
+                                                            color: backtestResult.profit_factor >= 1.5 ? 'var(--bull-green)' : backtestResult.profit_factor >= 1.0 ? 'var(--accent-gold)' : 'var(--bear-red)',
                                                             fontWeight: 'bold'
                                                         }}>
-                                                            {(backtestResult.profit_factor ?? 0)}
+                                                            {backtestResult.profit_factor}
                                                         </span>
                                                     </div>
                                                     <div className="backtest-detail-row">
                                                         <span className="backtest-detail-label">ความคาดหวังดีลเฉลี่ย (Expectancy)</span>
-                                                        <span className={`backtest-detail-value ${(backtestResult.expectancy ?? 0) >= 0 ? 'price-up' : 'price-down'}`}>
-                                                            {(backtestResult.expectancy ?? 0) >= 0 ? '+' : ''}${(backtestResult.expectancy ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                                        <span className={`backtest-detail-value ${backtestResult.expectancy >= 0 ? 'price-up' : 'price-down'}`}>
+                                                            {backtestResult.expectancy >= 0 ? '+' : ''}${backtestResult.expectancy.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                                                         </span>
                                                     </div>
                                                 </div>
@@ -4053,22 +3774,22 @@ const TradingApp = () => {
                                                     <h5>🛡️ การควบคุมความเสี่ยง (Risk & Drawdown)</h5>
                                                     <div className="backtest-detail-row">
                                                         <span className="backtest-detail-label">การย่อตัวลึกสุด (Max Drawdown)</span>
-                                                        <span className="backtest-detail-value price-down">-${(backtestResult.max_drawdown ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                                        <span className="backtest-detail-value price-down">-${backtestResult.max_drawdown.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                                                     </div>
                                                     <div className="backtest-detail-row">
                                                         <span className="backtest-detail-label">เปอร์เซ็นต์ย่อตัวลึกสุด (Max Drawdown %)</span>
-                                                        <span className="backtest-detail-value price-down">-{(backtestResult.max_drawdown_percent ?? 0)}%</span>
+                                                        <span className="backtest-detail-value price-down">-{backtestResult.max_drawdown_percent}%</span>
                                                     </div>
                                                     <div className="backtest-detail-row">
                                                         <span className="backtest-detail-label">เงินตั้งต้นจำลอง (Initial Balance)</span>
-                                                        <span className="backtest-detail-value" style={{ color: 'var(--text-secondary)' }}>${(backtestResult.initial_balance ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                                        <span className="backtest-detail-value" style={{ color: 'var(--text-secondary)' }}>${backtestResult.initial_balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                                                     </div>
                                                     <div className="backtest-detail-row">
                                                         <span className="backtest-detail-label">ระดับความเสี่ยงพอร์ต (Risk Rating)</span>
                                                         <span className="backtest-detail-value" style={{ 
-                                                            color: (backtestResult.max_drawdown_percent ?? 0) <= 10 ? 'var(--bull-green)' : (backtestResult.max_drawdown_percent ?? 0) <= 20 ? 'var(--accent-gold)' : 'var(--bear-red)'
+                                                            color: backtestResult.max_drawdown_percent <= 10 ? 'var(--bull-green)' : backtestResult.max_drawdown_percent <= 20 ? 'var(--accent-gold)' : 'var(--bear-red)'
                                                         }}>
-                                                            {(backtestResult.max_drawdown_percent ?? 0) <= 10 ? 'ต่ำ (Low Risk)' : (backtestResult.max_drawdown_percent ?? 0) <= 20 ? 'ปานกลาง (Medium Risk)' : 'สูง (High Drawdown!)'}
+                                                            {backtestResult.max_drawdown_percent <= 10 ? 'ต่ำ (Low Risk)' : backtestResult.max_drawdown_percent <= 20 ? 'ปานกลาง (Medium Risk)' : 'สูง (High Drawdown!)'}
                                                         </span>
                                                     </div>
                                                 </div>
@@ -4078,22 +3799,22 @@ const TradingApp = () => {
                                                     <h5>🧬 พฤติกรรมดีลการเทรด (Trade Statistics)</h5>
                                                     <div className="backtest-detail-row">
                                                         <span className="backtest-detail-label">เฉลี่ยต่อดีลกำไร (Average Win)</span>
-                                                        <span className="backtest-detail-value price-up">+${(backtestResult.avg_win ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                                        <span className="backtest-detail-value price-up">+${backtestResult.avg_win.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                                                     </div>
                                                     <div className="backtest-detail-row">
                                                         <span className="backtest-detail-label">เฉลี่ยต่อดีลขาดทุน (Average Loss)</span>
-                                                        <span className="backtest-detail-value price-down">-${(backtestResult.avg_loss ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                                        <span className="backtest-detail-value price-down">-${backtestResult.avg_loss.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                                                     </div>
                                                     <div className="backtest-detail-row">
                                                         <span className="backtest-detail-label">อัตราส่วนเฉลี่ย Win/Loss RR</span>
                                                         <span className="backtest-detail-value">
-                                                            {(backtestResult.avg_loss ?? 0) > 0 ? ((backtestResult.avg_win ?? 0) / (backtestResult.avg_loss ?? 1)).toFixed(2) : (backtestResult.avg_win ?? 0).toFixed(2)}
+                                                            {backtestResult.avg_loss > 0 ? (backtestResult.avg_win / backtestResult.avg_loss).toFixed(2) : backtestResult.avg_win.toFixed(2)}
                                                         </span>
                                                     </div>
                                                     <div className="backtest-detail-row">
                                                         <span className="backtest-detail-label">สตรีคชนะ / แพ้ ต่อเนื่องสูงสุด</span>
                                                         <span className="backtest-detail-value">
-                                                            <span className="price-up">{(backtestResult.max_consecutive_wins ?? 0)} Wins</span> / <span className="price-down">{(backtestResult.max_consecutive_losses ?? 0)} Losses</span>
+                                                            <span className="price-up">{backtestResult.max_consecutive_wins} Wins</span> / <span className="price-down">{backtestResult.max_consecutive_losses} Losses</span>
                                                         </span>
                                                     </div>
                                                 </div>
@@ -4103,15 +3824,12 @@ const TradingApp = () => {
 
                                     {/* Tab 2: Candlestick & Entries Chart */}
                                     {backtestSubTab === 'price' && (
-                                        <React.Fragment>
-                                            <div className="backtest-chart-card" style={{ height: '500px', display: 'flex', flexDirection: 'column' }}>
-                                                <h4 style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                                                    🕯️ กราฟราคาสินทรัพย์จำลองและจุดเข้าเทรดจริง (Asset Candlestick & Entries Chart)
-                                                </h4>
-                                                <div ref={backtestPriceChartContainerRef} className="backtest-chart-container" style={{ flex: 1, height: '100%' }}></div>
-                                            </div>
-                                            {renderBacktestDealsTable('450px', true)}
-                                        </React.Fragment>
+                                        <div className="backtest-chart-card" style={{ height: '500px', display: 'flex', flexDirection: 'column' }}>
+                                            <h4 style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                                🕯️ กราฟราคาสินทรัพย์จำลองและจุดเข้าเทรดจริง (Asset Candlestick & Entries Chart)
+                                            </h4>
+                                            <div ref={backtestPriceChartContainerRef} className="backtest-chart-container" style={{ flex: 1, height: '100%' }}></div>
+                                        </div>
                                     )}
 
                                     {/* Tab 3: Equity Curve Chart */}
@@ -4121,6 +3839,68 @@ const TradingApp = () => {
                                                 📈 กราฟแสดงเส้นความเติบโตของทุนสำรองสุทธิ (Simulated Equity Growth Curve)
                                             </h4>
                                             <div ref={backtestChartContainerRef} className="backtest-chart-container" style={{ flex: 1, height: '100%' }}></div>
+                                        </div>
+                                    )}
+
+                                    {/* Tab 4: Deals list table card */}
+                                    {backtestSubTab === 'deals' && (
+                                        <div className="backtest-table-card" style={{ marginTop: '0' }}>
+                                            <h4 style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                                📜 บันทึกธุรกรรมประวัติศาสตร์การซื้อขายย้อนหลังอย่างละเอียด (Backtest Deals History Log)
+                                            </h4>
+                                            
+                                            {backtestResult.trades.length === 0 ? (
+                                                <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '11.5px', padding: '20px 0' }}>
+                                                    ไม่มีการเปิดธุรกรรมการเทรดใดๆ เกิดขึ้นในตลอดข้อมูลประวัติศาสตร์ lookback นี้
+                                                </div>
+                                            ) : (
+                                                <div className="backtest-table-wrapper" style={{ maxHeight: '450px' }}>
+                                                    <table className="trading-table">
+                                                        <thead>
+                                                            <tr>
+                                                                <th>Ticket</th>
+                                                                <th>ประเภท</th>
+                                                                <th>ขนาด Lot</th>
+                                                                <th>ราคาเปิด</th>
+                                                                <th>ราคาปิด</th>
+                                                                <th>เวลาเปิด</th>
+                                                                <th>เวลาปิด</th>
+                                                                <th>ผลลัพธ์</th>
+                                                                <th>กำไร (USD)</th>
+                                                                <th>เหตุผลปิดดีล</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            {backtestResult.trades.map((t, idx) => (
+                                                                <tr key={`${t.ticket}-${idx}`}>
+                                                                    <td style={{ fontFamily: 'monospace' }}>#{t.ticket}</td>
+                                                                    <td>
+                                                                        <span className={t.type === 'buy' ? 'buy-badge' : 'sell-badge'}>
+                                                                            {t.type.toUpperCase()}
+                                                                        </span>
+                                                                    </td>
+                                                                    <td style={{ fontFamily: 'monospace' }}>{backtestForm.lot_size}</td>
+                                                                    <td style={{ fontFamily: 'monospace' }}>{t.open_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                                                                    <td style={{ fontFamily: 'monospace' }}>{t.close_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                                                                    <td style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{t.open_time}</td>
+                                                                    <td style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>{t.close_time}</td>
+                                                                    <td>
+                                                                        <span className={t.result === 'win' ? 'result-win-badge' : 'result-loss-badge'}>
+                                                                            {t.result.toUpperCase()}
+                                                                        </span>
+                                                                    </td>
+                                                                    <td className={t.profit >= 0 ? 'price-up' : 'price-down'} style={{ fontWeight: 700, fontFamily: 'monospace' }}>
+                                                                        {t.profit >= 0 ? '+' : ''}${t.profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                                                    </td>
+                                                                    <td style={{ fontWeight: 600, fontSize: '11px', color: t.reason === 'Take Profit' ? 'var(--bull-green)' : t.reason === 'Stop Loss' ? 'var(--bear-red)' : 'var(--text-secondary)' }}>
+                                                                        {t.reason}
+                                                                    </td>
+                                                                </tr>
+                                                            ))}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            )}
                                         </div>
                                     )}
                                 </React.Fragment>
@@ -4149,25 +3929,25 @@ const TradingApp = () => {
                     <div className="account-metric">
                         <span className="metric-label">Balance</span>
                         <span className="metric-value" style={{ fontFamily: 'monospace' }}>
-                            ${(account.balance ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                            ${account.balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                         </span>
                     </div>
                     <div className="account-metric">
                         <span className="metric-label">Equity</span>
                         <span className="metric-value" style={{ fontFamily: 'monospace' }}>
-                            ${(account.equity ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                            ${account.equity.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                         </span>
                     </div>
                     <div className="account-metric">
                         <span className="metric-label">Used Margin</span>
                         <span className="metric-value" style={{ color: 'var(--text-secondary)', fontFamily: 'monospace' }}>
-                            ${(account.margin ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                            ${account.margin.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                         </span>
                     </div>
                     <div className="account-metric">
                         <span className="metric-label">Floating Profit</span>
-                        <span className={`metric-value ${(account.profit ?? 0) >= 0 ? 'pnl-positive' : 'pnl-negative'}`} style={{ fontFamily: 'monospace' }}>
-                            {(account.profit ?? 0) >= 0 ? '+' : ''}${(account.profit ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        <span className={`metric-value ${account.profit >= 0 ? 'pnl-positive' : 'pnl-negative'}`} style={{ fontFamily: 'monospace' }}>
+                            {account.profit >= 0 ? '+' : ''}${account.profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                         </span>
                     </div>
 
@@ -4350,7 +4130,6 @@ const TradingApp = () => {
                                         setActiveSymbol(item.symbol);
                                         setActiveAsset(item);
                                         setSelectedHistoryOrder(null);
-                                        setSelectedBacktestTrade(null);
                                     }}
                                     style={{
                                         display: 'flex',
@@ -5071,55 +4850,44 @@ const TradingApp = () => {
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {openPositions.map((pos) => {
-                                                const isSelected = selectedHistoryOrder && selectedHistoryOrder.ticket === pos.ticket;
-                                                return (
-                                                    <tr 
-                                                        key={pos.ticket}
-                                                        onClick={() => handleHistoryOrderClick(pos)}
-                                                        className={isSelected ? 'selected-history-row' : ''}
-                                                        style={{ cursor: 'pointer' }}
+                                            {openPositions.map((pos) => (
+                                                <tr key={pos.ticket}>
+                                                    <td style={{ fontFamily: 'monospace' }}>#{pos.ticket}</td>
+                                                    <td style={{ 
+                                                        fontWeight: 600, 
+                                                        fontSize: '11px',
+                                                        color: (!pos.bot_name || pos.bot_name === 'เทรดเอง (Manual)' || pos.bot_name === 'Manual' || pos.bot_name === 'Simulation') ? 'var(--text-muted)' : 'var(--accent-gold)'
+                                                    }}>
+                                                        {pos.bot_name || 'เทรดเอง (Manual)'}
+                                                    </td>
+                                                    <td style={{ color: 'var(--text-secondary)' }}>{pos.time}</td>
+                                                    <td style={{ fontWeight: 700 }}>{pos.symbol}</td>
+                                                    <td>
+                                                        <span className={pos.type === 'buy' ? 'buy-badge' : 'sell-badge'}>
+                                                            {pos.type}
+                                                        </span>
+                                                    </td>
+                                                    <td style={{ fontFamily: 'monospace' }}>{pos.volume}</td>
+                                                    <td style={{ fontFamily: 'monospace' }}>{pos.open_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                                                    <td style={{ fontFamily: 'monospace', color: 'var(--accent-gold)' }}>{pos.current_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                                                    <td style={{ fontFamily: 'monospace', color: pos.sl > 0 ? 'var(--bear-red)' : 'var(--text-muted)' }}>{pos.sl > 0 ? pos.sl.toFixed(2) : '-'}</td>
+                                                    <td style={{ fontFamily: 'monospace', color: pos.tp > 0 ? 'var(--bull-green)' : 'var(--text-muted)' }}>{pos.tp > 0 ? pos.tp.toFixed(2) : '-'}</td>
+                                                    <td 
+                                                        className={pos.profit >= 0 ? 'price-up' : 'price-down'}
+                                                        style={{ fontWeight: 700, fontFamily: 'monospace', fontSize: '13px' }}
                                                     >
-                                                        <td style={{ fontFamily: 'monospace' }}>#{pos.ticket}</td>
-                                                        <td style={{ 
-                                                            fontWeight: 600, 
-                                                            fontSize: '11px',
-                                                            color: (!pos.bot_name || pos.bot_name === 'เทรดเอง (Manual)' || pos.bot_name === 'Manual' || pos.bot_name === 'Simulation') ? 'var(--text-muted)' : 'var(--accent-gold)'
-                                                        }}>
-                                                            {pos.bot_name || 'เทรดเอง (Manual)'}
-                                                        </td>
-                                                        <td style={{ color: 'var(--text-secondary)' }}>{pos.time}</td>
-                                                        <td style={{ fontWeight: 700 }}>{pos.symbol}</td>
-                                                        <td>
-                                                            <span className={pos.type === 'buy' ? 'buy-badge' : 'sell-badge'}>
-                                                                {pos.type}
-                                                            </span>
-                                                        </td>
-                                                        <td style={{ fontFamily: 'monospace' }}>{pos.volume}</td>
-                                                        <td style={{ fontFamily: 'monospace' }}>{(pos.open_price ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-                                                        <td style={{ fontFamily: 'monospace', color: 'var(--accent-gold)' }}>{(pos.current_price ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-                                                        <td style={{ fontFamily: 'monospace', color: pos.sl > 0 ? 'var(--bear-red)' : 'var(--text-muted)' }}>{pos.sl > 0 ? pos.sl.toFixed(2) : '-'}</td>
-                                                        <td style={{ fontFamily: 'monospace', color: pos.tp > 0 ? 'var(--bull-green)' : 'var(--text-muted)' }}>{pos.tp > 0 ? pos.tp.toFixed(2) : '-'}</td>
-                                                        <td 
-                                                            className={(pos.profit ?? 0) >= 0 ? 'price-up' : 'price-down'}
-                                                            style={{ fontWeight: 700, fontFamily: 'monospace', fontSize: '13px' }}
+                                                        {pos.profit >= 0 ? '+' : ''}${pos.profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                                    </td>
+                                                    <td>
+                                                        <button 
+                                                            className="btn-close-position"
+                                                            onClick={() => handleClosePosition(pos.ticket)}
                                                         >
-                                                            {(pos.profit ?? 0) >= 0 ? '+' : ''}${(pos.profit ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                                                        </td>
-                                                        <td>
-                                                            <button 
-                                                                className="btn-close-position"
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    handleClosePosition(pos.ticket);
-                                                                }}
-                                                            >
-                                                                ปิดออเดอร์
-                                                            </button>
-                                                        </td>
-                                                    </tr>
-                                                );
-                                            })}
+                                                            ปิดออเดอร์
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))}
                                         </tbody>
                                     </table>
                                 )
@@ -5199,10 +4967,10 @@ const TradingApp = () => {
                                                         <td style={{ fontFamily: 'monospace', color: 'var(--text-muted)' }}>{formatP(t.tp)}</td>
                                                         <td style={{ fontFamily: 'monospace' }}>{formatP(t.close_price)}</td>
                                                         <td 
-                                                            className={(t.profit ?? 0) >= 0 ? 'price-up' : 'price-down'}
+                                                            className={t.profit >= 0 ? 'price-up' : 'price-down'}
                                                             style={{ fontWeight: 700, fontFamily: 'monospace', fontSize: '13px' }}
                                                         >
-                                                            {(t.profit ?? 0) >= 0 ? '+' : ''}${(t.profit ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                                            {t.profit >= 0 ? '+' : ''}${t.profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                                                         </td>
                                                     </tr>
                                                 );
@@ -5215,30 +4983,8 @@ const TradingApp = () => {
                             {/* Analytics Tab Content */}
                             {activeTab === 'analytics' && (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', padding: '8px' }}>
-                                    {/* Popout Button for Deep Analytics & Filter Row */}
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                        {/* Time Filter Segmented Control */}
-                                        <div style={{ display: 'flex', gap: '4px', background: 'var(--bg-main)', padding: '4px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
-                                            {['all', 'day', 'week', 'month', 'year'].map(filter => (
-                                                <button
-                                                    key={filter}
-                                                    onClick={() => setAnalyticsTimeFilter(filter)}
-                                                    style={{
-                                                        padding: '4px 10px',
-                                                        fontSize: '11px',
-                                                        fontWeight: 'bold',
-                                                        borderRadius: '4px',
-                                                        border: 'none',
-                                                        background: analyticsTimeFilter === filter ? 'var(--accent-gold)' : 'transparent',
-                                                        color: analyticsTimeFilter === filter ? '#000' : 'var(--text-muted)',
-                                                        cursor: 'pointer',
-                                                        transition: 'all 0.2s ease'
-                                                    }}
-                                                >
-                                                    {filter === 'all' ? 'ทั้งหมด' : filter === 'day' ? 'วันนี้' : filter === 'week' ? 'สัปดาห์นี้' : filter === 'month' ? 'เดือนนี้' : 'ปีนี้'}
-                                                </button>
-                                            ))}
-                                        </div>
+                                    {/* Popout Button for Deep Analytics */}
+                                    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                                         <button 
                                             className="btn-trade-execute buy"
                                             onClick={() => window.open('/?popout=analytics', '_blank', 'width=1280,height=800,menubar=no,toolbar=no,location=no,status=no')}
@@ -5262,6 +5008,7 @@ const TradingApp = () => {
                                             <span>เปิดวิเคราะห์พอร์ตในหน้าต่างใหม่ (Popout)</span>
                                         </button>
                                     </div>
+                                    {renderFilterBar()}
                                     {/* Top Summary Cards */}
                                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
                                         <div className="sidebar-panel-card" style={{ padding: '16px', textAlign: 'center' }}>
@@ -5344,226 +5091,11 @@ const TradingApp = () => {
                                         </div>
                                     </div>
 
-                                    {/* Trading Sessions Performance Analytics Card */}
-                                    <div className="sidebar-panel-card" style={{ padding: '20px', border: '1px solid rgba(255,255,255,0.06)' }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                                            <h3 style={{ fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0, color: 'var(--text-secondary)' }}>
-                                                วิเคราะห์สถิติกำไรและประสิทธิภาพแยกตามช่วงเวลาเทรด (Trading Session Analytics)
-                                            </h3>
-                                        </div>
-
-                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '20px' }}>
-                                            {analytics.sessionStats.map((sess, idx) => {
-                                                const netProfit = parseFloat(sess.totalProfit);
-                                                const profitColor = netProfit > 0 ? 'var(--bull-green)' : netProfit < 0 ? 'var(--bear-red)' : 'var(--text-muted)';
-                                                const winRateVal = parseFloat(sess.winRate);
-                                                
-                                                return (
-                                                    <div key={idx} style={{ 
-                                                        background: 'rgba(255, 255, 255, 0.02)', 
-                                                        border: '1px solid rgba(255, 255, 255, 0.04)', 
-                                                        borderRadius: '8px', 
-                                                        padding: '12px 16px',
-                                                        display: 'flex',
-                                                        flexDirection: 'column',
-                                                        gap: '6px'
-                                                    }}>
-                                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                                            <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                                <span style={{ color: sess.icon === 'sun' ? '#ffb703' : sess.icon === 'sunset' ? '#fb8500' : '#8ecae6', display: 'inline-flex' }}>
-                                                                    <Icon name={sess.icon} size={14} />
-                                                                </span>
-                                                                <span>{sess.name.split(' (')[0]}</span>
-                                                            </span>
-                                                            <span style={{ fontSize: '9px', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
-                                                                {sess.name.match(/\(([^)]+)\)/)?.[1] || ''}
-                                                            </span>
-                                                        </div>
-                                                        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginTop: '4px' }}>
-                                                            <span style={{ fontSize: '18px', fontWeight: 700, fontFamily: 'monospace', color: profitColor }}>
-                                                                {netProfit >= 0 ? '+' : ''}${sess.totalProfit}
-                                                            </span>
-                                                            <span style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--text-secondary)' }}>
-                                                                Win Rate: <span style={{ color: winRateVal >= 60 ? 'var(--bull-green)' : winRateVal >= 45 ? 'var(--accent-gold)' : 'var(--bear-red)', fontFamily: 'monospace' }}>{sess.winRate}%</span>
-                                                            </span>
-                                                        </div>
-                                                        <div style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between', marginTop: '2px' }}>
-                                                            <span>เทรดทั้งหมด: <strong style={{ color: 'var(--text-secondary)', fontFamily: 'monospace' }}>{sess.totalTrades}</strong> ไม้</span>
-                                                            <span>ชนะ/แพ้: <strong style={{ color: 'var(--bull-green)', fontFamily: 'monospace' }}>{sess.winCount}</strong> / <strong style={{ color: 'var(--bear-red)', fontFamily: 'monospace' }}>{sess.loseCount}</strong></span>
-                                                        </div>
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-
-                                        {analytics.sessionStats.length === 0 ? (
-                                            <div style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted)' }}>
-                                                ไม่มีข้อมูลสถิติช่วงเวลาเทรดในขณะนี้
-                                            </div>
-                                        ) : (
-                                            <table className="trading-table">
-                                                <thead>
-                                                    <tr>
-                                                        <th>ช่วงเวลาเทรด (Trading Session)</th>
-                                                        <th style={{ textAlign: 'center' }}>จำนวนออเดอร์ (Trades)</th>
-                                                        <th style={{ textAlign: 'center' }}>สถิติ ชนะ / แพ้ (W / L)</th>
-                                                        <th style={{ textAlign: 'center' }}>อัตราการชนะ (Win Rate)</th>
-                                                        <th style={{ textAlign: 'center' }}>Profit Factor</th>
-                                                        <th style={{ textAlign: 'center' }}>เฉลี่ยต่อไม้ (Avg P&L)</th>
-                                                        <th style={{ textAlign: 'center' }}>ดีสุด / แย่สุด (Best/Worst)</th>
-                                                        <th style={{ textAlign: 'right' }}>กำไร/ขาดทุนสุทธิ (Net P&L)</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    {analytics.sessionStats.map((sess, index) => {
-                                                        const winRateVal = parseFloat(sess.winRate);
-                                                        let winRateColor = 'var(--text-muted)';
-                                                        if (winRateVal >= 60) winRateColor = 'var(--bull-green)';
-                                                        else if (winRateVal >= 45) winRateColor = 'var(--accent-gold)';
-                                                        else if (winRateVal > 0) winRateColor = 'var(--bear-red)';
-
-                                                        const netProfit = parseFloat(sess.totalProfit);
-                                                        const profitColorClass = netProfit > 0 ? 'price-up' : netProfit < 0 ? 'price-down' : '';
-                                                        const isExpanded = !!expandedSessions[sess.key];
-
-                                                        return (
-                                                            <React.Fragment key={index}>
-                                                                <tr style={{ background: isExpanded ? 'rgba(255, 255, 255, 0.02)' : '' }}>
-                                                                    <td 
-                                                                        style={{ fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', userSelect: 'none' }} 
-                                                                        onClick={() => {
-                                                                            setExpandedSessions(prev => ({
-                                                                                ...prev,
-                                                                                [sess.key]: !prev[sess.key]
-                                                                            }));
-                                                                        }}
-                                                                    >
-                                                                        <span style={{ color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', transition: 'transform 0.2s', transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}>
-                                                                            <Icon name={isExpanded ? "chevron-up" : "chevron-down"} size={14} />
-                                                                        </span>
-                                                                        <span style={{ color: sess.icon === 'sun' ? '#ffb703' : sess.icon === 'sunset' ? '#fb8500' : '#8ecae6', display: 'inline-flex', alignItems: 'center' }}>
-                                                                            <Icon name={sess.icon} size={14} />
-                                                                        </span>
-                                                                        <span>{sess.name}</span>
-                                                                    </td>
-                                                                    <td style={{ textAlign: 'center', fontFamily: 'monospace' }}>{sess.totalTrades}</td>
-                                                                    <td style={{ textAlign: 'center', fontFamily: 'monospace' }}>
-                                                                        <span style={{ color: 'var(--bull-green)' }}>{sess.winCount}</span>
-                                                                        <span style={{ color: 'var(--text-muted)', margin: '0 4px' }}>/</span>
-                                                                        <span style={{ color: 'var(--bear-red)' }}>{sess.loseCount}</span>
-                                                                    </td>
-                                                                    <td style={{ textAlign: 'center' }}>
-                                                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                                                                            <span style={{ fontWeight: 700, fontFamily: 'monospace', color: winRateColor }}>
-                                                                                {sess.winRate}%
-                                                                            </span>
-                                                                            <div style={{ width: '55px', height: '4px', background: 'rgba(255,255,255,0.06)', borderRadius: '2px', overflow: 'hidden' }}>
-                                                                                <div style={{ width: `${winRateVal}%`, height: '100%', background: winRateColor }}></div>
-                                                                            </div>
-                                                                        </div>
-                                                                    </td>
-                                                                    <td style={{ textAlign: 'center', fontFamily: 'monospace', fontWeight: 600, color: sess.profitFactor === 'Max' || parseFloat(sess.profitFactor) >= 1.5 ? 'var(--bull-green)' : parseFloat(sess.profitFactor) >= 1.0 ? 'var(--accent-gold)' : 'var(--bear-red)' }}>
-                                                                        {sess.profitFactor}
-                                                                    </td>
-                                                                    <td className={parseFloat(sess.avgProfit) >= 0 ? 'price-up' : 'price-down'} style={{ textAlign: 'center', fontFamily: 'monospace', fontWeight: 600 }}>
-                                                                        {parseFloat(sess.avgProfit) >= 0 ? '+' : ''}${sess.avgProfit}
-                                                                    </td>
-                                                                    <td style={{ textAlign: 'center', fontFamily: 'monospace', fontSize: '11px', color: 'var(--text-muted)' }}>
-                                                                        <span className="price-up">+${sess.best}</span>
-                                                                        <span style={{ margin: '0 4px' }}>|</span>
-                                                                        <span className="price-down">${sess.worst}</span>
-                                                                    </td>
-                                                                    <td className={profitColorClass} style={{ textAlign: 'right', fontWeight: 700, fontFamily: 'monospace' }}>
-                                                                        {netProfit >= 0 ? '+' : ''}${sess.totalProfit}
-                                                                    </td>
-                                                                </tr>
-                                                                {isExpanded && (
-                                                                    <tr>
-                                                                        <td colSpan="8" style={{ padding: '0 0 16px 28px', background: 'rgba(255, 255, 255, 0.01)' }}>
-                                                                            <div style={{ 
-                                                                                borderLeft: '2px solid var(--accent-gold)', 
-                                                                                paddingLeft: '16px', 
-                                                                                marginTop: '8px',
-                                                                                overflowX: 'auto'
-                                                                            }}>
-                                                                                <table className="trading-table" style={{ width: '100%', background: 'transparent', border: 'none', margin: '4px 0' }}>
-                                                                                    <thead>
-                                                                                        <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                                                                                            <th style={{ fontSize: '11px', color: 'var(--text-muted)', padding: '6px 8px' }}>ชื่อบอทเทรด / แหล่ง (Bot Name / Source)</th>
-                                                                                            <th style={{ fontSize: '11px', color: 'var(--text-muted)', padding: '6px 8px', textAlign: 'center' }}>จำนวนออเดอร์ (Trades)</th>
-                                                                                            <th style={{ fontSize: '11px', color: 'var(--text-muted)', padding: '6px 8px', textAlign: 'center' }}>สถิติ ชนะ / แพ้ (W / L)</th>
-                                                                                            <th style={{ fontSize: '11px', color: 'var(--text-muted)', padding: '6px 8px', textAlign: 'center' }}>อัตราการชนะ (Win Rate)</th>
-                                                                                            <th style={{ fontSize: '11px', color: 'var(--text-muted)', padding: '6px 8px', textAlign: 'center' }}>Profit Factor</th>
-                                                                                            <th style={{ fontSize: '11px', color: 'var(--text-muted)', padding: '6px 8px', textAlign: 'center' }}>เฉลี่ยต่อไม้ (Avg P&L)</th>
-                                                                                            <th style={{ fontSize: '11px', color: 'var(--text-muted)', padding: '6px 8px', textAlign: 'right' }}>กำไรสุทธิ (Net P&L)</th>
-                                                                                        </tr>
-                                                                                    </thead>
-                                                                                    <tbody>
-                                                                                        {sess.bots.length === 0 ? (
-                                                                                            <tr>
-                                                                                                <td colSpan="7" style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '11px', padding: '12px' }}>
-                                                                                                    ไม่มีการเทรดของบอทในช่วงเวลานี้
-                                                                                                </td>
-                                                                                            </tr>
-                                                                                        ) : (
-                                                                                            sess.bots.map((bot, bIdx) => {
-                                                                                                const bWinRateVal = parseFloat(bot.winRate);
-                                                                                                let bWinRateColor = 'var(--text-muted)';
-                                                                                                if (bWinRateVal >= 60) bWinRateColor = 'var(--bull-green)';
-                                                                                                else if (bWinRateVal >= 45) bWinRateColor = 'var(--accent-gold)';
-                                                                                                else if (bWinRateVal > 0) bWinRateColor = 'var(--bear-red)';
-
-                                                                                                const bNetProfit = parseFloat(bot.totalProfit);
-                                                                                                const bProfitColorClass = bNetProfit > 0 ? 'price-up' : bNetProfit < 0 ? 'price-down' : '';
-
-                                                                                                return (
-                                                                                                    <tr key={bIdx} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)' }}>
-                                                                                                        <td style={{ fontSize: '11px', fontWeight: 600, color: bot.name === 'เทรดเอง (Manual)' ? 'var(--text-muted)' : 'var(--accent-gold)', padding: '6px 8px' }}>
-                                                                                                            {bot.name}
-                                                                                                        </td>
-                                                                                                        <td style={{ fontSize: '11px', textAlign: 'center', fontFamily: 'monospace', padding: '6px 8px' }}>{bot.totalTrades}</td>
-                                                                                                        <td style={{ fontSize: '11px', textAlign: 'center', fontFamily: 'monospace', padding: '6px 8px' }}>
-                                                                                                            <span style={{ color: 'var(--bull-green)' }}>{bot.winCount}</span>
-                                                                                                            <span style={{ color: 'var(--text-muted)', margin: '0 4px' }}>/</span>
-                                                                                                            <span style={{ color: 'var(--bear-red)' }}>{bot.loseCount}</span>
-                                                                                                        </td>
-                                                                                                        <td style={{ fontSize: '11px', textAlign: 'center', padding: '6px 8px' }}>
-                                                                                                            <span style={{ fontWeight: 700, fontFamily: 'monospace', color: bWinRateColor }}>
-                                                                                                                {bot.winRate}%
-                                                                                                            </span>
-                                                                                                        </td>
-                                                                                                        <td style={{ fontSize: '11px', textAlign: 'center', fontFamily: 'monospace', fontWeight: 600, color: bot.profitFactor === 'Max' || parseFloat(bot.profitFactor) >= 1.5 ? 'var(--bull-green)' : parseFloat(bot.profitFactor) >= 1.0 ? 'var(--accent-gold)' : 'var(--bear-red)', padding: '6px 8px' }}>
-                                                                                                            {bot.profitFactor}
-                                                                                                        </td>
-                                                                                                        <td className={parseFloat(bot.avgProfit) >= 0 ? 'price-up' : 'price-down'} style={{ fontSize: '11px', textAlign: 'center', fontFamily: 'monospace', fontWeight: 600, padding: '6px 8px' }}>
-                                                                                                            {parseFloat(bot.avgProfit) >= 0 ? '+' : ''}${bot.avgProfit}
-                                                                                                        </td>
-                                                                                                        <td className={bProfitColorClass} style={{ fontSize: '11px', textAlign: 'right', fontWeight: 700, fontFamily: 'monospace', padding: '6px 8px' }}>
-                                                                                                            {bNetProfit >= 0 ? '+' : ''}${bot.totalProfit}
-                                                                                                        </td>
-                                                                                                    </tr>
-                                                                                                );
-                                                                                            })
-                                                                                        )}
-                                                                                    </tbody>
-                                                                                </table>
-                                                                            </div>
-                                                                        </td>
-                                                                    </tr>
-                                                                )}
-                                                            </React.Fragment>
-                                                        );
-                                                    })}
-                                                </tbody>
-                                            </table>
-                                        )}
-                                    </div>
-
                                     {/* Bot breakdown metrics */}
                                     <div className="sidebar-panel-card" style={{ padding: '20px', border: '1px solid rgba(255,255,255,0.06)' }}>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                                             <h3 style={{ fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0, color: 'var(--text-secondary)' }}>
-                                                วิเคราะห์สิทธิภาพรายบอทเทรด (Bot Win Rate & Profit Analytics)
+                                                วิเคราะห์ประสิทธิภาพรายบอท/แหล่ง (BOT WIN RATE & PROFIT ANALYTICS)
                                             </h3>
                                         </div>
                                         
@@ -5627,6 +5159,151 @@ const TradingApp = () => {
                                             </table>
                                         )}
                                     </div>
+
+                                    {/* Session breakdown metrics */}
+                                    <div className="sidebar-panel-card" style={{ padding: '20px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                                            <h3 style={{ fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0, color: 'var(--text-secondary)' }}>
+                                                วิเคราะห์ประสิทธิภาพรายเซสชันเวลา (Session Win Rate & Profit Analytics)
+                                            </h3>
+                                        </div>
+                                        
+                                        {!analytics.sessionStats || analytics.sessionStats.length === 0 ? (
+                                            <div style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted)' }}>
+                                                ไม่มีข้อมูลสถิติของเซสชันในขณะนี้
+                                            </div>
+                                        ) : (
+                                            <table className="trading-table">
+                                                <thead>
+                                                    <tr>
+                                                        <th>เซสชันการซื้อขาย (Trading Session)</th>
+                                                        <th style={{ textAlign: 'center' }}>จำนวนออเดอร์ (Trades)</th>
+                                                        <th style={{ textAlign: 'center' }}>ชนะ (Wins)</th>
+                                                        <th style={{ textAlign: 'center' }}>แพ้ (Losses)</th>
+                                                        <th style={{ textAlign: 'center' }}>อัตราการชนะ (Win Rate)</th>
+                                                        <th style={{ textAlign: 'right' }}>กำไรรวม (Net Profit)</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {analytics.sessionStats.map((sess, index) => {
+                                                        const winRateVal = parseFloat(sess.winRate);
+                                                        const isExpanded = !!expandedSessions[sess.key];
+                                                        
+                                                        let winRateColor = 'var(--text-muted)';
+                                                        if (winRateVal >= 60) winRateColor = 'var(--bull-green)';
+                                                        else if (winRateVal >= 45) winRateColor = 'var(--accent-gold)';
+                                                        else if (winRateVal > 0) winRateColor = 'var(--bear-red)';
+
+                                                        return (
+                                                            <React.Fragment key={sess.key || index}>
+                                                                <tr 
+                                                                    onClick={() => toggleSessionExpanded(sess.key)}
+                                                                    style={{ cursor: 'pointer', transition: 'background-color 0.2s' }}
+                                                                    className={isExpanded ? 'active-row' : ''}
+                                                                >
+                                                                    <td>
+                                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                                                            <span style={{ 
+                                                                                display: 'inline-block', 
+                                                                                transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)', 
+                                                                                transition: 'transform 0.15s ease',
+                                                                                color: 'var(--accent-gold)',
+                                                                                fontSize: '8px',
+                                                                                marginRight: '2px'
+                                                                            }}>
+                                                                                ▶
+                                                                            </span>
+                                                                            {sess.name}
+                                                                        </div>
+                                                                    </td>
+                                                                    <td style={{ textAlign: 'center', fontFamily: 'monospace' }}>{sess.totalTrades}</td>
+                                                                    <td style={{ textAlign: 'center', fontFamily: 'monospace', color: 'var(--bull-green)' }}>{sess.winCount}</td>
+                                                                    <td style={{ textAlign: 'center', fontFamily: 'monospace', color: 'var(--bear-red)' }}>{sess.loseCount}</td>
+                                                                    <td style={{ textAlign: 'center' }}>
+                                                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                                                                            <span style={{ fontWeight: 700, fontFamily: 'monospace', color: winRateColor }}>
+                                                                                {sess.winRate}%
+                                                                            </span>
+                                                                            <div style={{ width: '60px', height: '4px', background: 'rgba(255,255,255,0.06)', borderRadius: '2px', overflow: 'hidden' }}>
+                                                                                <div style={{ width: `${winRateVal}%`, height: '100%', background: winRateColor }}></div>
+                                                                            </div>
+                                                                        </div>
+                                                                    </td>
+                                                                    <td 
+                                                                        className={parseFloat(sess.totalProfit) >= 0 ? 'price-up' : 'price-down'}
+                                                                        style={{ textAlign: 'right', fontWeight: 700, fontFamily: 'monospace' }}
+                                                                    >
+                                                                        {parseFloat(sess.totalProfit) >= 0 ? '+' : ''}${sess.totalProfit}
+                                                                    </td>
+                                                                </tr>
+                                                                {isExpanded && (
+                                                                    <tr>
+                                                                        <td colSpan="6" style={{ padding: '0', background: 'rgba(0,0,0,0.15)' }}>
+                                                                            <div style={{ 
+                                                                                padding: '12px 16px', 
+                                                                                background: 'rgba(255, 255, 255, 0.01)', 
+                                                                                borderLeft: '3px solid var(--accent-gold)',
+                                                                                margin: '8px 12px 12px 12px',
+                                                                                borderRadius: '0 4px 4px 0'
+                                                                            }}>
+                                                                                <div style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--text-muted)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                                                                    สถิติบอทรายเซสชัน (Bot Session breakdown)
+                                                                                </div>
+                                                                                {sess.bots && sess.bots.length > 0 ? (
+                                                                                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
+                                                                                        <thead>
+                                                                                            <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', color: 'var(--text-muted)' }}>
+                                                                                                <th style={{ textAlign: 'left', padding: '6px 4px' }}>ชื่อบอท (Bot Name)</th>
+                                                                                                <th style={{ textAlign: 'center', padding: '6px 4px' }}>จำนวนออเดอร์ (Trades)</th>
+                                                                                                <th style={{ textAlign: 'center', padding: '6px 4px' }}>ชนะ (Wins)</th>
+                                                                                                <th style={{ textAlign: 'center', padding: '6px 4px' }}>แพ้ (Losses)</th>
+                                                                                                <th style={{ textAlign: 'center', padding: '6px 4px' }}>อัตราการชนะ (Win Rate)</th>
+                                                                                                <th style={{ textAlign: 'right', padding: '6px 4px' }}>กำไรรวม (Net Profit)</th>
+                                                                                            </tr>
+                                                                                        </thead>
+                                                                                        <tbody>
+                                                                                            {sess.bots.map((b, idx) => {
+                                                                                                const bWinRateVal = parseFloat(b.winRate);
+                                                                                                let bWinRateColor = 'var(--text-muted)';
+                                                                                                if (bWinRateVal >= 60) bWinRateColor = 'var(--bull-green)';
+                                                                                                else if (bWinRateVal >= 45) bWinRateColor = 'var(--accent-gold)';
+                                                                                                else if (bWinRateVal > 0) bWinRateColor = 'var(--bear-red)';
+
+                                                                                                return (
+                                                                                                    <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', color: 'var(--text-secondary)' }}>
+                                                                                                        <td style={{ padding: '6px 4px', fontWeight: 600, color: b.name === 'เทรดเอง (Manual)' ? 'var(--text-muted)' : 'var(--accent-gold)' }}>
+                                                                                                            {b.name}
+                                                                                                        </td>
+                                                                                                        <td style={{ textAlign: 'center', padding: '6px 4px', fontFamily: 'monospace' }}>{b.totalTrades}</td>
+                                                                                                        <td style={{ textAlign: 'center', padding: '6px 4px', fontFamily: 'monospace', color: 'var(--bull-green)' }}>{b.winCount}</td>
+                                                                                                        <td style={{ textAlign: 'center', padding: '6px 4px', fontFamily: 'monospace', color: 'var(--bear-red)' }}>{b.loseCount}</td>
+                                                                                                        <td style={{ textAlign: 'center', padding: '6px 4px', fontFamily: 'monospace', fontWeight: 'bold', color: bWinRateColor }}>
+                                                                                                            {b.winRate}%
+                                                                                                        </td>
+                                                                                                        <td className={parseFloat(b.totalProfit) >= 0 ? 'price-up' : 'price-down'} style={{ textAlign: 'right', padding: '6px 4px', fontWeight: 700, fontFamily: 'monospace' }}>
+                                                                                                            {parseFloat(b.totalProfit) >= 0 ? '+' : ''}${b.totalProfit}
+                                                                                                        </td>
+                                                                                                    </tr>
+                                                                                                );
+                                                                                            })}
+                                                                                        </tbody>
+                                                                                    </table>
+                                                                                ) : (
+                                                                                    <div style={{ color: 'var(--text-muted)', fontSize: '11px', fontStyle: 'italic', padding: '4px 0' }}>
+                                                                                        ไม่มีข้อมูลสถิติของบอทในเซสชันนี้
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
+                                                                        </td>
+                                                                    </tr>
+                                                                )}
+                                                            </React.Fragment>
+                                                        );
+                                                    })}
+                                                </tbody>
+                                            </table>
+                                        )}
+                                    </div>
                                 </div>
                             )}
 
@@ -5639,52 +5316,10 @@ const TradingApp = () => {
                                             <h4 style={{ fontSize: '13px', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
                                                 จัดการระบบอัลกอริทึม ({activeRunningBotsCount} ทำงานอยู่)
                                             </h4>
-                                            <div style={{ display: 'flex', gap: '8px' }}>
-                                                <button 
-                                                    className="btn-create-bot" 
-                                                    style={{ 
-                                                        background: 'linear-gradient(135deg, #00b4d8, #0077b6)', 
-                                                        border: 'none', 
-                                                        color: '#fff', 
-                                                        fontWeight: '700', 
-                                                        display: 'flex', 
-                                                        alignItems: 'center', 
-                                                        gap: '6px',
-                                                        boxShadow: '0 4px 12px rgba(0, 180, 216, 0.2)'
-                                                    }}
-                                                    onClick={() => setIndicatorSignalsOpen(true)}
-                                                >
-                                                    <Icon name="info" size={12} style={{ color: '#fff' }} />
-                                                    <span>ตรวจเช็คสัญญาณระบบ AI</span>
-                                                </button>
-                                                {(() => {
-                                                    const advisorBot = bots.find(b => b.name === "Auto Advisor XAUUSD");
-                                                    const isAdvisorRunning = advisorBot ? advisorBot.is_running : false;
-                                                    return (
-                                                        <button 
-                                                            className="btn-create-bot" 
-                                                            style={{ 
-                                                                background: isAdvisorRunning ? 'linear-gradient(135deg, #e74c3c, #c0392b)' : 'linear-gradient(135deg, #d4af37, #aa7c11)', 
-                                                                border: 'none', 
-                                                                color: isAdvisorRunning ? '#fff' : '#000', 
-                                                                fontWeight: '700', 
-                                                                display: 'flex', 
-                                                                alignItems: 'center', 
-                                                                gap: '6px',
-                                                                boxShadow: isAdvisorRunning ? '0 4px 12px rgba(231, 76, 60, 0.2)' : '0 4px 12px rgba(212, 175, 55, 0.2)'
-                                                            }}
-                                                            onClick={handleAutoTradeAdvisor}
-                                                        >
-                                                            <Icon name={isAdvisorRunning ? "stop" : "shield"} size={12} />
-                                                            <span>{isAdvisorRunning ? "ปิดใช้งาน AI เทรดอัตโนมัติ" : "อนุญาต AI เทรดอัตโนมัติ"}</span>
-                                                        </button>
-                                                    );
-                                                })()}
-                                                <button className="btn-create-bot" onClick={() => { setSelectedAlgos(["rsi_oscillator"]); setSignalMode("or"); setBotForm({ name: "บอทเทรดทองคำ RSI", symbol: "XAUUSD", timeframe: "M1", algorithm: "rsi_oscillator", lot_size: 0.01, sl_points: 5.0, tp_points: 10.0, pj_tp_target: "manual", use_trend_filter: false, use_mtf_filter: false, use_atr_sizing: false, risk_percent: 1.0, allowed_sessions: "all", use_news_filter: false, max_hold_hours: 0.0 }); setEditingBotId(null); setBotFormOpen(true); }}>
-                                                    <Icon name="plus" size={12} />
-                                                    <span>สร้างบอทใหม่</span>
-                                                </button>
-                                            </div>
+                                            <button className="btn-create-bot" onClick={() => { setSelectedAlgos(["rsi_oscillator"]); setSignalMode("or"); setBotForm({ name: "บอทเทรดทองคำ RSI", symbol: "XAUUSD", timeframe: "M1", algorithm: "rsi_oscillator", lot_size: 0.01, sl_points: 5.0, tp_points: 10.0, use_trend_filter: false, use_mtf_filter: false, use_atr_sizing: false, risk_percent: 1.0, allowed_sessions: "all", use_news_filter: false, stoch_rsi_len: 13, stoch_len: 13, stoch_k: 3, stoch_d: 3, macd_fast: 12, macd_slow: 26, macd_signal: 9, pj_min_score: 6, pj_use_volume: false, pj_vol_multiplier: 2.0, pj_vwap_anchor: "Session", pj_atr_mult: 1.5, pj_use_dyn_atr: true, pj_tp_target: "manual", ema_fast: 50, ema_slow: 200, adx_len: 25, adx_threshold: 30 }); setEditingBotId(null); setBotFormOpen(true); }}>
+                                                <Icon name="plus" size={12} />
+                                                <span>สร้างบอทใหม่</span>
+                                            </button>
                                         </div>
                                         
                                         {bots.length === 0 ? (
@@ -5736,7 +5371,6 @@ const TradingApp = () => {
                                                                                 fontWeight: 500
                                                                             }}>
                                                                                 {aTrim === 'rsi_oscillator' ? 'RSI' : 
-                                                                                 aTrim === 'pj_indicator' ? 'PJ Indicator' : 
                                                                                  aTrim === 'stoch_rsi' ? 'StochRSI' : 
                                                                                  aTrim === 'macd_4c' ? 'MACD 4C Momentum' :
                                                                                  aTrim === 'sma_cross' ? 'SMA Cross' : 
@@ -5776,18 +5410,6 @@ const TradingApp = () => {
                                                                 <span className="bot-metric-label">กรอง EMA 200</span>
                                                                 <span className="bot-metric-value" style={{ color: bot.use_trend_filter ? 'var(--bull-green)' : 'var(--text-muted)' }}>
                                                                     {bot.use_trend_filter ? 'ACTIVE' : 'INACTIVE'}
-                                                                </span>
-                                                            </div>
-                                                            <div className="bot-metric-item">
-                                                                <span className="bot-metric-label">กรองข่าว AI</span>
-                                                                <span className="bot-metric-value" style={{ color: bot.use_news_filter ? 'var(--bull-green)' : 'var(--text-muted)' }}>
-                                                                    {bot.use_news_filter ? 'ACTIVE' : 'INACTIVE'}
-                                                                </span>
-                                                            </div>
-                                                            <div className="bot-metric-item">
-                                                                <span className="bot-metric-label">กรองเทรดหลายกรอบเวลา</span>
-                                                                <span className="bot-metric-value" style={{ color: bot.use_mtf_filter ? 'var(--bull-green)' : 'var(--text-muted)' }}>
-                                                                    {bot.use_mtf_filter ? 'ACTIVE' : 'INACTIVE'}
                                                                 </span>
                                                             </div>
                                                         </div>
@@ -5943,7 +5565,6 @@ const TradingApp = () => {
                                                 <div className="backtest-checkbox-list">
                                                     {[
                                                         { value: 'smc_confluence_pro', label: 'SMC Confluence Pro 🌟' },
-                                                        { value: 'pj_indicator', label: 'PJ Indicator 🔮' },
                                                         { value: 'smc_order_block', label: 'SMC Order Block 🟩' },
                                                         { value: 'smc_fvg_imbalance', label: 'SMC FVG Imbalance ⚡' },
                                                         { value: 'smc_bos_choch', label: 'SMC BOS / CHoCH 📈' },
@@ -6049,21 +5670,6 @@ const TradingApp = () => {
                                                 </div>
                                             </div>
 
-                                            <div className="input-group" style={{ margin: '8px 0 0 0' }}>
-                                                <label>ช่วงเวลาเทรด (Trading Session)</label>
-                                                <select
-                                                    value={backtestForm.allowed_sessions || "all"}
-                                                    onChange={(e) => setBacktestForm({ ...backtestForm, allowed_sessions: e.target.value })}
-                                                    style={{ height: '36px', fontSize: '12px', padding: '6px 10px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-color)', borderRadius: '4px', width: '100%' }}
-                                                >
-                                                    <option value="all">24 ชั่วโมง (All Sessions)</option>
-                                                    <option value="asian">Asian Only (00-08 UTC)</option>
-                                                    <option value="london">London Only (08-16 UTC)</option>
-                                                    <option value="newyork">NY Only (13-21 UTC)</option>
-                                                    <option value="london_ny">London + NY Overlap (13-16 UTC)</option>
-                                                </select>
-                                            </div>
-
                                             <button 
                                                 type="submit"
                                                 className="btn-primary"
@@ -6123,6 +5729,14 @@ const TradingApp = () => {
                                                         <Icon name="refresh" size={14} />
                                                         <span>📈 กราฟเงินทุน (Equity Curve)</span>
                                                     </button>
+                                                    <button
+                                                        type="button"
+                                                        className={`backtest-subtab-btn ${backtestSubTab === 'deals' ? 'active' : ''}`}
+                                                        onClick={() => setBacktestSubTab('deals')}
+                                                    >
+                                                        <Icon name="history" size={14} />
+                                                        <span>📜 บันทึกธุรกรรม (Deals Log Table)</span>
+                                                    </button>
                                                 </div>
 
                                                 {/* Tab 1: Statistics Dashboard */}
@@ -6132,8 +5746,8 @@ const TradingApp = () => {
                                                         <div className="backtest-stats-grid">
                                                             <div className="backtest-stat-card">
                                                                 <span className="metric-label">กำไร/ขาดทุนสุทธิ (Net profit)</span>
-                                                                <span className={`metric-value ${(backtestResult.net_profit ?? 0) >= 0 ? 'price-up' : 'price-down'}`}>
-                                                                    {(backtestResult.net_profit ?? 0) >= 0 ? '+' : ''}${(backtestResult.net_profit ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                                                <span className={`metric-value ${backtestResult.net_profit >= 0 ? 'price-up' : 'price-down'}`}>
+                                                                    {backtestResult.net_profit >= 0 ? '+' : ''}${backtestResult.net_profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                                                                 </span>
                                                             </div>
                                                             <div className="backtest-stat-card">
@@ -6142,24 +5756,24 @@ const TradingApp = () => {
                                                                     {backtestResult.win_rate}%
                                                                 </span>
                                                                 <span style={{ fontSize: '9px', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
-                                                                    ชนะ {(backtestResult.wins_count ?? 0)} | แพ้ {(backtestResult.losses_count ?? 0)}
+                                                                    ชนะ {backtestResult.wins_count} | แพ้ {backtestResult.losses_count}
                                                                 </span>
                                                                 <div className="winrate-gauge-container">
                                                                     <div className="winrate-gauge-bar">
-                                                                        <div className="winrate-gauge-fill" style={{ width: `${backtestResult.win_rate ?? 0}%` }}></div>
+                                                                        <div className="winrate-gauge-fill" style={{ width: `${backtestResult.win_rate}%` }}></div>
                                                                     </div>
                                                                 </div>
                                                             </div>
                                                             <div className="backtest-stat-card">
                                                                 <span className="metric-label">ออเดอร์ทั้งหมด (Total deals)</span>
                                                                 <span className="metric-value" style={{ color: 'var(--text-primary)' }}>
-                                                                    {(backtestResult.total_trades ?? 0)} ไม้
+                                                                    {backtestResult.total_trades} ไม้
                                                                 </span>
                                                             </div>
                                                             <div className="backtest-stat-card">
                                                                 <span className="metric-label">บาลานซ์สุทธิ (Final Balance)</span>
                                                                 <span className="metric-value" style={{ color: 'var(--bull-green)' }}>
-                                                                    ${(backtestResult.final_balance ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                                                    ${backtestResult.final_balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                                                                 </span>
                                                             </div>
                                                         </div>
@@ -6171,25 +5785,25 @@ const TradingApp = () => {
                                                                 <h5>📊 วิเคราะห์ผลตอบแทน (Returns Analysis)</h5>
                                                                 <div className="backtest-detail-row">
                                                                     <span className="backtest-detail-label">กำไรรวมทั้งหมด (Gross Profit)</span>
-                                                                    <span className="backtest-detail-value price-up">+${(backtestResult.gross_profit ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                                                    <span className="backtest-detail-value price-up">+${backtestResult.gross_profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                                                                 </div>
                                                                 <div className="backtest-detail-row">
                                                                     <span className="backtest-detail-label">ขาดทุนรวมทั้งหมด (Gross Loss)</span>
-                                                                    <span className="backtest-detail-value price-down">-${(backtestResult.gross_loss ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                                                    <span className="backtest-detail-value price-down">-${backtestResult.gross_loss.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                                                                 </div>
                                                                 <div className="backtest-detail-row">
                                                                     <span className="backtest-detail-label">ตัวประกอบกำไร (Profit Factor)</span>
                                                                     <span className="backtest-detail-value" style={{ 
-                                                                        color: (backtestResult.profit_factor ?? 0) >= 1.5 ? 'var(--bull-green)' : (backtestResult.profit_factor ?? 0) >= 1.0 ? 'var(--accent-gold)' : 'var(--bear-red)',
+                                                                        color: backtestResult.profit_factor >= 1.5 ? 'var(--bull-green)' : backtestResult.profit_factor >= 1.0 ? 'var(--accent-gold)' : 'var(--bear-red)',
                                                                         fontWeight: 'bold'
                                                                     }}>
-                                                                        {(backtestResult.profit_factor ?? 0)}
+                                                                        {backtestResult.profit_factor}
                                                                     </span>
                                                                 </div>
                                                                 <div className="backtest-detail-row">
                                                                     <span className="backtest-detail-label">ความคาดหวังดีลเฉลี่ย (Expectancy)</span>
-                                                                    <span className={`backtest-detail-value ${(backtestResult.expectancy ?? 0) >= 0 ? 'price-up' : 'price-down'}`}>
-                                                                        {(backtestResult.expectancy ?? 0) >= 0 ? '+' : ''}${(backtestResult.expectancy ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                                                    <span className={`backtest-detail-value ${backtestResult.expectancy >= 0 ? 'price-up' : 'price-down'}`}>
+                                                                        {backtestResult.expectancy >= 0 ? '+' : ''}${backtestResult.expectancy.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                                                                     </span>
                                                                 </div>
                                                             </div>
@@ -6199,22 +5813,22 @@ const TradingApp = () => {
                                                                 <h5>🛡️ การควบคุมความเสี่ยง (Risk & Drawdown)</h5>
                                                                 <div className="backtest-detail-row">
                                                                     <span className="backtest-detail-label">การย่อตัวลึกสุด (Max Drawdown)</span>
-                                                                    <span className="backtest-detail-value price-down">-${(backtestResult.max_drawdown ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                                                    <span className="backtest-detail-value price-down">-${backtestResult.max_drawdown.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                                                                 </div>
                                                                 <div className="backtest-detail-row">
                                                                     <span className="backtest-detail-label">เปอร์เซ็นต์ย่อตัวลึกสุด (Max Drawdown %)</span>
-                                                                    <span className="backtest-detail-value price-down">-{(backtestResult.max_drawdown_percent ?? 0)}%</span>
+                                                                    <span className="backtest-detail-value price-down">-{backtestResult.max_drawdown_percent}%</span>
                                                                 </div>
                                                                 <div className="backtest-detail-row">
                                                                     <span className="backtest-detail-label">เงินตั้งต้นจำลอง (Initial Balance)</span>
-                                                                    <span className="backtest-detail-value" style={{ color: 'var(--text-secondary)' }}>${(backtestResult.initial_balance ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                                                    <span className="backtest-detail-value" style={{ color: 'var(--text-secondary)' }}>${backtestResult.initial_balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                                                                 </div>
                                                                 <div className="backtest-detail-row">
                                                                     <span className="backtest-detail-label">ระดับความเสี่ยงพอร์ต (Risk Rating)</span>
                                                                     <span className="backtest-detail-value" style={{ 
-                                                                        color: (backtestResult.max_drawdown_percent ?? 0) <= 10 ? 'var(--bull-green)' : (backtestResult.max_drawdown_percent ?? 0) <= 20 ? 'var(--accent-gold)' : 'var(--bear-red)'
+                                                                        color: backtestResult.max_drawdown_percent <= 10 ? 'var(--bull-green)' : backtestResult.max_drawdown_percent <= 20 ? 'var(--accent-gold)' : 'var(--bear-red)'
                                                                     }}>
-                                                                        {(backtestResult.max_drawdown_percent ?? 0) <= 10 ? 'ต่ำ (Low Risk)' : (backtestResult.max_drawdown_percent ?? 0) <= 20 ? 'ปานกลาง (Medium Risk)' : 'สูง (High Drawdown!)'}
+                                                                        {backtestResult.max_drawdown_percent <= 10 ? 'ต่ำ (Low Risk)' : backtestResult.max_drawdown_percent <= 20 ? 'ปานกลาง (Medium Risk)' : 'สูง (High Drawdown!)'}
                                                                     </span>
                                                                 </div>
                                                             </div>
@@ -6224,22 +5838,22 @@ const TradingApp = () => {
                                                                 <h5>🧬 พฤติกรรมดีลการเทรด (Trade Statistics)</h5>
                                                                 <div className="backtest-detail-row">
                                                                     <span className="backtest-detail-label">เฉลี่ยต่อดีลกำไร (Average Win)</span>
-                                                                    <span className="backtest-detail-value price-up">+${(backtestResult.avg_win ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                                                    <span className="backtest-detail-value price-up">+${backtestResult.avg_win.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                                                                 </div>
                                                                 <div className="backtest-detail-row">
                                                                     <span className="backtest-detail-label">เฉลี่ยต่อดีลขาดทุน (Average Loss)</span>
-                                                                    <span className="backtest-detail-value price-down">-${(backtestResult.avg_loss ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                                                    <span className="backtest-detail-value price-down">-${backtestResult.avg_loss.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                                                                 </div>
                                                                 <div className="backtest-detail-row">
                                                                     <span className="backtest-detail-label">อัตราส่วนเฉลี่ย Win/Loss RR</span>
                                                                     <span className="backtest-detail-value">
-                                                                        {(backtestResult.avg_loss ?? 0) > 0 ? ((backtestResult.avg_win ?? 0) / (backtestResult.avg_loss ?? 1)).toFixed(2) : (backtestResult.avg_win ?? 0).toFixed(2)}
+                                                                        {backtestResult.avg_loss > 0 ? (backtestResult.avg_win / backtestResult.avg_loss).toFixed(2) : backtestResult.avg_win.toFixed(2)}
                                                                     </span>
                                                                 </div>
                                                                 <div className="backtest-detail-row">
                                                                     <span className="backtest-detail-label">สตรีคชนะ / แพ้ ต่อเนื่องสูงสุด</span>
                                                                     <span className="backtest-detail-value">
-                                                                        <span className="price-up">{(backtestResult.max_consecutive_wins ?? 0)} Wins</span> / <span className="price-down">{(backtestResult.max_consecutive_losses ?? 0)} Losses</span>
+                                                                        <span className="price-up">{backtestResult.max_consecutive_wins} Wins</span> / <span className="price-down">{backtestResult.max_consecutive_losses} Losses</span>
                                                                     </span>
                                                                 </div>
                                                             </div>
@@ -6249,15 +5863,12 @@ const TradingApp = () => {
 
                                                 {/* Tab 2: Candlestick & Entries Chart */}
                                                 {backtestSubTab === 'price' && (
-                                                    <React.Fragment>
-                                                        <div className="backtest-chart-card" style={{ height: '500px', display: 'flex', flexDirection: 'column' }}>
-                                                            <h4 style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                                                                🕯️ กราฟราคาสินทรัพย์จำลองและจุดเข้าเทรดจริง (Asset Candlestick & Entries Chart)
-                                                            </h4>
-                                                            <div ref={backtestPriceChartContainerRef} className="backtest-chart-container" style={{ flex: 1, height: '100%' }}></div>
-                                                        </div>
-                                                        {renderBacktestDealsTable('450px', true)}
-                                                    </React.Fragment>
+                                                    <div className="backtest-chart-card" style={{ height: '500px', display: 'flex', flexDirection: 'column' }}>
+                                                        <h4 style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                                            🕯️ กราฟราคาสินทรัพย์จำลองและจุดเข้าเทรดจริง (Asset Candlestick & Entries Chart)
+                                                        </h4>
+                                                        <div ref={backtestPriceChartContainerRef} className="backtest-chart-container" style={{ flex: 1, height: '100%' }}></div>
+                                                    </div>
                                                 )}
 
                                                 {/* Tab 3: Equity Curve Chart */}
@@ -6267,6 +5878,68 @@ const TradingApp = () => {
                                                             📈 กราฟแสดงเส้นความเติบโตของทุนสำรองสุทธิ (Simulated Equity Growth Curve)
                                                         </h4>
                                                         <div ref={backtestChartContainerRef} className="backtest-chart-container" style={{ flex: 1, height: '100%' }}></div>
+                                                    </div>
+                                                )}
+
+                                                {/* Tab 4: Deals list table card */}
+                                                {backtestSubTab === 'deals' && (
+                                                    <div className="backtest-table-card" style={{ marginTop: '0' }}>
+                                                        <h4 style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                                            📜 บันทึกธุรกรรมประวัติศาสตร์การซื้อขายย้อนหลังอย่างละเอียด (Backtest Deals History Log)
+                                                        </h4>
+                                                        
+                                                        {backtestResult.trades.length === 0 ? (
+                                                            <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '11.5px', padding: '20px 0' }}>
+                                                                ไม่มีการเปิดธุรกรรมการเทรดใดๆ เกิดขึ้นในตลอดข้อมูลประวัติศาสตร์ lookback นี้
+                                                            </div>
+                                                        ) : (
+                                                            <div className="backtest-table-wrapper" style={{ maxHeight: '450px' }}>
+                                                                <table className="trading-table">
+                                                                    <thead>
+                                                                        <tr>
+                                                                            <th>Ticket</th>
+                                                                            <th>ประเภท</th>
+                                                                            <th>ขนาด Lot</th>
+                                                                            <th>ราคาเปิด</th>
+                                                                            <th>ราคาปิด</th>
+                                                                            <th>เวลาเปิด</th>
+                                                                            <th>เวลาปิด</th>
+                                                                            <th>ผลลัพธ์</th>
+                                                                            <th>กำไร (USD)</th>
+                                                                            <th>เหตุผลปิดดีล</th>
+                                                                        </tr>
+                                                                    </thead>
+                                                                    <tbody>
+                                                                        {backtestResult.trades.map((t, idx) => (
+                                                                            <tr key={`${t.ticket}-${idx}`}>
+                                                                                <td style={{ fontFamily: 'monospace' }}>#{t.ticket}</td>
+                                                                                <td>
+                                                                                    <span className={t.type === 'buy' ? 'buy-badge' : 'sell-badge'}>
+                                                                                        {t.type.toUpperCase()}
+                                                                                    </span>
+                                                                                </td>
+                                                                                <td style={{ fontFamily: 'monospace' }}>{backtestForm.lot_size}</td>
+                                                                                <td style={{ fontFamily: 'monospace' }}>{t.open_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                                                                                <td style={{ fontFamily: 'monospace' }}>{t.close_price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                                                                                <td style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{t.open_time}</td>
+                                                                                <td style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>{t.close_time}</td>
+                                                                                <td>
+                                                                                    <span className={t.result === 'win' ? 'result-win-badge' : 'result-loss-badge'}>
+                                                                                        {t.result.toUpperCase()}
+                                                                                    </span>
+                                                                                </td>
+                                                                                <td className={t.profit >= 0 ? 'price-up' : 'price-down'} style={{ fontWeight: 700, fontFamily: 'monospace' }}>
+                                                                                    {t.profit >= 0 ? '+' : ''}${t.profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                                                                </td>
+                                                                                <td style={{ fontWeight: 600, fontSize: '11px', color: t.reason === 'Take Profit' ? 'var(--bull-green)' : t.reason === 'Stop Loss' ? 'var(--bear-red)' : 'var(--text-secondary)' }}>
+                                                                                    {t.reason}
+                                                                                </td>
+                                                                            </tr>
+                                                                        ))}
+                                                                    </tbody>
+                                                                </table>
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 )}
                                             </React.Fragment>
@@ -6637,7 +6310,7 @@ const TradingApp = () => {
                             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
                                 <span className="text-secondary">Free Margin</span>
                                 <span style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>
-                                    ${(account.margin_free ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                    ${account.margin_free.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                                 </span>
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '8px' }}>
@@ -7456,14 +7129,16 @@ const TradingApp = () => {
                                 }}>
                                     {[
                                         { id: 'rsi_oscillator', name: 'RSI Overbought/Oversold', desc: 'เทรดเมื่อจุดกลับตัวจากเขต RSI Overbought/Oversold' },
-                                        { id: 'pj_indicator', name: 'PJ Indicator 🔮', desc: 'กลยุทธ์ตามแนวโน้มและ Confluence Score จาก Pine Script' },
                                         { id: 'stoch_rsi', name: 'Stochastic RSI (StochRSI)', desc: 'จับสัญญาณซื้อขายและจุดกลับตัวได้รวดเร็วกว่า RSI ทั่วไป โดยใช้ออสซิลเลเตอร์คำนวณซ้ำบน RSI' },
                                         { id: 'macd_4c', name: 'MACD 4 Color (4C) Momentum', desc: 'ตรวจจับแรงขับเคลื่อนเทรนด้วยแท่งสีโมเมนตัม 4 มิติ (Pine Script 4-Color MACD)' },
+                                        { id: 'pj_indicator', name: 'PJ Indicator', desc: 'กลยุทธ์พรีเมียมผสานเทรนและการกรองด้วย Trend Score (EMA14, RSI, MACD, Stoch, BB, VWAP)' },
                                         { id: 'sma_cross', name: 'Double SMA Crossover', desc: 'เทรดตามแนวโน้มเมื่อเส้น SMA 5 ตัดกับ 15' },
                                         { id: 'macd', name: 'MACD Signal Cross', desc: 'เทรดตามโมเมนตัมเมื่อเส้น MACD ตัดกับ Signal' },
                                         { id: 'elliott_wave', name: 'Elliott Wave Theory', desc: 'ตรวจจับคลื่น Impulse/Correction จากราคาย้อนหลัง' },
                                         { id: 'harmonic_patterns', name: 'Harmonic Patterns', desc: 'เทรดจุดกลับตัวสมมาตร Gartley/Bat/Butterfly' },
                                         { id: 'ema_cross_50_200', name: 'EMA 50 / 200 Cross', desc: 'เทรดตามแนวโน้มใหญ่เมื่อเส้น EMA 50 ตัดกับ EMA 200' },
+                                        { id: 'ema_cross', name: 'Custom EMA Crossover', desc: 'เทรดแนวโน้มราคาจากการตัดกันของ EMA เส้นสั้นและเส้นยาวที่กำหนดเอง' },
+                                        { id: 'adx', name: 'ADX Trend & DI Cross', desc: 'เทรดตามการตัดกันของเส้น +DI / -DI ยืนยันความแข็งแกร่งแนวโน้มด้วยเส้น ADX' },
                                         { id: 'rsi_divergence', name: 'RSI Divergence', desc: 'จับคู่สัญญาณกลับตัวราคากับโมเมนตัม RSI (Bullish/Bearish Divergence)' },
                                         { id: 'atr_breakout', name: 'ATR Volatility Breakout', desc: 'เทรดกรอบความผันผวน ATR (Close > EMA20 + 1.5 * ATR)' },
                                         { id: 'support_resistance', name: 'Support / Resistance Bounce', desc: 'เทรดการเด้งกลับเมื่อราคาทดสอบแนวรับหรือแนวต้านที่แข็งแกร่ง' },
@@ -7493,13 +7168,16 @@ const TradingApp = () => {
                                                     if (nextAlgos.length === 1) {
                                                         const single = nextAlgos[0];
                                                         const suffix = single === "rsi_oscillator" ? "RSI Overbought/Oversold" :
-                                                                       single === "pj_indicator" ? "PJ Indicator" :
                                                                        single === "stoch_rsi" ? "StochRSI Fast Reversal" :
+                                                                       single === "macd_4c" ? "MACD 4C Momentum" :
+                                                                       single === "pj_indicator" ? "PJ Trend Engine" :
                                                                        single === "sma_cross" ? "Double SMA" :
                                                                        single === "macd" ? "MACD Cross" :
                                                                        single === "elliott_wave" ? "Elliott Wave Bot" :
                                                                        single === "harmonic_patterns" ? "Harmonics Reversal" :
                                                                        single === "ema_cross_50_200" ? "EMA 50/200 Cross" :
+                                                                       single === "ema_cross" ? "Custom EMA Cross" :
+                                                                       single === "adx" ? "ADX Trend/DI Cross" :
                                                                        single === "rsi_divergence" ? "RSI Divergence" :
                                                                        single === "atr_breakout" ? "ATR Breakout" :
                                                                        single === "support_resistance" ? "S/R Bounce" : 
@@ -7614,138 +7292,289 @@ const TradingApp = () => {
                                 </div>
                             </div>
 
-                            {selectedAlgos.includes('pj_indicator') && (
-                                <div className="bot-form-grid" style={{ marginTop: '10px', marginBottom: '10px' }}>
-                                    <div className="input-group" style={{ gridColumn: 'span 2', margin: 0 }}>
-                                        <label style={{ color: 'var(--accent-gold)', fontWeight: 600 }}>PJ Take Profit Target (เป้าหมายกำไรจาก Indicator)</label>
-                                        <select 
-                                            className="numeric-input"
-                                            style={{ appearance: 'auto' }}
-                                            value={botForm.pj_tp_target || 'manual'}
-                                            onChange={(e) => setBotForm({ ...botForm, pj_tp_target: e.target.value })}
-                                        >
-                                            <option value="manual">Manual TP Points (ใช้ระยะ TP ด้านบน)</option>
-                                            <option value="tp1">TP Target 1 (ระยะ TP1 ตามสูตร PJ)</option>
-                                            <option value="tp1_5">TP Target 1.5 (ระยะ TP1.5 ตามสูตร PJ)</option>
-                                            <option value="tp2">TP Target 2 (ระยะ TP2 ตามสูตร PJ)</option>
-                                            <option value="tp2_5">TP Target 2.5 (ระยะ TP2.5 ตามสูตร PJ)</option>
-                                            <option value="tp3">TP Target 3 (ระยะ TP3 ตามสูตร PJ)</option>
-                                        </select>
-                                        <span style={{ fontSize: '9px', color: 'var(--text-muted)', display: 'block', marginTop: '4px' }}>
-                                            * เมื่อเลือกเป้าหมายกำไรที่ไม่ใช่ Manual ระบบจะละทิ้งระยะ TP ด้านบน และใช้ระดับราคา TP จากอินดิเคเตอร์ PJ แทน
-                                        </span>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* --- Advanced SMC & Risk Management Settings --- */}
-                            <div style={{
-                                marginTop: '16px',
-                                borderTop: '1px solid rgba(255, 255, 255, 0.05)',
-                                paddingTop: '16px'
-                            }}>
-                                <h4 style={{ 
-                                    fontSize: '12px', 
-                                    color: 'var(--accent-gold)', 
-                                    fontWeight: 700, 
-                                    marginBottom: '12px',
-                                    textTransform: 'uppercase',
-                                    letterSpacing: '0.5px'
+                            {/* --- Indicators Custom Settings --- */}
+                            {(selectedAlgos.includes('stoch_rsi') || selectedAlgos.includes('macd_4c')) && (
+                                <div style={{
+                                    marginTop: '16px',
+                                    padding: '14px',
+                                    borderRadius: '8px',
+                                    background: 'rgba(255, 255, 255, 0.02)',
+                                    border: '1px solid rgba(255, 255, 255, 0.05)',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '12px'
                                 }}>
-                                    การบริหารความเสี่ยงและตัวกรองขั้นสูง (Advanced Risk & Filters)
-                                </h4>
+                                    <h4 style={{ 
+                                        fontSize: '12px', 
+                                        color: 'var(--accent-gold)', 
+                                        textTransform: 'uppercase', 
+                                        letterSpacing: '0.5px',
+                                        margin: '0',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '6px'
+                                    }}>
+                                        <Icon name="settings" size={14} />
+                                        <span>ตั้งค่าพารามิเตอร์อินดิเคเตอร์ (Indicator Settings)</span>
+                                    </h4>
 
-                                <div className="bot-form-grid" style={{ marginBottom: '12px' }}>
-                                    <div className="input-group" style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(255,255,255,0.01)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.03)' }}>
-                                        <input 
-                                            type="checkbox" 
-                                            id="chk-trend-filter"
-                                            checked={botForm.use_trend_filter}
-                                            onChange={(e) => setBotForm({ ...botForm, use_trend_filter: e.target.checked })}
-                                            style={{ accentColor: 'var(--accent-gold)', width: '16px', height: '16px', cursor: 'pointer' }}
-                                        />
-                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', cursor: 'pointer' }} onClick={() => setBotForm({ ...botForm, use_trend_filter: !botForm.use_trend_filter })}>
-                                            <label htmlFor="chk-trend-filter" style={{ margin: 0, cursor: 'pointer', fontWeight: 600, fontSize: '11px', textTransform: 'none' }}>
-                                                เปิดใช้ตัวกรองเทรนด์ใหญ่ (EMA 200)
-                                            </label>
-                                            <span style={{ fontSize: '9px', color: 'var(--text-muted)', lineHeight: '1.2' }}>
-                                                เข้า BUY เมื่อราคาอยู่เหนือ EMA 200 และ SELL เมื่อราคาอยู่ใต้เท่านั้น
-                                            </span>
+                                    {/* Stochastic RSI Settings */}
+                                    {selectedAlgos.includes('stoch_rsi') && (
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                            <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-primary)' }}>Stochastic RSI (StochRSI) Parameters:</span>
+                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '8px' }}>
+                                                <div className="input-group" style={{ margin: 0 }}>
+                                                    <label style={{ fontSize: '10px', marginBottom: '3px' }}>%K Length</label>
+                                                    <input 
+                                                        type="number" 
+                                                        className="numeric-input" 
+                                                        required 
+                                                        value={botForm.stoch_k}
+                                                        onChange={(e) => setBotForm({ ...botForm, stoch_k: parseInt(e.target.value) || 3 })}
+                                                        style={{ height: '34px', fontSize: '12px', padding: '6px 8px' }}
+                                                    />
+                                                </div>
+                                                <div className="input-group" style={{ margin: 0 }}>
+                                                    <label style={{ fontSize: '10px', marginBottom: '3px' }}>%D Smooth</label>
+                                                    <input 
+                                                        type="number" 
+                                                        className="numeric-input" 
+                                                        required 
+                                                        value={botForm.stoch_d}
+                                                        onChange={(e) => setBotForm({ ...botForm, stoch_d: parseInt(e.target.value) || 3 })}
+                                                        style={{ height: '34px', fontSize: '12px', padding: '6px 8px' }}
+                                                    />
+                                                </div>
+                                                <div className="input-group" style={{ margin: 0 }}>
+                                                    <label style={{ fontSize: '10px', marginBottom: '3px' }}>RSI Length</label>
+                                                    <input 
+                                                        type="number" 
+                                                        className="numeric-input" 
+                                                        required 
+                                                        value={botForm.stoch_rsi_len}
+                                                        onChange={(e) => setBotForm({ ...botForm, stoch_rsi_len: parseInt(e.target.value) || 13 })}
+                                                        style={{ height: '34px', fontSize: '12px', padding: '6px 8px' }}
+                                                    />
+                                                </div>
+                                                <div className="input-group" style={{ margin: 0 }}>
+                                                    <label style={{ fontSize: '10px', marginBottom: '3px' }}>Stoch Length</label>
+                                                    <input 
+                                                        type="number" 
+                                                        className="numeric-input" 
+                                                        required 
+                                                        value={botForm.stoch_len}
+                                                        onChange={(e) => setBotForm({ ...botForm, stoch_len: parseInt(e.target.value) || 13 })}
+                                                        style={{ height: '34px', fontSize: '12px', padding: '6px 8px' }}
+                                                    />
+                                                </div>
+                                            </div>
                                         </div>
-                                    </div>
+                                    )}
 
-                                    <div className="input-group" style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(255,255,255,0.01)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.03)' }}>
-                                        <input 
-                                            type="checkbox" 
-                                            id="chk-mtf-filter"
-                                            checked={botForm.use_mtf_filter || false}
-                                            onChange={(e) => setBotForm({ ...botForm, use_mtf_filter: e.target.checked })}
-                                            style={{ accentColor: 'var(--accent-gold)', width: '16px', height: '16px', cursor: 'pointer' }}
-                                        />
-                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', cursor: 'pointer' }} onClick={() => setBotForm({ ...botForm, use_mtf_filter: !botForm.use_mtf_filter })}>
-                                            <label htmlFor="chk-mtf-filter" style={{ margin: 0, cursor: 'pointer', fontWeight: 600, fontSize: '11px', textTransform: 'none' }}>
-                                                เปิดใช้ตัวกรองเทรดหลายกรอบเวลา (Multi-TF Filter)
-                                            </label>
-                                            <span style={{ fontSize: '9px', color: 'var(--text-muted)', lineHeight: '1.2' }}>
-                                                วิเคราะห์แนวโน้มกรอบเวลาที่ใหญ่กว่าเพื่อยืนยันสัญญาณเทรด
-                                            </span>
+                                    {/* MACD 4C Settings */}
+                                    {selectedAlgos.includes('macd_4c') && (
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderTop: selectedAlgos.includes('stoch_rsi') ? '1px dashed rgba(255,255,255,0.05)' : 'none', paddingTop: selectedAlgos.includes('stoch_rsi') ? '10px' : '0' }}>
+                                            <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-primary)' }}>MACD 4 Color (4C) Parameters:</span>
+                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+                                                <div className="input-group" style={{ margin: 0 }}>
+                                                    <label style={{ fontSize: '10px', marginBottom: '3px' }}>Fast Length</label>
+                                                    <input 
+                                                        type="number" 
+                                                        className="numeric-input" 
+                                                        required 
+                                                        value={botForm.macd_fast}
+                                                        onChange={(e) => setBotForm({ ...botForm, macd_fast: parseInt(e.target.value) || 12 })}
+                                                        style={{ height: '34px', fontSize: '12px', padding: '6px 8px' }}
+                                                    />
+                                                </div>
+                                                <div className="input-group" style={{ margin: 0 }}>
+                                                    <label style={{ fontSize: '10px', marginBottom: '3px' }}>Slow Length</label>
+                                                    <input 
+                                                        type="number" 
+                                                        className="numeric-input" 
+                                                        required 
+                                                        value={botForm.macd_slow}
+                                                        onChange={(e) => setBotForm({ ...botForm, macd_slow: parseInt(e.target.value) || 26 })}
+                                                        style={{ height: '34px', fontSize: '12px', padding: '6px 8px' }}
+                                                    />
+                                                </div>
+                                                <div className="input-group" style={{ margin: 0 }}>
+                                                    <label style={{ fontSize: '10px', marginBottom: '3px' }}>Signal Smooth</label>
+                                                    <input 
+                                                        type="number" 
+                                                        className="numeric-input" 
+                                                        required 
+                                                        value={botForm.macd_signal}
+                                                        onChange={(e) => setBotForm({ ...botForm, macd_signal: parseInt(e.target.value) || 9 })}
+                                                        style={{ height: '34px', fontSize: '12px', padding: '6px 8px' }}
+                                                    />
+                                                </div>
+                                            </div>
                                         </div>
-                                    </div>
+                                    )}
 
-                                    <div className="input-group">
-                                        <label>ช่วงเวลาทำเงิน (Allowed Session)</label>
-                                        <select 
-                                            className="numeric-input"
-                                            style={{ appearance: 'auto', fontSize: '12px' }}
-                                            value={botForm.allowed_sessions}
-                                            onChange={(e) => setBotForm({ ...botForm, allowed_sessions: e.target.value })}
-                                        >
-                                            <option value="all">ทุกช่วงเวลา (All Sessions - 24 Hours)</option>
-                                            <option value="asian">Asian Session (00:00 - 08:00 UTC)</option>
-                                            <option value="london">London Session (08:00 - 16:00 UTC)</option>
-                                            <option value="newyork">New York Session (13:00 - 21:00 UTC)</option>
-                                            <option value="london_ny">London-NY Overlap (13:00 - 16:00 UTC)</option>
-                                        </select>
-                                    </div>
-                                </div>
-
-                                <div className="bot-form-grid">
-                                    <div className="input-group" style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(255,255,255,0.01)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.03)', height: 'fit-content' }}>
-                                        <input 
-                                            type="checkbox" 
-                                            id="chk-atr-sizing"
-                                            checked={botForm.use_atr_sizing}
-                                            onChange={(e) => setBotForm({ ...botForm, use_atr_sizing: e.target.checked })}
-                                            style={{ accentColor: 'var(--accent-gold)', width: '16px', height: '16px', cursor: 'pointer' }}
-                                        />
-                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', cursor: 'pointer' }} onClick={() => setBotForm({ ...botForm, use_atr_sizing: !botForm.use_atr_sizing })}>
-                                            <label htmlFor="chk-atr-sizing" style={{ margin: 0, cursor: 'pointer', fontWeight: 600, fontSize: '11px', textTransform: 'none' }}>
-                                                คำนวณ Lot อัตโนมัติด้วย ATR
-                                            </label>
-                                            <span style={{ fontSize: '9px', color: 'var(--text-muted)', lineHeight: '1.2' }}>
-                                                คำนวณขนาดสัญญาเทรดอัตโนมัติตาม % ความเสี่ยงและระยะ SL ปัจจุบัน
-                                            </span>
+                                    {/* PJ Indicator Settings */}
+                                    {selectedAlgos.includes('pj_indicator') && (
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderTop: (selectedAlgos.includes('stoch_rsi') || selectedAlgos.includes('macd_4c')) ? '1px dashed rgba(255,255,255,0.05)' : 'none', paddingTop: (selectedAlgos.includes('stoch_rsi') || selectedAlgos.includes('macd_4c')) ? '10px' : '0' }}>
+                                            <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--accent-gold)' }}>PJ Indicator Parameters:</span>
+                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+                                                <div className="input-group" style={{ margin: 0 }}>
+                                                    <label style={{ fontSize: '10px', marginBottom: '3px' }}>Min Score (1-10)</label>
+                                                    <input 
+                                                        type="number" 
+                                                        className="numeric-input" 
+                                                        required 
+                                                        min="1"
+                                                        max="10"
+                                                        value={botForm.pj_min_score}
+                                                        onChange={(e) => setBotForm({ ...botForm, pj_min_score: parseInt(e.target.value) || 6 })}
+                                                        style={{ height: '34px', fontSize: '12px', padding: '6px 8px' }}
+                                                    />
+                                                </div>
+                                                <div className="input-group" style={{ margin: 0 }}>
+                                                    <label style={{ fontSize: '10px', marginBottom: '3px' }}>Vol Multiplier</label>
+                                                    <input 
+                                                        type="number" 
+                                                        className="numeric-input" 
+                                                        required 
+                                                        step="0.1"
+                                                        value={botForm.pj_vol_multiplier}
+                                                        onChange={(e) => setBotForm({ ...botForm, pj_vol_multiplier: parseFloat(e.target.value) || 2.0 })}
+                                                        style={{ height: '34px', fontSize: '12px', padding: '6px 8px' }}
+                                                    />
+                                                </div>
+                                                <div className="input-group" style={{ margin: 0 }}>
+                                                    <label style={{ fontSize: '10px', marginBottom: '3px' }}>VWAP Anchor</label>
+                                                    <select 
+                                                        className="select-input" 
+                                                        value={botForm.pj_vwap_anchor}
+                                                        onChange={(e) => setBotForm({ ...botForm, pj_vwap_anchor: e.target.value })}
+                                                        style={{ height: '34px', fontSize: '12px', padding: '4px 6px', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#fff', width: '100%' }}
+                                                    >
+                                                        <option value="Session">Session</option>
+                                                        <option value="Week">Week</option>
+                                                        <option value="Month">Month</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginTop: '4px' }}>
+                                                <div className="input-group" style={{ margin: 0 }}>
+                                                    <label style={{ fontSize: '10px', marginBottom: '3px' }}>ATR Multiplier</label>
+                                                    <input 
+                                                        type="number" 
+                                                        className="numeric-input" 
+                                                        required 
+                                                        step="0.1"
+                                                        value={botForm.pj_atr_mult}
+                                                        onChange={(e) => setBotForm({ ...botForm, pj_atr_mult: parseFloat(e.target.value) || 1.5 })}
+                                                        style={{ height: '34px', fontSize: '12px', padding: '6px 8px' }}
+                                                    />
+                                                </div>
+                                                <div className="input-group" style={{ margin: 0 }}>
+                                                    <label style={{ fontSize: '10px', marginBottom: '3px' }}>TP Target</label>
+                                                    <select 
+                                                        className="select-input" 
+                                                        value={botForm.pj_tp_target}
+                                                        onChange={(e) => setBotForm({ ...botForm, pj_tp_target: e.target.value })}
+                                                        style={{ height: '34px', fontSize: '12px', padding: '4px 6px', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#fff', width: '100%' }}
+                                                    >
+                                                        <option value="manual">Manual Points</option>
+                                                        <option value="tp1">TP1 (1.0x)</option>
+                                                        <option value="tp1_5">TP1.5 (1.5x)</option>
+                                                        <option value="tp2">TP2 (2.0x)</option>
+                                                        <option value="tp2_5">TP2.5 (2.5x)</option>
+                                                        <option value="tp3">TP3 (3.0x)</option>
+                                                    </select>
+                                                </div>
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', justifyContent: 'center', paddingLeft: '4px' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }} onClick={() => setBotForm({ ...botForm, pj_use_volume: !botForm.pj_use_volume })}>
+                                                        <input 
+                                                            type="checkbox" 
+                                                            checked={botForm.pj_use_volume || false}
+                                                            onChange={(e) => setBotForm({ ...botForm, pj_use_volume: e.target.checked })}
+                                                            onClick={(e) => e.stopPropagation()}
+                                                            style={{ width: '13px', height: '13px', accentColor: 'var(--accent-gold)', cursor: 'pointer' }}
+                                                        />
+                                                        <span style={{ fontSize: '10px', color: 'var(--text-secondary)', cursor: 'pointer', userSelect: 'none' }}>Use Vol Filter</span>
+                                                    </div>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }} onClick={() => setBotForm({ ...botForm, pj_use_dyn_atr: !botForm.pj_use_dyn_atr })}>
+                                                        <input 
+                                                            type="checkbox" 
+                                                            checked={botForm.pj_use_dyn_atr || false}
+                                                            onChange={(e) => setBotForm({ ...botForm, pj_use_dyn_atr: e.target.checked })}
+                                                            onClick={(e) => e.stopPropagation()}
+                                                            style={{ width: '13px', height: '13px', accentColor: 'var(--accent-gold)', cursor: 'pointer' }}
+                                                        />
+                                                        <span style={{ fontSize: '10px', color: 'var(--text-secondary)', cursor: 'pointer', userSelect: 'none' }}>Use Dyn ATR</span>
+                                                    </div>
+                                                </div>
+                                            </div>
                                         </div>
-                                    </div>
+                                    )}
 
-                                    {botForm.use_atr_sizing && (
-                                        <div className="input-group">
-                                            <label style={{ color: 'var(--accent-gold)' }}>เปอร์เซ็นต์ความเสี่ยง (% Risk)</label>
-                                            <input 
-                                                type="number" 
-                                                className="numeric-input" 
-                                                required 
-                                                step="0.1" 
-                                                min="0.1"
-                                                max="10.0"
-                                                placeholder="เช่น 1.0 ของบัญชี"
-                                                value={botForm.risk_percent}
-                                                onChange={(e) => setBotForm({ ...botForm, risk_percent: parseFloat(e.target.value) || 1.0 })}
-                                            />
+                                    {/* EMA Crossover Settings */}
+                                    {selectedAlgos.includes('ema_cross') && (
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderTop: (selectedAlgos.includes('stoch_rsi') || selectedAlgos.includes('macd_4c') || selectedAlgos.includes('pj_indicator')) ? '1px dashed rgba(255,255,255,0.05)' : 'none', paddingTop: (selectedAlgos.includes('stoch_rsi') || selectedAlgos.includes('macd_4c') || selectedAlgos.includes('pj_indicator')) ? '10px' : '0' }}>
+                                            <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--accent-gold)' }}>EMA Crossover Parameters:</span>
+                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                                                <div className="input-group" style={{ margin: 0 }}>
+                                                    <label style={{ fontSize: '10px', marginBottom: '3px' }}>Fast EMA Period</label>
+                                                    <input 
+                                                        type="number" 
+                                                        className="numeric-input" 
+                                                        required 
+                                                        value={botForm.ema_fast}
+                                                        onChange={(e) => setBotForm({ ...botForm, ema_fast: parseInt(e.target.value) || 50 })}
+                                                        style={{ height: '34px', fontSize: '12px', padding: '6px 8px' }}
+                                                    />
+                                                </div>
+                                                <div className="input-group" style={{ margin: 0 }}>
+                                                    <label style={{ fontSize: '10px', marginBottom: '3px' }}>Slow EMA Period</label>
+                                                    <input 
+                                                        type="number" 
+                                                        className="numeric-input" 
+                                                        required 
+                                                        value={botForm.ema_slow}
+                                                        onChange={(e) => setBotForm({ ...botForm, ema_slow: parseInt(e.target.value) || 200 })}
+                                                        style={{ height: '34px', fontSize: '12px', padding: '6px 8px' }}
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* ADX Settings */}
+                                    {selectedAlgos.includes('adx') && (
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderTop: (selectedAlgos.includes('stoch_rsi') || selectedAlgos.includes('macd_4c') || selectedAlgos.includes('pj_indicator') || selectedAlgos.includes('ema_cross')) ? '1px dashed rgba(255,255,255,0.05)' : 'none', paddingTop: (selectedAlgos.includes('stoch_rsi') || selectedAlgos.includes('macd_4c') || selectedAlgos.includes('pj_indicator') || selectedAlgos.includes('ema_cross')) ? '10px' : '0' }}>
+                                            <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--accent-gold)' }}>ADX Parameters:</span>
+                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                                                <div className="input-group" style={{ margin: 0 }}>
+                                                    <label style={{ fontSize: '10px', marginBottom: '3px' }}>ADX Smoothing Period</label>
+                                                    <input 
+                                                        type="number" 
+                                                        className="numeric-input" 
+                                                        required 
+                                                        value={botForm.adx_len}
+                                                        onChange={(e) => setBotForm({ ...botForm, adx_len: parseInt(e.target.value) || 25 })}
+                                                        style={{ height: '34px', fontSize: '12px', padding: '6px 8px' }}
+                                                    />
+                                                </div>
+                                                <div className="input-group" style={{ margin: 0 }}>
+                                                    <label style={{ fontSize: '10px', marginBottom: '3px' }}>ADX Trend Threshold</label>
+                                                    <input 
+                                                        type="number" 
+                                                        className="numeric-input" 
+                                                        required 
+                                                        value={botForm.adx_threshold}
+                                                        onChange={(e) => setBotForm({ ...botForm, adx_threshold: parseInt(e.target.value) || 30 })}
+                                                        style={{ height: '34px', fontSize: '12px', padding: '6px 8px' }}
+                                                    />
+                                                </div>
+                                            </div>
                                         </div>
                                     )}
                                 </div>
-                            </div>
+                            )}
 
                             {/* --- Premium SMC & Risk Controls Section --- */}
                             <div style={{
@@ -7767,78 +7596,78 @@ const TradingApp = () => {
                                     gap: '6px'
                                 }}>
                                     <Icon name="shield" size={14} />
-                                    <span>ระบบกรองเทรดขั้นสูง & การจัดการความเสี่ยง</span>
+                                    <span>การบริหารความเสี่ยงและตัวกรองขั้นสูง (Advanced Risk & Filters)</span>
                                 </h4>
 
-                                {/* 1. Trend Filter & Session Filter */}
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
-                                    <div className="input-group" style={{ 
-                                        display: 'flex', 
-                                        alignItems: 'center', 
-                                        gap: '8px', 
-                                        background: 'rgba(255,255,255,0.02)',
-                                        padding: '10px 12px',
-                                        borderRadius: '8px',
-                                        border: '1px solid rgba(255,255,255,0.05)',
-                                        cursor: 'pointer',
-                                        height: '42px',
-                                        marginTop: 'auto',
-                                        marginBottom: '0'
-                                    }} onClick={() => setBotForm({ ...botForm, use_trend_filter: !botForm.use_trend_filter })}>
-                                        <input 
-                                            type="checkbox" 
-                                            id="chk-trendfilter"
-                                            checked={botForm.use_trend_filter || false}
-                                            onChange={(e) => setBotForm({ ...botForm, use_trend_filter: e.target.checked })}
-                                            onClick={(e) => e.stopPropagation()}
-                                            style={{ accentColor: 'var(--accent-gold)', width: '16px', height: '16px', cursor: 'pointer' }}
-                                        />
-                                        <label htmlFor="chk-trendfilter" style={{ margin: 0, cursor: 'pointer', textTransform: 'none', fontSize: '11px', fontWeight: 600 }}>
-                                            กรองเทรด EMA 200 (Trend Filter)
-                                        </label>
+                                {/* 1. Trend Filter & Session Filter in one row */}
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                        <div className="input-group" style={{ 
+                                            display: 'flex', 
+                                            alignItems: 'center', 
+                                            gap: '8px', 
+                                            background: 'rgba(255,255,255,0.02)',
+                                            padding: '10px 12px',
+                                            borderRadius: '8px',
+                                            border: '1px solid rgba(255,255,255,0.05)',
+                                            cursor: 'pointer',
+                                            height: '42px',
+                                            margin: 0
+                                        }} onClick={() => setBotForm({ ...botForm, use_trend_filter: !botForm.use_trend_filter })}>
+                                            <input 
+                                                type="checkbox" 
+                                                id="chk-trendfilter"
+                                                checked={botForm.use_trend_filter || false}
+                                                onChange={(e) => setBotForm({ ...botForm, use_trend_filter: e.target.checked })}
+                                                onClick={(e) => e.stopPropagation()}
+                                                style={{ accentColor: 'var(--accent-gold)', width: '16px', height: '16px', cursor: 'pointer' }}
+                                            />
+                                            <label htmlFor="chk-trendfilter" style={{ margin: 0, cursor: 'pointer', textTransform: 'none', fontSize: '11px', fontWeight: 600 }}>
+                                                กรองเทรด EMA 200 (Trend Filter)
+                                            </label>
+                                        </div>
+
+                                        <div className="input-group" style={{ 
+                                            display: 'flex', 
+                                            alignItems: 'center', 
+                                            gap: '8px', 
+                                            background: 'rgba(255,255,255,0.02)',
+                                            padding: '10px 12px',
+                                            borderRadius: '8px',
+                                            border: '1px solid rgba(255,255,255,0.05)',
+                                            cursor: 'pointer',
+                                            height: '42px',
+                                            margin: 0
+                                        }} onClick={() => setBotForm({ ...botForm, use_mtf_filter: !botForm.use_mtf_filter })}>
+                                            <input 
+                                                type="checkbox" 
+                                                id="chk-mtffilter"
+                                                checked={botForm.use_mtf_filter || false}
+                                                onChange={(e) => setBotForm({ ...botForm, use_mtf_filter: e.target.checked })}
+                                                onClick={(e) => e.stopPropagation()}
+                                                style={{ accentColor: 'var(--accent-gold)', width: '16px', height: '16px', cursor: 'pointer' }}
+                                            />
+                                            <label htmlFor="chk-mtffilter" style={{ margin: 0, cursor: 'pointer', textTransform: 'none', fontSize: '11px', fontWeight: 600 }}>
+                                                กรองกรอบเวลาใหญ่ (Multi-TF Filter)
+                                            </label>
+                                        </div>
                                     </div>
 
-                                    <div className="input-group" style={{ 
-                                        display: 'flex', 
-                                        alignItems: 'center', 
-                                        gap: '8px', 
-                                        background: 'rgba(255,255,255,0.02)',
-                                        padding: '10px 12px',
-                                        borderRadius: '8px',
-                                        border: '1px solid rgba(255,255,255,0.05)',
-                                        cursor: 'pointer',
-                                        height: '42px',
-                                        marginTop: 'auto',
-                                        marginBottom: '0'
-                                    }} onClick={() => setBotForm({ ...botForm, use_mtf_filter: !botForm.use_mtf_filter })}>
-                                        <input 
-                                            type="checkbox" 
-                                            id="chk-mtffilter"
-                                            checked={botForm.use_mtf_filter || false}
-                                            onChange={(e) => setBotForm({ ...botForm, use_mtf_filter: e.target.checked })}
-                                            onClick={(e) => e.stopPropagation()}
-                                            style={{ accentColor: 'var(--accent-gold)', width: '16px', height: '16px', cursor: 'pointer' }}
-                                        />
-                                        <label htmlFor="chk-mtffilter" style={{ margin: 0, cursor: 'pointer', textTransform: 'none', fontSize: '11px', fontWeight: 600 }}>
-                                            กรองเทรดหลายกรอบเวลา (Multi-TF Filter)
-                                        </label>
+                                    <div className="input-group" style={{ margin: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                                        <label style={{ fontSize: '11px', marginBottom: '4px' }}>เวลาซื้อขาย (Trading Session)</label>
+                                        <select 
+                                            className="numeric-input"
+                                            style={{ appearance: 'auto', fontSize: '12px', padding: '8px 10px', height: '42px' }}
+                                            value={botForm.allowed_sessions || "all"}
+                                            onChange={(e) => setBotForm({ ...botForm, allowed_sessions: e.target.value })}
+                                        >
+                                            <option value="all">ตลอดทั้งวัน (All Day Sessions)</option>
+                                            <option value="london">ลอนดอน (London Session)</option>
+                                            <option value="newyork">นิวยอร์ก (NY Session)</option>
+                                            <option value="london_ny">ทับซ้อน London+NY (Overlap)</option>
+                                            <option value="asian">เอเชีย (Asian Session)</option>
+                                        </select>
                                     </div>
-                                </div>
-
-                                <div className="input-group" style={{ marginBottom: '12px' }}>
-                                    <label style={{ fontSize: '11px', marginBottom: '4px' }}>เวลาซื้อขาย (Trading Session)</label>
-                                    <select 
-                                        className="numeric-input"
-                                        style={{ appearance: 'auto', fontSize: '12px', padding: '8px 10px', height: '42px' }}
-                                        value={botForm.allowed_sessions || "all"}
-                                        onChange={(e) => setBotForm({ ...botForm, allowed_sessions: e.target.value })}
-                                    >
-                                        <option value="all">ตลอดทั้งวัน (All Day Sessions)</option>
-                                        <option value="london">ลอนดอน (London Session)</option>
-                                        <option value="newyork">นิวยอร์ก (NY Session)</option>
-                                        <option value="london_ny">ทับซ้อน London+NY (Overlap)</option>
-                                        <option value="asian">เอเชีย (Asian Session)</option>
-                                    </select>
                                 </div>
 
                                 {/* 2. ATR Position Sizing Box */}
@@ -7930,27 +7759,8 @@ const TradingApp = () => {
                                             🛡️ เปิดระบบ AI กรองข่าวด่วนและสงครามภูมิรัฐศาสตร์ (AI Geopolitical Risk Filter)
                                         </label>
                                     </div>
-                                </div>
-
-                                {/* 4. Max Hold Hours Input */}
-                                <div className="input-group" style={{ marginTop: '12px' }}>
-                                    <label style={{ fontSize: '11px', marginBottom: '4px', color: 'var(--accent-gold)' }}>จำกัดเวลาถือครองออเดอร์สูงสุด (ชั่วโมง)</label>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                        <input 
-                                            type="number" 
-                                            className="numeric-input" 
-                                            step="0.5" 
-                                            min="0" 
-                                            max="720"
-                                            placeholder="เช่น 12.0 (0 = ไม่จำกัดเวลา)"
-                                            value={botForm.max_hold_hours || 0.0}
-                                            onChange={(e) => setBotForm({ ...botForm, max_hold_hours: parseFloat(e.target.value) || 0.0 })}
-                                            style={{ height: '36px', fontSize: '12px', padding: '6px 10px', width: '100%' }}
-                                        />
-                                        <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>ชม.</span>
-                                    </div>
-                                    <span style={{ fontSize: '9px', color: 'var(--text-muted)', display: 'block', marginTop: '2px', lineHeight: '1.2' }}>
-                                        * ระบบจะปิดออเดอร์ให้โดยอัตโนมัติหากถือครองนานเกินกว่าเวลาที่กำหนดเพื่อป้องกันความเสี่ยงของการลากขาดทุนยาว
+                                    <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontStyle: 'italic', display: 'block', lineHeight: '1.3' }}>
+                                        * กรองและบล็อกคำสั่งซื้อขายอัตโนมัติเมื่อตรวจพบระดับความรุนแรงสูง (High Threat เช่น ความตึงเครียดทางสงคราม) หรือมีปัจจัยข่าวสารระดับ High Impact ที่ขัดแย้งกับการเปิดสถานะ เพื่อความปลอดภัยสูงสุดของทุนในพอร์ต
                                     </span>
                                 </div>
                             </div>
@@ -7971,112 +7781,6 @@ const TradingApp = () => {
                                 ยกเลิก
                             </button>
                         </form>
-                    </div>
-                </div>
-            </div>
-
-            {/* --- SUB-INDICATOR SIGNALS & RECOMMENDATIONS MODAL --- */}
-            <div className={`modal-overlay ${indicatorSignalsOpen ? 'active' : ''}`}>
-                <div className="modal-container" style={{ width: '650px', maxWidth: '95%', background: '#131722', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: '12px', boxShadow: '0 8px 32px rgba(0, 0, 0, 0.6)' }}>
-                    <div className="modal-header" style={{ padding: '16px 20px', borderBottom: '1px solid rgba(255, 255, 255, 0.08)' }}>
-                        <h3 style={{ fontSize: '15px', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
-                            <Icon name="shield" size={18} style={{ color: '#00b4d8' }} />
-                            <span>สัญญาณและคำแนะนำระบบอินดิเคเตอร์ย่อย ({activeSymbol} {timeframe})</span>
-                        </h3>
-                        <button className="modal-close-btn" onClick={() => setIndicatorSignalsOpen(false)}>
-                            <Icon name="close" size={20} />
-                        </button>
-                    </div>
-
-                    <div className="modal-body" style={{ maxHeight: '600px', overflowY: 'auto', padding: '20px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', background: 'rgba(255, 255, 255, 0.02)', padding: '10px 14px', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.04)' }}>
-                            <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                                ระบบวิเคราะห์ตลาดเรียลไทม์ (อัปเดตอัตโนมัติทุก 10 วินาที)
-                            </div>
-                            <button 
-                                type="button"
-                                className="btn-secondary" 
-                                style={{ padding: '4px 8px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px', height: '26px', border: '1px solid rgba(255,255,255,0.1)' }}
-                                onClick={() => fetchIndicatorSignals(true)}
-                            >
-                                <Icon name="refresh" size={12} />
-                                <span>รีเฟรชข้อมูล</span>
-                            </button>
-                        </div>
-
-                        {loadingSignals ? (
-                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '40px 0', gap: '12px' }}>
-                                <div style={{ border: '3px solid rgba(255,255,255,0.05)', borderTop: '3px solid #00b4d8', borderRadius: '50%', width: '32px', height: '32px', animation: 'spin 1s linear infinite' }} />
-                                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>กำลังประเมินสัญญาณเทรดทั้งหมด 17 รายการ...</span>
-                            </div>
-                        ) : indicatorSignals.length === 0 ? (
-                            <div style={{ textAlign: 'center', padding: '30px 0', color: 'var(--text-muted)', fontSize: '12px' }}>
-                                ไม่พบข้อมูลสัญญาณ หรือเกิดข้อผิดพลาดในการโหลด
-                            </div>
-                        ) : (
-                            <div className="backtest-table-wrapper" style={{ maxHeight: 'none', background: 'transparent', padding: 0 }}>
-                                <table className="trading-table">
-                                    <thead>
-                                        <tr>
-                                            <th>รายการอินดิเคเตอร์</th>
-                                            <th style={{ textAlign: 'center' }}>สัญญาณเทรดล่าสุด</th>
-                                            <th style={{ textAlign: 'right' }}>ระบบบอทอัตโนมัติ</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {indicatorSignals.map((item) => {
-                                            const sig = (item.signal || '').toLowerCase();
-                                            let badgeText = 'Neutral';
-                                            let badgeStyle = { background: 'rgba(255,255,255,0.05)', color: '#94a3b8', border: '1px solid rgba(255,255,255,0.1)' };
-
-                                            if (sig === 'buy') {
-                                                badgeText = 'BUY 🟢';
-                                                badgeStyle = { background: 'rgba(46, 204, 113, 0.15)', color: '#2ecc71', border: '1px solid rgba(46, 204, 113, 0.25)', fontWeight: 'bold' };
-                                            } else if (sig === 'sell') {
-                                                badgeText = 'SELL 🔴';
-                                                badgeStyle = { background: 'rgba(231, 76, 60, 0.15)', color: '#e74c3c', border: '1px solid rgba(231, 76, 60, 0.25)', fontWeight: 'bold' };
-                                            }
-
-                                            return (
-                                                <tr key={item.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
-                                                    <td style={{ fontWeight: 600, fontSize: '12.5px', color: '#f8f9fa' }}>
-                                                        {item.name}
-                                                    </td>
-                                                    <td style={{ textAlign: 'center' }}>
-                                                        <span style={{ display: 'inline-block', padding: '3px 8px', borderRadius: '4px', fontSize: '11px', ...badgeStyle }}>
-                                                            {badgeText}
-                                                        </span>
-                                                    </td>
-                                                    <td style={{ textAlign: 'right' }}>
-                                                        <button 
-                                                            type="button"
-                                                            className="btn-create-bot" 
-                                                            style={{ 
-                                                                background: 'linear-gradient(135deg, #2ecc71, #27ae60)', 
-                                                                border: 'none', 
-                                                                color: '#fff', 
-                                                                fontWeight: '600', 
-                                                                fontSize: '11px',
-                                                                padding: '4px 10px',
-                                                                height: '26px',
-                                                                display: 'inline-flex',
-                                                                alignItems: 'center',
-                                                                gap: '4px',
-                                                                boxShadow: 'none'
-                                                            }}
-                                                            onClick={() => handleAutoStartIndicatorBot(item.id, item.name)}
-                                                        >
-                                                            <Icon name="plus" size={10} />
-                                                            <span>เปิดบอทอัตโนมัติทันที</span>
-                                                        </button>
-                                                    </td>
-                                                </tr>
-                                            );
-                                        })}
-                                    </tbody>
-                                </table>
-                            </div>
-                        )}
                     </div>
                 </div>
             </div>
