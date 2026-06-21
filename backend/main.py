@@ -2,11 +2,14 @@ import os
 import asyncio
 from fastapi import FastAPI, Depends, HTTPException, Query, BackgroundTasks, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta, timezone
+
+BANGKOK_TZ = timezone(timedelta(hours=7))
 
 from backend.config import HOST, PORT, STATIC_DIR, MT5_LOGIN, MT5_PASSWORD, MT5_SERVER, ENCRYPTION_KEY, encrypt_password, decrypt_password
 from backend.database import engine, Base, get_db
@@ -69,6 +72,128 @@ try:
         if "use_mtf_filter" not in columns:
             conn.execute(text("ALTER TABLE bot_settings ADD COLUMN use_mtf_filter BOOLEAN DEFAULT 0"))
             print("Database Migration: Successfully added 'use_mtf_filter' column to 'bot_settings' table.")
+            
+        if "stoch_rsi_len" not in columns:
+            conn.execute(text("ALTER TABLE bot_settings ADD COLUMN stoch_rsi_len INTEGER DEFAULT 13"))
+            print("Database Migration: Successfully added 'stoch_rsi_len' column to 'bot_settings' table.")
+            
+        if "stoch_len" not in columns:
+            conn.execute(text("ALTER TABLE bot_settings ADD COLUMN stoch_len INTEGER DEFAULT 13"))
+            print("Database Migration: Successfully added 'stoch_len' column to 'bot_settings' table.")
+            
+        if "stoch_k" not in columns:
+            conn.execute(text("ALTER TABLE bot_settings ADD COLUMN stoch_k INTEGER DEFAULT 3"))
+            print("Database Migration: Successfully added 'stoch_k' column to 'bot_settings' table.")
+            
+        if "stoch_d" not in columns:
+            conn.execute(text("ALTER TABLE bot_settings ADD COLUMN stoch_d INTEGER DEFAULT 3"))
+            print("Database Migration: Successfully added 'stoch_d' column to 'bot_settings' table.")
+            
+        if "macd_fast" not in columns:
+            conn.execute(text("ALTER TABLE bot_settings ADD COLUMN macd_fast INTEGER DEFAULT 12"))
+            print("Database Migration: Successfully added 'macd_fast' column to 'bot_settings' table.")
+            
+        if "macd_slow" not in columns:
+            conn.execute(text("ALTER TABLE bot_settings ADD COLUMN macd_slow INTEGER DEFAULT 26"))
+            print("Database Migration: Successfully added 'macd_slow' column to 'bot_settings' table.")
+            
+        if "macd_signal" not in columns:
+            conn.execute(text("ALTER TABLE bot_settings ADD COLUMN macd_signal INTEGER DEFAULT 9"))
+            print("Database Migration: Successfully added 'macd_signal' column to 'bot_settings' table.")
+            
+        if "pj_min_score" not in columns:
+            conn.execute(text("ALTER TABLE bot_settings ADD COLUMN pj_min_score INTEGER DEFAULT 6"))
+            print("Database Migration: Successfully added 'pj_min_score' column to 'bot_settings' table.")
+            
+        if "pj_use_volume" not in columns:
+            conn.execute(text("ALTER TABLE bot_settings ADD COLUMN pj_use_volume BOOLEAN DEFAULT 0"))
+            print("Database Migration: Successfully added 'pj_use_volume' column to 'bot_settings' table.")
+            
+        if "pj_vol_multiplier" not in columns:
+            conn.execute(text("ALTER TABLE bot_settings ADD COLUMN pj_vol_multiplier FLOAT DEFAULT 2.0"))
+            print("Database Migration: Successfully added 'pj_vol_multiplier' column to 'bot_settings' table.")
+            
+        if "pj_vwap_anchor" not in columns:
+            conn.execute(text("ALTER TABLE bot_settings ADD COLUMN pj_vwap_anchor VARCHAR(20) DEFAULT 'Session'"))
+            print("Database Migration: Successfully added 'pj_vwap_anchor' column to 'bot_settings' table.")
+            
+        if "pj_atr_mult" not in columns:
+            conn.execute(text("ALTER TABLE bot_settings ADD COLUMN pj_atr_mult FLOAT DEFAULT 1.5"))
+            print("Database Migration: Successfully added 'pj_atr_mult' column to 'bot_settings' table.")
+            
+        if "pj_use_dyn_atr" not in columns:
+            conn.execute(text("ALTER TABLE bot_settings ADD COLUMN pj_use_dyn_atr BOOLEAN DEFAULT 1"))
+            print("Database Migration: Successfully added 'pj_use_dyn_atr' column to 'bot_settings' table.")
+
+        if "pj_cooldown_bars" not in columns:
+            conn.execute(text("ALTER TABLE bot_settings ADD COLUMN pj_cooldown_bars INTEGER DEFAULT 5"))
+            print("Database Migration: Successfully added 'pj_cooldown_bars' column to 'bot_settings' table.")
+
+        if "pj_min_bars_between" not in columns:
+            conn.execute(text("ALTER TABLE bot_settings ADD COLUMN pj_min_bars_between INTEGER DEFAULT 5"))
+            print("Database Migration: Successfully added 'pj_min_bars_between' column to 'bot_settings' table.")
+
+        if "pj_strict_mtf" not in columns:
+            conn.execute(text("ALTER TABLE bot_settings ADD COLUMN pj_strict_mtf BOOLEAN DEFAULT 0"))
+            print("Database Migration: Successfully added 'pj_strict_mtf' column to 'bot_settings' table.")
+
+        if "pj_use_atr_block" not in columns:
+            conn.execute(text("ALTER TABLE bot_settings ADD COLUMN pj_use_atr_block BOOLEAN DEFAULT 1"))
+            print("Database Migration: Successfully added 'pj_use_atr_block' column to 'bot_settings' table.")
+
+        if "pj_min_cross_count" not in columns:
+            conn.execute(text("ALTER TABLE bot_settings ADD COLUMN pj_min_cross_count INTEGER DEFAULT 1"))
+            print("Database Migration: Successfully added 'pj_min_cross_count' column to 'bot_settings' table.")
+            
+        if "ema_fast" not in columns:
+            conn.execute(text("ALTER TABLE bot_settings ADD COLUMN ema_fast INTEGER DEFAULT 50"))
+            print("Database Migration: Successfully added 'ema_fast' column to 'bot_settings' table.")
+            
+        if "ema_slow" not in columns:
+            conn.execute(text("ALTER TABLE bot_settings ADD COLUMN ema_slow INTEGER DEFAULT 200"))
+            print("Database Migration: Successfully added 'ema_slow' column to 'bot_settings' table.")
+            
+        if "adx_len" not in columns:
+            conn.execute(text("ALTER TABLE bot_settings ADD COLUMN adx_len INTEGER DEFAULT 25"))
+            print("Database Migration: Successfully added 'adx_len' column to 'bot_settings' table.")
+            
+        if "adx_threshold" not in columns:
+            conn.execute(text("ALTER TABLE bot_settings ADD COLUMN adx_threshold INTEGER DEFAULT 30"))
+            print("Database Migration: Successfully added 'adx_threshold' column to 'bot_settings' table.")
+            
+        if "use_trailing_stop" not in columns:
+            conn.execute(text("ALTER TABLE bot_settings ADD COLUMN use_trailing_stop BOOLEAN DEFAULT 0"))
+            print("Database Migration: Successfully added 'use_trailing_stop' column to 'bot_settings' table.")
+        if "trailing_stop_points" not in columns:
+            conn.execute(text("ALTER TABLE bot_settings ADD COLUMN trailing_stop_points FLOAT DEFAULT 0.0"))
+            print("Database Migration: Successfully added 'trailing_stop_points' column to 'bot_settings' table.")
+        if "use_break_even" not in columns:
+            conn.execute(text("ALTER TABLE bot_settings ADD COLUMN use_break_even BOOLEAN DEFAULT 0"))
+            print("Database Migration: Successfully added 'use_break_even' column to 'bot_settings' table.")
+        if "break_even_trigger_points" not in columns:
+            conn.execute(text("ALTER TABLE bot_settings ADD COLUMN break_even_trigger_points FLOAT DEFAULT 0.0"))
+            print("Database Migration: Successfully added 'break_even_trigger_points' column to 'bot_settings' table.")
+        if "break_even_lock_points" not in columns:
+            conn.execute(text("ALTER TABLE bot_settings ADD COLUMN break_even_lock_points FLOAT DEFAULT 0.0"))
+            print("Database Migration: Successfully added 'break_even_lock_points' column to 'bot_settings' table.")
+        if "use_partial_tp" not in columns:
+            conn.execute(text("ALTER TABLE bot_settings ADD COLUMN use_partial_tp BOOLEAN DEFAULT 0"))
+            print("Database Migration: Successfully added 'use_partial_tp' column to 'bot_settings' table.")
+        if "partial_tp_points" not in columns:
+            conn.execute(text("ALTER TABLE bot_settings ADD COLUMN partial_tp_points FLOAT DEFAULT 0.0"))
+            print("Database Migration: Successfully added 'partial_tp_points' column to 'bot_settings' table.")
+        if "partial_tp_ratio" not in columns:
+            conn.execute(text("ALTER TABLE bot_settings ADD COLUMN partial_tp_ratio FLOAT DEFAULT 0.5"))
+            print("Database Migration: Successfully added 'partial_tp_ratio' column to 'bot_settings' table.")
+        if "is_partial_closed" not in columns:
+            conn.execute(text("ALTER TABLE bot_settings ADD COLUMN is_partial_closed BOOLEAN DEFAULT 0"))
+            print("Database Migration: Successfully added 'is_partial_closed' column to 'bot_settings' table.")
+        if "use_regime_filter" not in columns:
+            conn.execute(text("ALTER TABLE bot_settings ADD COLUMN use_regime_filter BOOLEAN DEFAULT 0"))
+            print("Database Migration: Successfully added 'use_regime_filter' column to 'bot_settings' table.")
+        if "regime_mode" not in columns:
+            conn.execute(text("ALTER TABLE bot_settings ADD COLUMN regime_mode VARCHAR(20) DEFAULT 'trend'"))
+            print("Database Migration: Successfully added 'regime_mode' column to 'bot_settings' table.")
             
     # NewsRecord self-healing migration
     news_columns = [col['name'] for col in inspector.get_columns('news_records')]
@@ -184,6 +309,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+
 # Initialize MT5 Manager singleton
 mt5_manager = MT5Manager()
 
@@ -270,6 +397,38 @@ class BotCreateRequest(BaseModel):
     risk_percent: float = 1.0
     allowed_sessions: str = "all"
     max_hold_hours: float = 0.0
+    stoch_rsi_len: int = 13
+    stoch_len: int = 13
+    stoch_k: int = 3
+    stoch_d: int = 3
+    macd_fast: int = 12
+    macd_slow: int = 26
+    macd_signal: int = 9
+    pj_min_score: int = 6
+    pj_use_volume: bool = False
+    pj_vol_multiplier: float = 2.0
+    pj_vwap_anchor: str = "Session"
+    pj_atr_mult: float = 1.5
+    pj_use_dyn_atr: bool = True
+    pj_cooldown_bars: int = 5
+    pj_min_bars_between: int = 5
+    pj_strict_mtf: bool = False
+    pj_use_atr_block: bool = True
+    pj_min_cross_count: int = 1
+    ema_fast: int = 50
+    ema_slow: int = 200
+    adx_len: int = 25
+    adx_threshold: int = 30
+    use_trailing_stop: bool = False
+    trailing_stop_points: float = 0.0
+    use_break_even: bool = False
+    break_even_trigger_points: float = 0.0
+    break_even_lock_points: float = 0.0
+    use_partial_tp: bool = False
+    partial_tp_points: float = 0.0
+    partial_tp_ratio: float = 0.5
+    use_regime_filter: bool = False
+    regime_mode: str = "trend"
 
 
 # --- Endpoints ---
@@ -346,8 +505,8 @@ def get_mt5_accounts(db: Session = Depends(get_db)):
         "server": a.server,
         "is_active": a.is_active,
         "auto_connect": a.auto_connect,
-        "last_connected": a.last_connected.isoformat() if a.last_connected else None,
-        "created_at": a.created_at.isoformat() if a.created_at else None
+        "last_connected": a.last_connected.replace(tzinfo=timezone.utc).astimezone(BANGKOK_TZ).isoformat() if a.last_connected else None,
+        "created_at": a.created_at.replace(tzinfo=timezone.utc).astimezone(BANGKOK_TZ).isoformat() if a.created_at else None
     } for a in accounts]
 
 @app.post("/api/mt5/accounts")
@@ -452,15 +611,30 @@ def get_account():
     """Fetch current account parameters (balance, equity, margins, profit)."""
     return mt5_manager.get_account_info()
 
+# In-memory cache for historical candles to prevent overloading MT5 terminal
+CANDLES_CACHE = {}
+
 @app.get("/api/mt5/candles")
 def get_candles(
     symbol: str = Query(..., description="Asset symbol like XAUUSD"),
     timeframe: str = Query("H1", description="Timeframe M1, M5, M15, M30, H1, D1"),
     count: int = Query(150, description="Number of candles")
 ):
-    """Retrieve historical candle rates for charts."""
+    """Retrieve historical candle rates for charts with a short TTL cache."""
+    cache_key = (symbol, timeframe, count)
+    now = time.time()
+    
+    # Use longer TTL (10s) for D1 watchlist queries, and shorter TTL (2s) for active charts
+    ttl = 10.0 if (timeframe == "D1" and count <= 5) else 2.0
+    
+    if cache_key in CANDLES_CACHE:
+        cached_time, cached_data = CANDLES_CACHE[cache_key]
+        if now - cached_time < ttl:
+            return cached_data
+            
     try:
         data = mt5_manager.get_historical_candles(symbol, timeframe, count)
+        CANDLES_CACHE[cache_key] = (now, data)
         return data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -791,8 +965,8 @@ def close_trade(ticket: int, db: Session = Depends(get_db)):
                 close_price=result["close_price"],
                 sl=result.get("sl", 0.0),
                 tp=result.get("tp", 0.0),
-                open_time=datetime.strptime(result["open_time"], "%Y-%m-%d %H:%M:%S") if isinstance(result["open_time"], str) else result["open_time"],
-                close_time=datetime.strptime(result["close_time"], "%Y-%m-%d %H:%M:%S") if isinstance(result["close_time"], str) else result["close_time"],
+                open_time=datetime.fromtimestamp(result["open_time_raw"], timezone.utc).replace(tzinfo=None),
+                close_time=datetime.fromtimestamp(result["close_time_raw"], timezone.utc).replace(tzinfo=None),
                 profit=result["profit"],
                 comment=bot_name
             )
@@ -836,8 +1010,8 @@ def close_all(db: Session = Depends(get_db)):
                         close_price=res["close_price"],
                         sl=res.get("sl", 0.0),
                         tp=res.get("tp", 0.0),
-                        open_time=datetime.strptime(res["open_time"], "%Y-%m-%d %H:%M:%S") if isinstance(res["open_time"], str) else res["open_time"],
-                        close_time=datetime.strptime(res["close_time"], "%Y-%m-%d %H:%M:%S") if isinstance(res["close_time"], str) else res["close_time"],
+                        open_time=datetime.fromtimestamp(res["open_time_raw"], timezone.utc).replace(tzinfo=None),
+                        close_time=datetime.fromtimestamp(res["close_time_raw"], timezone.utc).replace(tzinfo=None),
                         profit=res["profit"],
                         comment=bot_name
                     )
@@ -869,10 +1043,10 @@ def get_history(db: Session = Depends(get_db)):
             "close_price": t.close_price,
             "sl": t.sl or 0.0,
             "tp": t.tp or 0.0,
-            "open_time": t.open_time.strftime("%Y-%m-%d %H:%M:%S"),
-            "close_time": t.close_time.strftime("%Y-%m-%d %H:%M:%S"),
-            "open_time_raw": int(t.open_time.timestamp()),
-            "close_time_raw": int(t.close_time.timestamp()),
+            "open_time": t.open_time.replace(tzinfo=timezone.utc).astimezone(BANGKOK_TZ).strftime("%Y-%m-%d %H:%M:%S"),
+            "close_time": t.close_time.replace(tzinfo=timezone.utc).astimezone(BANGKOK_TZ).strftime("%Y-%m-%d %H:%M:%S"),
+            "open_time_raw": int(t.open_time.replace(tzinfo=timezone.utc).timestamp()),
+            "close_time_raw": int(t.close_time.replace(tzinfo=timezone.utc).timestamp()),
             "profit": t.profit,
             "comment": t.comment or "Simulation"
         })
@@ -906,7 +1080,7 @@ def get_history(db: Session = Depends(get_db)):
                         entry_info[d.position_id] = {
                             "comment": d.comment,
                             "price": d.price,
-                            "time": datetime.fromtimestamp(d.time).strftime("%Y-%m-%d %H:%M:%S"),
+                            "time": datetime.fromtimestamp(d.time, BANGKOK_TZ).strftime("%Y-%m-%d %H:%M:%S"),
                             "time_raw": d.time
                         }
                 
@@ -918,7 +1092,7 @@ def get_history(db: Session = Depends(get_db)):
                         info = entry_info.get(d.position_id, {})
                         orig_comment = info.get("comment", d.comment) or "MT5 Trader Real Close"
                         open_price = info.get("price", d.price)
-                        open_time = info.get("time", datetime.fromtimestamp(d.time).strftime("%Y-%m-%d %H:%M:%S"))
+                        open_time = info.get("time", datetime.fromtimestamp(d.time, BANGKOK_TZ).strftime("%Y-%m-%d %H:%M:%S"))
                         
                         real_deals.append({
                             "ticket": d.position_id,
@@ -930,7 +1104,7 @@ def get_history(db: Session = Depends(get_db)):
                             "sl": order_sl_tp.get(d.position_id, {}).get("sl", 0.0),
                             "tp": order_sl_tp.get(d.position_id, {}).get("tp", 0.0),
                             "open_time": open_time,
-                            "close_time": datetime.fromtimestamp(d.time).strftime("%Y-%m-%d %H:%M:%S"),
+                            "close_time": datetime.fromtimestamp(d.time, BANGKOK_TZ).strftime("%Y-%m-%d %H:%M:%S"),
                             "open_time_raw": info.get("time_raw", d.time),
                             "close_time_raw": d.time,
                             "profit": d.profit,
@@ -1032,7 +1206,7 @@ def get_news(db: Session = Depends(get_db)):
             "summary_th": n.summary_th,
             "source": n.source,
             "url": n.url,
-            "published_at": n.published_at.isoformat() if n.published_at else None,
+            "published_at": n.published_at.replace(tzinfo=timezone.utc).astimezone(BANGKOK_TZ).isoformat() if n.published_at else None,
             "sentiment": n.sentiment,
             "impact_level": n.impact_level,
             "category": n.category,
@@ -1120,7 +1294,40 @@ def serialize_bot(bot: BotSettings):
         "risk_percent": bot.risk_percent,
         "allowed_sessions": bot.allowed_sessions,
         "max_hold_hours": getattr(bot, "max_hold_hours", 0.0),
-        "created_at": bot.created_at.isoformat() if bot.created_at else None
+        "stoch_rsi_len": getattr(bot, "stoch_rsi_len", 13) or 13,
+        "stoch_len": getattr(bot, "stoch_len", 13) or 13,
+        "stoch_k": getattr(bot, "stoch_k", 3) or 3,
+        "stoch_d": getattr(bot, "stoch_d", 3) or 3,
+        "macd_fast": getattr(bot, "macd_fast", 12) or 12,
+        "macd_slow": getattr(bot, "macd_slow", 26) or 26,
+        "macd_signal": getattr(bot, "macd_signal", 9) or 9,
+        "pj_min_score": getattr(bot, "pj_min_score", 6) if getattr(bot, "pj_min_score", 6) is not None else 6,
+        "pj_use_volume": getattr(bot, "pj_use_volume", False) if getattr(bot, "pj_use_volume", False) is not None else False,
+        "pj_vol_multiplier": getattr(bot, "pj_vol_multiplier", 2.0) if getattr(bot, "pj_vol_multiplier", 2.0) is not None else 2.0,
+        "pj_vwap_anchor": getattr(bot, "pj_vwap_anchor", "Session") or "Session",
+        "pj_atr_mult": getattr(bot, "pj_atr_mult", 1.5) if getattr(bot, "pj_atr_mult", 1.5) is not None else 1.5,
+        "pj_use_dyn_atr": getattr(bot, "pj_use_dyn_atr", True) if getattr(bot, "pj_use_dyn_atr", True) is not None else True,
+        "pj_cooldown_bars": getattr(bot, "pj_cooldown_bars", 5) if getattr(bot, "pj_cooldown_bars", 5) is not None else 5,
+        "pj_min_bars_between": getattr(bot, "pj_min_bars_between", 5) if getattr(bot, "pj_min_bars_between", 5) is not None else 5,
+        "pj_strict_mtf": getattr(bot, "pj_strict_mtf", False) if getattr(bot, "pj_strict_mtf", False) is not None else False,
+        "pj_use_atr_block": getattr(bot, "pj_use_atr_block", True) if getattr(bot, "pj_use_atr_block", True) is not None else True,
+        "pj_min_cross_count": getattr(bot, "pj_min_cross_count", 1) if getattr(bot, "pj_min_cross_count", 1) is not None else 1,
+        "ema_fast": getattr(bot, "ema_fast", 50) if getattr(bot, "ema_fast", 50) is not None else 50,
+        "ema_slow": getattr(bot, "ema_slow", 200) if getattr(bot, "ema_slow", 200) is not None else 200,
+        "adx_len": getattr(bot, "adx_len", 25) if getattr(bot, "adx_len", 25) is not None else 25,
+        "adx_threshold": getattr(bot, "adx_threshold", 30) if getattr(bot, "adx_threshold", 30) is not None else 30,
+        "use_trailing_stop": getattr(bot, "use_trailing_stop", False),
+        "trailing_stop_points": getattr(bot, "trailing_stop_points", 0.0),
+        "use_break_even": getattr(bot, "use_break_even", False),
+        "break_even_trigger_points": getattr(bot, "break_even_trigger_points", 0.0),
+        "break_even_lock_points": getattr(bot, "break_even_lock_points", 0.0),
+        "use_partial_tp": getattr(bot, "use_partial_tp", False),
+        "partial_tp_points": getattr(bot, "partial_tp_points", 0.0),
+        "partial_tp_ratio": getattr(bot, "partial_tp_ratio", 0.5),
+        "is_partial_closed": getattr(bot, "is_partial_closed", False),
+        "use_regime_filter": getattr(bot, "use_regime_filter", False),
+        "regime_mode": getattr(bot, "regime_mode", "trend"),
+        "created_at": bot.created_at.replace(tzinfo=timezone.utc).astimezone(BANGKOK_TZ).isoformat() if bot.created_at else None
     }
 
 @app.post("/api/bots")
@@ -1143,6 +1350,39 @@ def create_bot(req: BotCreateRequest, db: Session = Depends(get_db)):
         risk_percent=req.risk_percent,
         allowed_sessions=req.allowed_sessions,
         max_hold_hours=req.max_hold_hours,
+        stoch_rsi_len=req.stoch_rsi_len,
+        stoch_len=req.stoch_len,
+        stoch_k=req.stoch_k,
+        stoch_d=req.stoch_d,
+        macd_fast=req.macd_fast,
+        macd_slow=req.macd_slow,
+        macd_signal=req.macd_signal,
+        pj_min_score=req.pj_min_score,
+        pj_use_volume=req.pj_use_volume,
+        pj_vol_multiplier=req.pj_vol_multiplier,
+        pj_vwap_anchor=req.pj_vwap_anchor,
+        pj_atr_mult=req.pj_atr_mult,
+        pj_use_dyn_atr=req.pj_use_dyn_atr,
+        pj_cooldown_bars=req.pj_cooldown_bars,
+        pj_min_bars_between=req.pj_min_bars_between,
+        pj_strict_mtf=req.pj_strict_mtf,
+        pj_use_atr_block=req.pj_use_atr_block,
+        pj_min_cross_count=req.pj_min_cross_count,
+        ema_fast=req.ema_fast,
+        ema_slow=req.ema_slow,
+        adx_len=req.adx_len,
+        adx_threshold=req.adx_threshold,
+        use_trailing_stop=req.use_trailing_stop,
+        trailing_stop_points=req.trailing_stop_points,
+        use_break_even=req.use_break_even,
+        break_even_trigger_points=req.break_even_trigger_points,
+        break_even_lock_points=req.break_even_lock_points,
+        use_partial_tp=req.use_partial_tp,
+        partial_tp_points=req.partial_tp_points,
+        partial_tp_ratio=req.partial_tp_ratio,
+        use_regime_filter=req.use_regime_filter,
+        regime_mode=req.regime_mode,
+        is_partial_closed=False,
         is_running=False
     )
     db.add(bot)
@@ -1185,6 +1425,38 @@ def update_bot(bot_id: int, req: BotCreateRequest, db: Session = Depends(get_db)
     if bot.risk_percent != req.risk_percent: changes.append(f"Risk %: {bot.risk_percent} -> {req.risk_percent}")
     if bot.allowed_sessions != req.allowed_sessions: changes.append(f"Sessions: {bot.allowed_sessions} -> {req.allowed_sessions}")
     if getattr(bot, "max_hold_hours", 0.0) != req.max_hold_hours: changes.append(f"จำกัดเวลาถือครอง (ชม.): {getattr(bot, 'max_hold_hours', 0.0)} -> {req.max_hold_hours}")
+    if getattr(bot, "stoch_rsi_len", 13) != req.stoch_rsi_len: changes.append(f"StochRSI Len: {getattr(bot, 'stoch_rsi_len', 13)} -> {req.stoch_rsi_len}")
+    if getattr(bot, "stoch_len", 13) != req.stoch_len: changes.append(f"Stoch Len: {getattr(bot, 'stoch_len', 13)} -> {req.stoch_len}")
+    if getattr(bot, "stoch_k", 3) != req.stoch_k: changes.append(f"Stoch K: {getattr(bot, 'stoch_k', 3)} -> {req.stoch_k}")
+    if getattr(bot, "stoch_d", 3) != req.stoch_d: changes.append(f"Stoch D: {getattr(bot, 'stoch_d', 3)} -> {req.stoch_d}")
+    if getattr(bot, "macd_fast", 12) != req.macd_fast: changes.append(f"MACD Fast: {getattr(bot, 'macd_fast', 12)} -> {req.macd_fast}")
+    if getattr(bot, "macd_slow", 26) != req.macd_slow: changes.append(f"MACD Slow: {getattr(bot, 'macd_slow', 26)} -> {req.macd_slow}")
+    if getattr(bot, "macd_signal", 9) != req.macd_signal: changes.append(f"MACD Signal: {getattr(bot, 'macd_signal', 9)} -> {req.macd_signal}")
+    if getattr(bot, "pj_min_score", 6) != req.pj_min_score: changes.append(f"PJ Min Score: {getattr(bot, 'pj_min_score', 6)} -> {req.pj_min_score}")
+    if getattr(bot, "pj_use_volume", False) != req.pj_use_volume: changes.append(f"PJ Volume Filter: {getattr(bot, 'pj_use_volume', False)} -> {req.pj_use_volume}")
+    if getattr(bot, "pj_vol_multiplier", 2.0) != req.pj_vol_multiplier: changes.append(f"PJ Vol Mult: {getattr(bot, 'pj_vol_multiplier', 2.0)} -> {req.pj_vol_multiplier}")
+    if getattr(bot, "pj_vwap_anchor", "Session") != req.pj_vwap_anchor: changes.append(f"PJ VWAP Anchor: {getattr(bot, 'pj_vwap_anchor', 'Session')} -> {req.pj_vwap_anchor}")
+    if getattr(bot, "pj_atr_mult", 1.5) != req.pj_atr_mult: changes.append(f"PJ ATR Mult: {getattr(bot, 'pj_atr_mult', 1.5)} -> {req.pj_atr_mult}")
+    if getattr(bot, "pj_use_dyn_atr", True) != req.pj_use_dyn_atr: changes.append(f"PJ Dyn ATR: {getattr(bot, 'pj_use_dyn_atr', True)} -> {req.pj_use_dyn_atr}")
+    if getattr(bot, "pj_cooldown_bars", 5) != req.pj_cooldown_bars: changes.append(f"PJ Cooldown Bars: {getattr(bot, 'pj_cooldown_bars', 5)} -> {req.pj_cooldown_bars}")
+    if getattr(bot, "pj_min_bars_between", 5) != req.pj_min_bars_between: changes.append(f"PJ Min Bars Between: {getattr(bot, 'pj_min_bars_between', 5)} -> {req.pj_min_bars_between}")
+    if getattr(bot, "pj_strict_mtf", False) != req.pj_strict_mtf: changes.append(f"PJ Strict MTF: {getattr(bot, 'pj_strict_mtf', False)} -> {req.pj_strict_mtf}")
+    if getattr(bot, "pj_use_atr_block", True) != req.pj_use_atr_block: changes.append(f"PJ ATR Block: {getattr(bot, 'pj_use_atr_block', True)} -> {req.pj_use_atr_block}")
+    if getattr(bot, "pj_min_cross_count", 1) != req.pj_min_cross_count: changes.append(f"PJ Min Cross Count: {getattr(bot, 'pj_min_cross_count', 1)} -> {req.pj_min_cross_count}")
+    if getattr(bot, "ema_fast", 50) != req.ema_fast: changes.append(f"EMA Fast: {getattr(bot, 'ema_fast', 50)} -> {req.ema_fast}")
+    if getattr(bot, "ema_slow", 200) != req.ema_slow: changes.append(f"EMA Slow: {getattr(bot, 'ema_slow', 200)} -> {req.ema_slow}")
+    if getattr(bot, "adx_len", 25) != req.adx_len: changes.append(f"ADX Len: {getattr(bot, 'adx_len', 25)} -> {req.adx_len}")
+    if getattr(bot, "adx_threshold", 30) != req.adx_threshold: changes.append(f"ADX Threshold: {getattr(bot, 'adx_threshold', 30)} -> {req.adx_threshold}")
+    if getattr(bot, "use_trailing_stop", False) != req.use_trailing_stop: changes.append(f"Trailing Stop: {getattr(bot, 'use_trailing_stop', False)} -> {req.use_trailing_stop}")
+    if getattr(bot, "trailing_stop_points", 0.0) != req.trailing_stop_points: changes.append(f"Trailing Stop Points: {getattr(bot, 'trailing_stop_points', 0.0)} -> {req.trailing_stop_points}")
+    if getattr(bot, "use_break_even", False) != req.use_break_even: changes.append(f"Break-Even: {getattr(bot, 'use_break_even', False)} -> {req.use_break_even}")
+    if getattr(bot, "break_even_trigger_points", 0.0) != req.break_even_trigger_points: changes.append(f"Break-Even Trigger: {getattr(bot, 'break_even_trigger_points', 0.0)} -> {req.break_even_trigger_points}")
+    if getattr(bot, "break_even_lock_points", 0.0) != req.break_even_lock_points: changes.append(f"Break-Even Lock: {getattr(bot, 'break_even_lock_points', 0.0)} -> {req.break_even_lock_points}")
+    if getattr(bot, "use_partial_tp", False) != req.use_partial_tp: changes.append(f"Partial TP: {getattr(bot, 'use_partial_tp', False)} -> {req.use_partial_tp}")
+    if getattr(bot, "partial_tp_points", 0.0) != req.partial_tp_points: changes.append(f"Partial TP Points: {getattr(bot, 'partial_tp_points', 0.0)} -> {req.partial_tp_points}")
+    if getattr(bot, "partial_tp_ratio", 0.5) != req.partial_tp_ratio: changes.append(f"Partial TP Ratio: {getattr(bot, 'partial_tp_ratio', 0.5)} -> {req.partial_tp_ratio}")
+    if getattr(bot, "use_regime_filter", False) != req.use_regime_filter: changes.append(f"Regime Filter: {getattr(bot, 'use_regime_filter', False)} -> {req.use_regime_filter}")
+    if getattr(bot, "regime_mode", "trend") != req.regime_mode: changes.append(f"Regime Mode: {getattr(bot, 'regime_mode', 'trend')} -> {req.regime_mode}")
 
     bot.name = req.name
     bot.symbol = req.symbol.upper()
@@ -1202,6 +1474,38 @@ def update_bot(bot_id: int, req: BotCreateRequest, db: Session = Depends(get_db)
     bot.risk_percent = req.risk_percent
     bot.allowed_sessions = req.allowed_sessions
     bot.max_hold_hours = req.max_hold_hours
+    bot.stoch_rsi_len = req.stoch_rsi_len
+    bot.stoch_len = req.stoch_len
+    bot.stoch_k = req.stoch_k
+    bot.stoch_d = req.stoch_d
+    bot.macd_fast = req.macd_fast
+    bot.macd_slow = req.macd_slow
+    bot.macd_signal = req.macd_signal
+    bot.pj_min_score = req.pj_min_score
+    bot.pj_use_volume = req.pj_use_volume
+    bot.pj_vol_multiplier = req.pj_vol_multiplier
+    bot.pj_vwap_anchor = req.pj_vwap_anchor
+    bot.pj_atr_mult = req.pj_atr_mult
+    bot.pj_use_dyn_atr = req.pj_use_dyn_atr
+    bot.pj_cooldown_bars = req.pj_cooldown_bars
+    bot.pj_min_bars_between = req.pj_min_bars_between
+    bot.pj_strict_mtf = req.pj_strict_mtf
+    bot.pj_use_atr_block = req.pj_use_atr_block
+    bot.pj_min_cross_count = req.pj_min_cross_count
+    bot.ema_fast = req.ema_fast
+    bot.ema_slow = req.ema_slow
+    bot.adx_len = req.adx_len
+    bot.adx_threshold = req.adx_threshold
+    bot.use_trailing_stop = req.use_trailing_stop
+    bot.trailing_stop_points = req.trailing_stop_points
+    bot.use_break_even = req.use_break_even
+    bot.break_even_trigger_points = req.break_even_trigger_points
+    bot.break_even_lock_points = req.break_even_lock_points
+    bot.use_partial_tp = req.use_partial_tp
+    bot.partial_tp_points = req.partial_tp_points
+    bot.partial_tp_ratio = req.partial_tp_ratio
+    bot.use_regime_filter = req.use_regime_filter
+    bot.regime_mode = req.regime_mode
     
     db.commit()
     db.refresh(bot)
@@ -1276,7 +1580,7 @@ def get_advisor_signals(symbol: str = "XAUUSD", timeframe: str = "H1", db: Sessi
         close_prices = [c["close"] for c in candles]
         
         algos = [
-            {"id": "rsi_oscillator", "name": "RSI Overbought/Oversold"},
+            {"id": "rsi_overbought_oversold", "name": "RSI Overbought/Oversold"},
             {"id": "pj_indicator", "name": "PJ Indicator 🔮"},
             {"id": "stoch_rsi", "name": "Stochastic RSI (StochRSI)"},
             {"id": "macd_4c", "name": "MACD 4 Color (4C) Momentum"},
@@ -1349,7 +1653,7 @@ def create_or_update_auto_advisor_bot(
         if algorithm:
             # Selective indicator mode
             algo_names = {
-                "rsi_oscillator": "RSI Osc",
+                "rsi_overbought_oversold": "RSI Osc",
                 "pj_indicator": "PJ Ind",
                 "stoch_rsi": "StochRSI",
                 "macd_4c": "MACD 4C",
@@ -1358,6 +1662,8 @@ def create_or_update_auto_advisor_bot(
                 "elliott_wave": "Elliott Wave",
                 "harmonic_patterns": "Harmonic",
                 "ema_cross_50_200": "EMA 50/200",
+                "ema_cross": "Custom EMA",
+                "adx": "ADX Trend",
                 "rsi_divergence": "RSI Div",
                 "atr_breakout": "ATR Breakout",
                 "support_resistance": "S/R Bounce",
@@ -1370,7 +1676,7 @@ def create_or_update_auto_advisor_bot(
             name_label = algo_names.get(algorithm, "Bot")
             bot_name = f"AI Auto {name_label} {symbol}"
             
-            trend_algos = ["sma_cross", "macd", "ema_cross_50_200", "atr_breakout", "smc_bos_choch", "smc_order_block", "smc_fvg_imbalance", "smc_confluence_pro", "pj_indicator"]
+            trend_algos = ["sma_cross", "macd", "ema_cross_50_200", "ema_cross", "adx", "atr_breakout", "smc_bos_choch", "smc_order_block", "smc_fvg_imbalance", "smc_confluence_pro", "pj_indicator"]
             is_trend = algorithm in trend_algos
             
             if is_trend:
@@ -1430,7 +1736,7 @@ def create_or_update_auto_advisor_bot(
                 max_hold_hours = 12.0
                 strategy_desc = "SMC/MACD 4C (ขาลง)"
             else: # Neutral / Sideways
-                algorithms = "stoch_rsi" if "Stoch" in response_text else "rsi_oscillator"
+                algorithms = "stoch_rsi" if "Stoch" in response_text else "rsi_overbought_oversold"
                 bot_timeframe = "M15"
                 use_trend_filter = False
                 use_atr_sizing = False
@@ -1655,7 +1961,7 @@ def run_backtest(req: BacktestRequest):
                         "type": t_type,
                         "open_time": active_trade["open_time"],
                         "open_timestamp": active_trade["open_timestamp"],
-                        "close_time": datetime.fromtimestamp(current_time, timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+                        "close_time": datetime.fromtimestamp(current_time, BANGKOK_TZ).strftime("%Y-%m-%d %H:%M:%S"),
                         "close_timestamp": current_time,
                         "open_price": open_p,
                         "close_price": close_p,
@@ -1735,7 +2041,7 @@ def run_backtest(req: BacktestRequest):
                         "ticket": ticket_counter,
                         "type": sig,
                         "open_price": current_price,
-                        "open_time": datetime.fromtimestamp(current_time, timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+                        "open_time": datetime.fromtimestamp(current_time, BANGKOK_TZ).strftime("%Y-%m-%d %H:%M:%S"),
                         "open_timestamp": current_time,
                         "sl": sl_p,
                         "tp": tp_p
@@ -1760,7 +2066,7 @@ def run_backtest(req: BacktestRequest):
                 "type": t_type,
                 "open_time": active_trade["open_time"],
                 "open_timestamp": active_trade["open_timestamp"],
-                "close_time": datetime.fromtimestamp(candles[-1]["time"], timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+                "close_time": datetime.fromtimestamp(candles[-1]["time"], BANGKOK_TZ).strftime("%Y-%m-%d %H:%M:%S"),
                 "close_timestamp": candles[-1]["time"],
                 "open_price": open_p,
                 "close_price": close_p,
@@ -1945,15 +2251,26 @@ os.makedirs(STATIC_DIR, exist_ok=True)
 os.makedirs(os.path.join(STATIC_DIR, "css"), exist_ok=True)
 os.makedirs(os.path.join(STATIC_DIR, "js"), exist_ok=True)
 
-# Mount StaticFiles for CSS/JS
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+# Custom StaticFiles subclass to add Cache-Control headers
+class CacheControlledStaticFiles(StaticFiles):
+    async def get_response(self, path: str, scope) -> FileResponse:
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "public, max-age=3600"
+        return response
+
+# Mount StaticFiles for CSS/JS with custom cache headers
+app.mount("/static", CacheControlledStaticFiles(directory=STATIC_DIR), name="static")
 
 @app.get("/")
 def serve_index():
     """Main route serving our modern React dashboard."""
     index_path = os.path.join(STATIC_DIR, "index.html")
     if os.path.exists(index_path):
-        return FileResponse(index_path)
+        response = FileResponse(index_path)
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
     return {
         "status": "Running",
         "message": "FastAPI is running! The React frontend is being generated. Please refresh in a moment."

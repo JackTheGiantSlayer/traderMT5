@@ -82,7 +82,7 @@ try:
     # 2. Test standard calculations
     rsi = pattern_detector.calculate_rsi(prices, 14)
     atr = pattern_detector.calculate_atr(candles, 14)
-    k_vals, d_vals = pattern_detector.calculate_stoch_rsi(prices, 14, 14, 3, 3)
+    k_vals, d_vals = pattern_detector.calculate_stoch_rsi(prices, 13, 13, 3, 3)
     ema = pattern_detector.calculate_ema(prices, 20)
     macd_vals, macd_colors = pattern_detector.calculate_macd_4c(prices, 12, 26, 9)
     adx_vals, plus_di, minus_di = pattern_detector.calculate_adx(candles, 14)
@@ -157,7 +157,7 @@ try:
         symbol="XAUUSD",
         timeframe="H1",
         count=150,
-        algorithm="rsi_oscillator",
+        algorithm="rsi_overbought_oversold",
         signal_mode="or",
         lot_size=0.1,
         sl_points=5.0,
@@ -196,11 +196,47 @@ try:
     print(f"    - Total Trades: {result_pj['total_trades']}")
     print(f"    - Win Rate: {result_pj['win_rate']}% (Wins: {result_pj['wins_count']}, Losses: {result_pj['losses_count']})")
     
+    # Construct an ADX backtest request
+    req_adx = BacktestRequest(
+        symbol="XAUUSD",
+        timeframe="H1",
+        count=150,
+        algorithm="adx",
+        signal_mode="or",
+        lot_size=0.1,
+        sl_points=5.0,
+        tp_points=10.0,
+        initial_balance=10000.0
+    )
+    result_adx = run_backtest(req_adx)
+    print(f" [OK] ADX Backtest ran successfully:")
+    print(f"    - Algorithm: {result_adx['algorithm']}")
+    print(f"    - Total Trades: {result_adx['total_trades']}")
+
+    # Construct an EMA Cross backtest request
+    req_ema = BacktestRequest(
+        symbol="XAUUSD",
+        timeframe="H1",
+        count=150,
+        algorithm="ema_cross",
+        signal_mode="or",
+        lot_size=0.1,
+        sl_points=5.0,
+        tp_points=10.0,
+        initial_balance=10000.0
+    )
+    result_ema = run_backtest(req_ema)
+    print(f" [OK] EMA Crossover Backtest ran successfully:")
+    print(f"    - Algorithm: {result_ema['algorithm']}")
+    print(f"    - Total Trades: {result_ema['total_trades']}")
+
     # Assert sanity checks
     assert result['total_trades'] >= 0, "Negative trades count"
     assert len(result['equity_curve']) > 0, "Empty equity curve"
     assert result_pj['total_trades'] >= 0, "Negative trades count for PJ"
     assert len(result_pj['equity_curve']) > 0, "Empty equity curve for PJ"
+    assert result_adx['total_trades'] >= 0, "Negative trades count for ADX"
+    assert result_ema['total_trades'] >= 0, "Negative trades count for EMA Crossover"
 except Exception as e:
     print(f" [FAIL] Backtest Engine verification failed: {e}")
     traceback.print_exc()

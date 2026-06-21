@@ -1,7 +1,7 @@
 import time
 import threading
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from backend.database import SessionLocal
 from backend.models import BotSettings, BotLog
 from backend.mt5_manager import MT5Manager
@@ -95,7 +95,7 @@ def calculate_macd(prices, fast_period=12, slow_period=26, signal_period=9):
 
 # --- Signal Resolver ---
 
-def evaluate_signals(prices, algorithm, candles=None, symbol="XAUUSD", timeframe="H1"):
+def evaluate_signals(prices, algorithm, candles=None, symbol="XAUUSD", timeframe="H1", **kwargs):
     """
     Evaluates trading signals from historic close prices.
     Returns: 'buy', 'sell', or 'none'
@@ -109,17 +109,17 @@ def evaluate_signals(prices, algorithm, candles=None, symbol="XAUUSD", timeframe
         short_sma = calculate_sma(prices, short_period)
         long_sma = calculate_sma(prices, long_period)
         
-        if short_sma[-1] is None or short_sma[-2] is None or long_sma[-1] is None or long_sma[-2] is None:
+        if len(short_sma) < 3 or short_sma[-2] is None or short_sma[-3] is None or long_sma[-2] is None or long_sma[-3] is None:
             return "none"
             
-        # Bullish Crossover (Short SMA cuts above Long SMA)
-        if short_sma[-2] <= long_sma[-2] and short_sma[-1] > long_sma[-1]:
+        # Bullish Crossover (Short SMA cuts above Long SMA) on completed candle
+        if short_sma[-3] <= long_sma[-3] and short_sma[-2] > long_sma[-2]:
             return "buy"
-        # Bearish Crossover (Short SMA cuts below Long SMA)
-        if short_sma[-2] >= long_sma[-2] and short_sma[-1] < long_sma[-1]:
+        # Bearish Crossover (Short SMA cuts below Long SMA) on completed candle
+        if short_sma[-3] >= long_sma[-3] and short_sma[-2] < long_sma[-2]:
             return "sell"
             
-    elif algorithm == "rsi_oscillator":
+    elif algorithm == "rsi_overbought_oversold":
         rsi = calculate_rsi(prices, 14)
         if len(rsi) < 3 or rsi[-2] is None or rsi[-3] is None:
             return "none"
@@ -133,7 +133,11 @@ def evaluate_signals(prices, algorithm, candles=None, symbol="XAUUSD", timeframe
             
     elif algorithm == "stoch_rsi":
         from backend.pattern_detector import calculate_stoch_rsi
-        k_vals, d_vals = calculate_stoch_rsi(prices, 14, 14, 3, 3)
+        stoch_rsi_len = kwargs.get("stoch_rsi_len") or 13
+        stoch_len = kwargs.get("stoch_len") or 13
+        stoch_k = kwargs.get("stoch_k") or 3
+        stoch_d = kwargs.get("stoch_d") or 3
+        k_vals, d_vals = calculate_stoch_rsi(prices, stoch_rsi_len, stoch_len, stoch_k, stoch_d)
         if len(k_vals) < 3 or len(d_vals) < 3 or k_vals[-2] is None or k_vals[-3] is None or d_vals[-2] is None or d_vals[-3] is None:
             return "none"
             
@@ -146,19 +150,22 @@ def evaluate_signals(prices, algorithm, candles=None, symbol="XAUUSD", timeframe
             
     elif algorithm == "macd":
         macd_line, signal_line = calculate_macd(prices)
-        if macd_line[-1] is None or macd_line[-2] is None or signal_line[-1] is None or signal_line[-2] is None:
+        if len(macd_line) < 3 or macd_line[-2] is None or macd_line[-3] is None or signal_line[-2] is None or signal_line[-3] is None:
             return "none"
             
-        # Bullish MACD Crossover (MACD Line cuts above Signal Line)
-        if macd_line[-2] <= signal_line[-2] and macd_line[-1] > signal_line[-1]:
+        # Bullish MACD Crossover (MACD Line cuts above Signal Line) on completed candle
+        if macd_line[-3] <= signal_line[-3] and macd_line[-2] > signal_line[-2]:
             return "buy"
-        # Bearish MACD Crossover (MACD Line cuts below Signal Line)
-        if macd_line[-2] >= signal_line[-2] and macd_line[-1] < signal_line[-1]:
+        # Bearish MACD Crossover (MACD Line cuts below Signal Line) on completed candle
+        if macd_line[-3] >= signal_line[-3] and macd_line[-2] < signal_line[-2]:
             return "sell"
             
     elif algorithm == "macd_4c":
         from backend.pattern_detector import calculate_macd_4c
-        macd_vals, colors = calculate_macd_4c(prices, 12, 26, 9)
+        macd_fast = kwargs.get("macd_fast") or 12
+        macd_slow = kwargs.get("macd_slow") or 26
+        macd_signal = kwargs.get("macd_signal") or 9
+        macd_vals, colors = calculate_macd_4c(prices, macd_fast, macd_slow, macd_signal)
         if len(macd_vals) < 2 or len(colors) < 2 or macd_vals[-1] is None or macd_vals[-2] is None or colors[-1] is None or colors[-2] is None:
             return "none"
             
@@ -204,11 +211,27 @@ def evaluate_signals(prices, algorithm, candles=None, symbol="XAUUSD", timeframe
     elif algorithm == "ema_cross_50_200":
         ema50 = calculate_ema(prices, 50)
         ema200 = calculate_ema(prices, 200)
-        if ema50[-1] is None or ema50[-2] is None or ema200[-1] is None or ema200[-2] is None:
+        if len(ema50) < 3 or ema50[-2] is None or ema50[-3] is None or ema200[-2] is None or ema200[-3] is None:
             return "none"
-        if ema50[-2] <= ema200[-2] and ema50[-1] > ema200[-1]:
+        # Crossover on completed candle
+        if ema50[-3] <= ema200[-3] and ema50[-2] > ema200[-2]:
             return "buy"
-        if ema50[-2] >= ema200[-2] and ema50[-1] < ema200[-1]:
+        if ema50[-3] >= ema200[-3] and ema50[-2] < ema200[-2]:
+            return "sell"
+            
+    elif algorithm == "ema_cross":
+        fast_period = kwargs.get("ema_fast") or 50
+        slow_period = kwargs.get("ema_slow") or 200
+        if len(prices) < (slow_period + 10):
+            return "none"
+        ema_fast_vals = calculate_ema(prices, fast_period)
+        ema_slow_vals = calculate_ema(prices, slow_period)
+        if len(ema_fast_vals) < 3 or ema_fast_vals[-2] is None or ema_fast_vals[-3] is None or ema_slow_vals[-2] is None or ema_slow_vals[-3] is None:
+            return "none"
+        # Crossover on completed candle
+        if ema_fast_vals[-3] <= ema_slow_vals[-3] and ema_fast_vals[-2] > ema_slow_vals[-2]:
+            return "buy"
+        if ema_fast_vals[-3] >= ema_slow_vals[-3] and ema_fast_vals[-2] < ema_slow_vals[-2]:
             return "sell"
             
     elif algorithm == "rsi_divergence":
@@ -218,23 +241,26 @@ def evaluate_signals(prices, algorithm, candles=None, symbol="XAUUSD", timeframe
         return detect_rsi_divergence(candles)
         
     elif algorithm == "atr_breakout":
-        if candles is None or len(candles) < 20:
+        if candles is None or len(candles) < 21:
             return "none"
         from backend.pattern_detector import calculate_atr
         ema20 = calculate_ema(prices, 20)
         atr14 = calculate_atr(candles, 14)
-        if ema20[-1] is None or atr14[-1] is None:
+        if len(ema20) < 3 or ema20[-2] is None or ema20[-3] is None or atr14[-2] is None or atr14[-3] is None:
             return "none"
-        current_price = prices[-1]
-        prev_price = prices[-2]
-        upper_band = ema20[-1] + 1.5 * atr14[-1]
-        lower_band = ema20[-1] - 1.5 * atr14[-1]
-        prev_upper_band = ema20[-2] + 1.5 * atr14[-2] if ema20[-2] is not None and atr14[-2] is not None else upper_band
-        prev_lower_band = ema20[-2] - 1.5 * atr14[-2] if ema20[-2] is not None and atr14[-2] is not None else lower_band
         
-        if prev_price <= prev_upper_band and current_price > upper_band:
+        # Completed candle: index [-2], prior completed candle: index [-3]
+        price_completed = prices[-2]
+        price_prior = prices[-3]
+        
+        upper_band_completed = ema20[-2] + 1.5 * atr14[-2]
+        lower_band_completed = ema20[-2] - 1.5 * atr14[-2]
+        upper_band_prior = ema20[-3] + 1.5 * atr14[-3]
+        lower_band_prior = ema20[-3] - 1.5 * atr14[-3]
+        
+        if price_prior <= upper_band_prior and price_completed > upper_band_completed:
             return "buy"
-        if prev_price >= prev_lower_band and current_price < lower_band:
+        if price_prior >= lower_band_prior and price_completed < lower_band_completed:
             return "sell"
             
     elif algorithm == "support_resistance":
@@ -270,10 +296,12 @@ def evaluate_signals(prices, algorithm, candles=None, symbol="XAUUSD", timeframe
         from backend.pattern_detector import detect_fvg
         return detect_fvg(candles)
     elif algorithm == "adx":
-        if candles is None or len(candles) < 35:
+        adx_len = kwargs.get("adx_len") or 25
+        adx_threshold = kwargs.get("adx_threshold") or 30
+        if candles is None or len(candles) < (adx_len + 10):
             return "none"
         from backend.pattern_detector import calculate_adx
-        adx_vals, plus_di, minus_di = calculate_adx(candles, 14)
+        adx_vals, plus_di, minus_di = calculate_adx(candles, adx_len)
         if (len(adx_vals) < 3 or adx_vals[-2] is None or 
             plus_di[-2] is None or plus_di[-3] is None or 
             minus_di[-2] is None or minus_di[-3] is None):
@@ -288,9 +316,9 @@ def evaluate_signals(prices, algorithm, candles=None, symbol="XAUUSD", timeframe
         is_bullish_cross = plus_di_prev2 <= minus_di_prev2 and plus_di_prev > minus_di_prev
         is_bearish_cross = plus_di_prev2 >= minus_di_prev2 and plus_di_prev < minus_di_prev
         
-        if is_bullish_cross and adx_prev is not None and adx_prev > 20:
+        if is_bullish_cross and adx_prev is not None and adx_prev > adx_threshold:
             return "buy"
-        if is_bearish_cross and adx_prev is not None and adx_prev > 20:
+        if is_bearish_cross and adx_prev is not None and adx_prev > adx_threshold:
             return "sell"
             
     elif algorithm == "pj_indicator":
@@ -299,8 +327,19 @@ def evaluate_signals(prices, algorithm, candles=None, symbol="XAUUSD", timeframe
             
         from backend.pattern_detector import calculate_pj_indicator_trend_and_score
         
-        # Calculate PJ trend and score history
-        results = calculate_pj_indicator_trend_and_score(candles, timeframe=timeframe)
+        # Calculate PJ trend and score history with custom overrides
+        min_score = kwargs.get("pj_min_score") or 6
+        use_volume = kwargs.get("pj_use_volume") or False
+        vol_multiplier = kwargs.get("pj_vol_multiplier") or 2.0
+        vwap_anchor = kwargs.get("pj_vwap_anchor") or "Session"
+        results = calculate_pj_indicator_trend_and_score(
+            candles, 
+            timeframe=timeframe,
+            min_score=min_score,
+            use_volume=use_volume,
+            vol_multiplier=vol_multiplier,
+            vwap_anchor=vwap_anchor
+        )
         if len(results) < 3:
             return "none"
             
@@ -351,6 +390,59 @@ def evaluate_signals(prices, algorithm, candles=None, symbol="XAUUSD", timeframe
         if sellSignal:
             return "sell"
             
+    elif algorithm == "pj_indicator_v2":
+        if candles is None or len(candles) < 55:
+            return "none"
+            
+        from backend.pattern_detector import get_mtf_timeframe_and_seconds, calculate_pj_indicator_v2_trend_and_score
+        mtf_tf, mtf_secs = get_mtf_timeframe_and_seconds(timeframe)
+        
+        from backend.mt5_manager import MT5Manager
+        mt5 = MT5Manager()
+        mtf_candles = mt5.get_historical_candles(symbol, mtf_tf, count=300)
+        if not mtf_candles or len(mtf_candles) < 20:
+            return "none"
+            
+        min_score = kwargs.get("pj_min_score") or 6
+        use_volume = kwargs.get("pj_use_volume") or False
+        vol_multiplier = kwargs.get("pj_vol_multiplier") or 2.0
+        vwap_anchor = kwargs.get("pj_vwap_anchor") or "Session"
+        pj_atr_mult = kwargs.get("pj_atr_mult") or 1.5
+        pj_use_dyn_atr = kwargs.get("pj_use_dyn_atr") if kwargs.get("pj_use_dyn_atr") is not None else True
+        cooldown_bars = kwargs.get("pj_cooldown_bars") or 5
+        min_bars_between = kwargs.get("pj_min_bars_between") or 5
+        use_strict_mtf = kwargs.get("pj_strict_mtf") or False
+        use_atr_block = kwargs.get("pj_use_atr_block") if kwargs.get("pj_use_atr_block") is not None else True
+        min_cross_count = kwargs.get("pj_min_cross_count") or 1
+        allowed_sessions = kwargs.get("allowed_sessions") or "all"
+        
+        results = calculate_pj_indicator_v2_trend_and_score(
+            candles=candles,
+            mtf_candles=mtf_candles,
+            mtf_timeframe=mtf_tf,
+            min_score=min_score,
+            use_volume=use_volume,
+            vol_multiplier=vol_multiplier,
+            vwap_anchor=vwap_anchor,
+            pj_atr_mult=pj_atr_mult,
+            pj_use_dyn_atr=pj_use_dyn_atr,
+            cooldown_bars=cooldown_bars,
+            min_bars_between=min_bars_between,
+            use_strict_mtf=use_strict_mtf,
+            use_atr_block=use_atr_block,
+            min_cross_count=min_cross_count,
+            allowed_sessions=allowed_sessions
+        )
+        if len(results) < 2:
+            return "none"
+            
+        last_completed_res = results[-2]
+        if last_completed_res["trigger_buy"]:
+            return "buy"
+        elif last_completed_res["trigger_sell"]:
+            return "sell"
+        return "none"
+            
     elif algorithm == "smc_confluence_pro":
         if candles is None or len(candles) < 35:
             return "none"
@@ -370,10 +462,10 @@ def evaluate_signals(prices, algorithm, candles=None, symbol="XAUUSD", timeframe
             
     return "none"
 
-def evaluate_multi_signals(prices, algorithms_list, signal_mode, candles=None, symbol="XAUUSD", timeframe="H1"):
+def evaluate_multi_signals(prices, algorithms_list, signal_mode, candles=None, symbol="XAUUSD", timeframe="H1", **kwargs):
     """
     Evaluates signals from a list of algorithms and combines them.
-    algorithms_list: list of strings (e.g. ['sma_cross', 'rsi_oscillator'])
+    algorithms_list: list of strings (e.g. ['sma_cross', 'rsi_overbought_oversold'])
     signal_mode: 'and' or 'or'
     """
     if not algorithms_list:
@@ -381,7 +473,7 @@ def evaluate_multi_signals(prices, algorithms_list, signal_mode, candles=None, s
         
     individual_signals = {}
     for algo in algorithms_list:
-        individual_signals[algo] = evaluate_signals(prices, algo, candles=candles, symbol=symbol, timeframe=timeframe)
+        individual_signals[algo] = evaluate_signals(prices, algo, candles=candles, symbol=symbol, timeframe=timeframe, **kwargs)
         
     buys = [algo for algo, sig in individual_signals.items() if sig == "buy"]
     sells = [algo for algo, sig in individual_signals.items() if sig == "sell"]
@@ -523,8 +615,8 @@ class BotManager:
                                                 close_price=res["close_price"],
                                                 sl=res.get("sl", 0.0),
                                                 tp=res.get("tp", 0.0),
-                                                open_time=datetime.strptime(res["open_time"], "%Y-%m-%d %H:%M:%S") if isinstance(res["open_time"], str) else res["open_time"],
-                                                close_time=datetime.strptime(res["close_time"], "%Y-%m-%d %H:%M:%S") if isinstance(res["close_time"], str) else res["close_time"],
+                                                open_time=datetime.fromtimestamp(res["open_time_raw"], timezone.utc).replace(tzinfo=None),
+                                                close_time=datetime.fromtimestamp(res["close_time_raw"], timezone.utc).replace(tzinfo=None),
                                                 profit=res["profit"],
                                                 comment=f"{bot.name} [Time Out - {max_hold}h]"
                                             )
@@ -540,6 +632,105 @@ class BotManager:
                                     self._log_to_db(db, bot.id, f"ไม่สามารถปิดออเดอร์ (หมดเวลาถือครอง): {res.get('comment')}", "error")
                     except Exception as close_err:
                         self._log_to_db(db, bot.id, f"ข้อผิดพลาดขณะพยายามปิดออเดอร์ (หมดเวลาถือครอง): {str(close_err)}", "error")
+                
+                # --- Post-Trade Risk Management (Break-Even, Trailing Stop, Partial Take Profit) ---
+                if active_pos is not None:
+                    try:
+                        symbol_upper = bot.symbol.upper()
+                        if "XAU" in symbol_upper or "GOLD" in symbol_upper:
+                            multiplier = 100.0
+                        elif "USD" in symbol_upper or symbol_upper in ["EURUSD", "GBPUSD", "AUDUSD", "NZDUSD", "USDCAD", "USDCHF"]:
+                            multiplier = 100000.0
+                        elif "JPY" in symbol_upper:
+                            multiplier = 1000.0
+                        else:
+                            multiplier = 1.0
+                            
+                        pos_type = active_pos["type"]
+                        open_price = active_pos["open_price"]
+                        current_price = active_pos["current_price"]
+                        current_sl = active_pos["sl"]
+                        current_tp = active_pos["tp"]
+                        
+                        if pos_type == "buy":
+                            profit_points = (current_price - open_price) * multiplier
+                        else:
+                            profit_points = (open_price - current_price) * multiplier
+                            
+                        # A. Break-Even
+                        if getattr(bot, "use_break_even", False):
+                            be_trigger = getattr(bot, "break_even_trigger_points", 0.0)
+                            be_lock = getattr(bot, "break_even_lock_points", 0.0)
+                            if be_trigger > 0 and profit_points >= be_trigger:
+                                new_sl = 0.0
+                                should_modify = False
+                                if pos_type == "buy":
+                                    target_sl = open_price + (be_lock / multiplier)
+                                    if current_sl < target_sl - 0.0001:
+                                        new_sl = target_sl
+                                        should_modify = True
+                                else:
+                                    target_sl = open_price - (be_lock / multiplier)
+                                    if current_sl == 0.0 or current_sl > target_sl + 0.0001:
+                                        new_sl = target_sl
+                                        should_modify = True
+                                        
+                                if should_modify:
+                                    self._log_to_db(db, bot.id, f"🛡️ Break-Even: กำไรถึงเกณฑ์ ({profit_points:.1f} >= {be_trigger:.1f} pts) ขยับ Stop Loss ของออเดอร์ #{bot.active_ticket} ไปบังหน้าทุนที่ {new_sl:.4f} (+{be_lock} pts)", "info")
+                                    try:
+                                        self.mt5.modify_position(bot.active_ticket, new_sl, current_tp)
+                                        current_sl = new_sl
+                                    except Exception as modify_err:
+                                        self._log_to_db(db, bot.id, f"ข้อผิดพลาดเลื่อน SL บังทุน: {modify_err}", "error")
+                                        
+                        # B. Trailing Stop
+                        if getattr(bot, "use_trailing_stop", False):
+                            trail_dist = getattr(bot, "trailing_stop_points", 0.0)
+                            if trail_dist > 0:
+                                new_sl = 0.0
+                                should_modify = False
+                                if pos_type == "buy":
+                                    target_sl = current_price - (trail_dist / multiplier)
+                                    if current_sl == 0.0 or current_sl < target_sl - 0.0001:
+                                        new_sl = target_sl
+                                        should_modify = True
+                                else:
+                                    target_sl = current_price + (trail_dist / multiplier)
+                                    if current_sl == 0.0 or current_sl > target_sl + 0.0001:
+                                        new_sl = target_sl
+                                        should_modify = True
+                                        
+                                if should_modify:
+                                    self._log_to_db(db, bot.id, f"📈 Trailing Stop: ปรับเลื่อน Stop Loss ของออเดอร์ #{bot.active_ticket} ตามราคาไปที่ {new_sl:.4f} (ระยะลากหลังราคา {trail_dist} pts)", "info")
+                                    try:
+                                        self.mt5.modify_position(bot.active_ticket, new_sl, current_tp)
+                                        current_sl = new_sl
+                                    except Exception as modify_err:
+                                        self._log_to_db(db, bot.id, f"ข้อผิดพลาด Trailing Stop: {modify_err}", "error")
+                                        
+                        # C. Partial Take Profit
+                        if getattr(bot, "use_partial_tp", False) and not getattr(bot, "is_partial_closed", False):
+                            ptp_trigger = getattr(bot, "partial_tp_points", 0.0)
+                            ptp_ratio = getattr(bot, "partial_tp_ratio", 0.5)
+                            if ptp_trigger > 0 and profit_points >= ptp_trigger:
+                                vol_to_close = round(active_pos["volume"] * ptp_ratio, 2)
+                                if vol_to_close < 0.01:
+                                    vol_to_close = 0.01
+                                if vol_to_close < active_pos["volume"]:
+                                    self._log_to_db(db, bot.id, f"🎯 Partial Take Profit: กำไรถึงเป้าหมายแรก ({profit_points:.1f} >= {ptp_trigger:.1f} pts) ปิดทำกำไรบางส่วนจำนวน {vol_to_close:.2f} Lots", "info")
+                                    try:
+                                        res = self.mt5.partial_close_position(bot.active_ticket, vol_to_close)
+                                        if res.get("success"):
+                                            pnl = res.get("profit", 0.0)
+                                            self._log_to_db(db, bot.id, f"ปิดทำกำไรบางส่วนสำเร็จ! เก็บกำไร: ${pnl} (เหลือปริมาณ: {res.get('remaining_volume')} Lots)", "close")
+                                            bot.is_partial_closed = True
+                                            db.commit()
+                                        else:
+                                            self._log_to_db(db, bot.id, f"ไม่สามารถปิดทำกำไรบางส่วนได้: {res.get('comment')}", "error")
+                                    except Exception as ptp_err:
+                                        self._log_to_db(db, bot.id, f"ข้อผิดพลาดในการทำ Partial Close: {ptp_err}", "error")
+                    except Exception as risk_err:
+                        logger.error(f"Error in post-trade risk management for bot #{bot.id}: {risk_err}")
             else:
                 # Ticket no longer open (closed manually, or hit TP/SL)
                 msg = f"ออเดอร์ #{bot.active_ticket} ถูกปิดการทำงานแล้ว (โดยผู้ใช้ หรือถึงขีดจำกัด TP/SL)"
@@ -588,11 +779,34 @@ class BotManager:
                         logger.error(f"Failed to fetch real MT5 closed history for Discord notification: {hist_err}")
                 
                 bot.active_ticket = None
+                bot.is_partial_closed = False
                 db.commit()
                 
         # 3. Evaluate signals
         algorithms_list = [a.strip() for a in bot.algorithms.split(",") if a.strip()]
-        signal = evaluate_multi_signals(close_prices, algorithms_list, bot.signal_mode, candles=candles, symbol=bot.symbol, timeframe=bot.timeframe)
+        signal = evaluate_multi_signals(
+            close_prices, 
+            algorithms_list, 
+            bot.signal_mode, 
+            candles=candles, 
+            symbol=bot.symbol, 
+            timeframe=bot.timeframe,
+            stoch_rsi_len=getattr(bot, "stoch_rsi_len", 13) or 13,
+            stoch_len=getattr(bot, "stoch_len", 13) or 13,
+            stoch_k=getattr(bot, "stoch_k", 3) or 3,
+            stoch_d=getattr(bot, "stoch_d", 3) or 3,
+            macd_fast=getattr(bot, "macd_fast", 12) or 12,
+            macd_slow=getattr(bot, "macd_slow", 26) or 26,
+            macd_signal=getattr(bot, "macd_signal", 9) or 9,
+            pj_min_score=getattr(bot, "pj_min_score", 6) if getattr(bot, "pj_min_score", 6) is not None else 6,
+            pj_use_volume=getattr(bot, "pj_use_volume", False) if getattr(bot, "pj_use_volume", False) is not None else False,
+            pj_vol_multiplier=getattr(bot, "pj_vol_multiplier", 2.0) if getattr(bot, "pj_vol_multiplier", 2.0) is not None else 2.0,
+            pj_vwap_anchor=getattr(bot, "pj_vwap_anchor", "Session") or "Session",
+            ema_fast=getattr(bot, "ema_fast", 50) if getattr(bot, "ema_fast", 50) is not None else 50,
+            ema_slow=getattr(bot, "ema_slow", 200) if getattr(bot, "ema_slow", 200) is not None else 200,
+            adx_len=getattr(bot, "adx_len", 25) if getattr(bot, "adx_len", 25) is not None else 25,
+            adx_threshold=getattr(bot, "adx_threshold", 30) if getattr(bot, "adx_threshold", 30) is not None else 30
+        )
         
         # Apply Geopolitical & News Sentiment Filter
         if getattr(bot, "use_news_filter", False) and signal in ["buy", "sell"]:
@@ -687,6 +901,27 @@ class BotManager:
                             signal = "none"
             except Exception as mtf_err:
                 logger.error(f"Error executing Multi-Timeframe Trend filter: {mtf_err}")
+                
+        # Apply Market Regime Filter (Trend vs Range classification)
+        if getattr(bot, "use_regime_filter", False) and signal in ["buy", "sell"]:
+            try:
+                from backend.pattern_detector import calculate_adx
+                adx_len = 14
+                if len(candles) >= adx_len + 10:
+                    adx_vals, plus_di, minus_di = calculate_adx(candles, adx_len)
+                    current_adx = adx_vals[-1]
+                    if current_adx is not None:
+                        regime_mode = getattr(bot, "regime_mode", "trend")
+                        if regime_mode == "trend" and current_adx < 20:
+                            if int(time.time()) % 60 < 10:
+                                self._log_to_db(db, bot.id, f"🛡️ Regime Filter: สัญญาณ {signal.upper()} ถูกบล็อกเนื่องจากตลาดอยู่ในช่วงไซด์เวย์ไร้เทรนด์ (ADX: {current_adx:.1f} < 20)", "info")
+                            signal = "none"
+                        elif regime_mode == "range" and current_adx > 25:
+                            if int(time.time()) % 60 < 10:
+                                self._log_to_db(db, bot.id, f"🛡️ Regime Filter: สัญญาณ {signal.upper()} ถูกบล็อกเนื่องจากตลาดอยู่ในช่วงมีเทรนด์ที่รุนแรงเกินไป (ADX: {current_adx:.1f} > 25)", "info")
+                            signal = "none"
+            except Exception as regime_err:
+                logger.error(f"Error executing Market Regime filter: {regime_err}")
                     
         # Apply Session Time Filter
         allowed_sess = getattr(bot, "allowed_sessions", "all")
@@ -751,8 +986,8 @@ class BotManager:
                                     close_price=res["close_price"],
                                     sl=res.get("sl", 0.0),
                                     tp=res.get("tp", 0.0),
-                                    open_time=datetime.strptime(res["open_time"], "%Y-%m-%d %H:%M:%S") if isinstance(res["open_time"], str) else res["open_time"],
-                                    close_time=datetime.strptime(res["close_time"], "%Y-%m-%d %H:%M:%S") if isinstance(res["close_time"], str) else res["close_time"],
+                                    open_time=datetime.fromtimestamp(res["open_time_raw"], timezone.utc).replace(tzinfo=None),
+                                    close_time=datetime.fromtimestamp(res["close_time_raw"], timezone.utc).replace(tzinfo=None),
                                     profit=res["profit"],
                                     comment=f"{bot.name} [{bot.algorithms}]"
                                 )
@@ -781,7 +1016,15 @@ class BotManager:
                 
                 if pj_tp_target and pj_tp_target != "manual":
                     from backend.pattern_detector import calculate_pj_dynamic_levels
-                    sl_dist, tp_dist = calculate_pj_dynamic_levels(candles, signal, pj_tp_target)
+                    atr_mult = getattr(bot, "pj_atr_mult", 1.5) if getattr(bot, "pj_atr_mult", 1.5) is not None else 1.5
+                    use_dyn_atr = getattr(bot, "pj_use_dyn_atr", True) if getattr(bot, "pj_use_dyn_atr", True) is not None else True
+                    sl_dist, tp_dist = calculate_pj_dynamic_levels(
+                        candles, 
+                        signal, 
+                        pj_tp_target,
+                        atr_mult=atr_mult,
+                        use_dyn_atr=use_dyn_atr
+                    )
                     if sl_dist is not None and tp_dist is not None:
                         if signal == "buy":
                             sl_price = current_price - sl_dist
@@ -879,6 +1122,7 @@ class BotManager:
                     if res.get("success"):
                         ticket = res.get("ticket")
                         bot.active_ticket = ticket
+                        bot.is_partial_closed = False
                         db.commit()
                         
                         log_msg = f"เปิดออเดอร์สำเร็จ! Ticket: #{ticket} | ประเภท: {signal.upper()} | โหมด: {bot.signal_mode.upper()} | ตัวบ่งชี้: {bot.algorithms}"
@@ -897,18 +1141,19 @@ class BotManager:
                             sma15 = calculate_sma(close_prices, 15)[-1]
                             if sma5 is not None and sma15 is not None:
                                 ind_info_list.append(f"SMA5={sma5:.2f}/SMA15={sma15:.2f}")
-                        elif algo == "rsi_oscillator":
+                        elif algo == "rsi_overbought_oversold":
                             rsi = calculate_rsi(close_prices, 14)[-1]
                             if rsi is not None:
                                 ind_info_list.append(f"RSI={rsi:.2f}")
                         elif algo == "adx":
                             from backend.pattern_detector import calculate_adx
-                            adx_vals, plus_di, minus_di = calculate_adx(candles, 14)
+                            a_len = getattr(bot, "adx_len", 25) or 25
+                            adx_vals, plus_di, minus_di = calculate_adx(candles, a_len)
                             if adx_vals[-1] is not None:
                                 ind_info_list.append(f"ADX={adx_vals[-1]:.1f}, +DI={plus_di[-1]:.1f}, -DI={minus_di[-1]:.1f}")
                         elif algo == "stoch_rsi":
                             from backend.pattern_detector import calculate_stoch_rsi
-                            k_vals, d_vals = calculate_stoch_rsi(close_prices, 14, 14, 3, 3)
+                            k_vals, d_vals = calculate_stoch_rsi(close_prices, 13, 13, 3, 3)
                             if k_vals[-1] is not None and d_vals[-1] is not None:
                                 ind_info_list.append(f"StochRSI(K={k_vals[-1]:.1f}, D={d_vals[-1]:.1f})")
                         elif algo == "macd":
@@ -939,6 +1184,13 @@ class BotManager:
                             ema200 = calculate_ema(close_prices, 200)[-1]
                             if ema50 is not None and ema200 is not None:
                                 ind_info_list.append(f"EMA50={ema50:.2f}/EMA200={ema200:.2f}")
+                        elif algo == "ema_cross":
+                            fast_period = getattr(bot, "ema_fast", 50) or 50
+                            slow_period = getattr(bot, "ema_slow", 200) or 200
+                            ema_f = calculate_ema(close_prices, fast_period)[-1]
+                            ema_s = calculate_ema(close_prices, slow_period)[-1]
+                            if ema_f is not None and ema_s is not None:
+                                ind_info_list.append(f"EMA{fast_period}={ema_f:.2f}/EMA{slow_period}={ema_s:.2f}")
                         elif algo == "rsi_divergence":
                             ind_info_list.append("RSI Div=No Div")
                         elif algo == "atr_breakout":

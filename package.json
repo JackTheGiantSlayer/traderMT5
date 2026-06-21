@@ -1,0 +1,27 @@
+{
+  "name": "tradermt5",
+  "version": "1.0.0",
+  "description": "**Giant Slayer** เป็นระบบกระดานเทรดอัจฉริยะ (Trading Dashboard) และระบบบอทเทรดอัตโนมัติ (Algorithmic Trading Bot) ระดับมืออาชีพที่ออกแบบมาเพื่อเชื่อมต่อพอร์ตการลงทุนของ **Exness ผ่านแพลตฟอร์ม MetaTrader 5 (MT5)** โดยตรง พัฒนาด้วยเทคโนโลยีเว็บสมัยใหม่ ธีมกระจกโปร่งแสงสุดพรีเมียม (Glassmorphic Dark Theme) และติดตั้งระบบการตรวจจับโครงสร้างราคาระดับสูง (Smart Money Concepts - SMC) พร้อมระบบบริหารจัดการความเสี่ยงที่แม่นยำสูง",
+  "main": "index.js",
+  "scripts": {
+    "build": "babel static/js/app.js --out-file static/js/app.compiled.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JackTheGiantSlayer/traderMT5.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/JackTheGiantSlayer/traderMT5/issues"
+  },
+  "homepage": "https://github.com/JackTheGiantSlayer/traderMT5#readme",
+  "devDependencies": {
+    "@babel/cli": "^8.0.1",
+    "@babel/core": "^8.0.1",
+    "@babel/preset-react": "^8.0.1"
+  }
+}

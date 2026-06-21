@@ -1,6 +1,8 @@
 import random
 import numpy as np
 from datetime import datetime, timedelta, timezone
+
+BANGKOK_TZ = timezone(timedelta(hours=7))
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
 from backend.models_advanced import HistoricalCandle, AdvancedBacktestRun, AdvancedBacktestTrade
@@ -271,7 +273,7 @@ def execute_backtest_on_candles(candles: list, algorithm: str, signal_mode: str,
                     "type": t_type,
                     "open_time": active_trade["open_time"],
                     "open_timestamp": active_trade["open_timestamp"],
-                    "close_time": datetime.fromtimestamp(current_time, timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+                    "close_time": datetime.fromtimestamp(current_time, BANGKOK_TZ).strftime("%Y-%m-%d %H:%M:%S"),
                     "close_timestamp": current_time,
                     "open_price": open_p,
                     "close_price": close_p,
@@ -320,7 +322,7 @@ def execute_backtest_on_candles(candles: list, algorithm: str, signal_mode: str,
                     "ticket": ticket_counter,
                     "type": sig,
                     "open_price": current_price,
-                    "open_time": datetime.fromtimestamp(current_time, timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+                    "open_time": datetime.fromtimestamp(current_time, BANGKOK_TZ).strftime("%Y-%m-%d %H:%M:%S"),
                     "open_timestamp": current_time,
                     "sl": sl_p,
                     "tp": tp_p
@@ -339,7 +341,7 @@ def execute_backtest_on_candles(candles: list, algorithm: str, signal_mode: str,
             "type": t_type,
             "open_time": active_trade["open_time"],
             "open_timestamp": active_trade["open_timestamp"],
-            "close_time": datetime.fromtimestamp(candles[-1]["time"], timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+            "close_time": datetime.fromtimestamp(candles[-1]["time"], BANGKOK_TZ).strftime("%Y-%m-%d %H:%M:%S"),
             "close_timestamp": candles[-1]["time"],
             "open_price": open_p,
             "close_price": close_p,
@@ -497,8 +499,8 @@ def run_advanced_backtest(db: Session, symbol: str, timeframe: str, algorithm: s
             
             wfo_segments.append({
                 "segment": seg + 1,
-                "period_start": datetime.fromtimestamp(seg_candles[0]["time"], timezone.utc).strftime("%Y-%m-%d"),
-                "period_end": datetime.fromtimestamp(seg_candles[-1]["time"], timezone.utc).strftime("%Y-%m-%d"),
+                "period_start": datetime.fromtimestamp(seg_candles[0]["time"], BANGKOK_TZ).strftime("%Y-%m-%d"),
+                "period_end": datetime.fromtimestamp(seg_candles[-1]["time"], BANGKOK_TZ).strftime("%Y-%m-%d"),
                 "train_pnl": round(train_res["final_balance"] - initial_balance, 2),
                 "train_win_rate": round((tr_wins / len(train_res["trades"]) * 100) if train_res["trades"] else 0.0, 1),
                 "test_pnl": round(test_res["final_balance"] - initial_balance, 2),
@@ -597,7 +599,7 @@ def run_advanced_backtest(db: Session, symbol: str, timeframe: str, algorithm: s
     # 8. Monthly Win Rate Analysis
     monthly_stats = {}
     for t in trades_history:
-        close_dt = datetime.fromtimestamp(t["close_timestamp"], timezone.utc)
+        close_dt = datetime.fromtimestamp(t["close_timestamp"], BANGKOK_TZ)
         m_key = close_dt.strftime("%Y-%m")
         if m_key not in monthly_stats:
             monthly_stats[m_key] = {"month": m_key, "trades": 0, "profit": 0.0, "wins": 0, "losses": 0, "gross_profit": 0.0, "gross_loss": 0.0}

@@ -433,7 +433,7 @@ const TradingApp = () => {
     const [activeBot, setActiveBot] = useState(null);
     const [botLogs, setBotLogs] = useState([]);
     const [botFormOpen, setBotFormOpen] = useState(false);
-    const [botForm, setBotForm] = useState({ name: "บอทเทรดทองคำ RSI", symbol: "XAUUSD", timeframe: "M1", algorithm: "rsi_oscillator", lot_size: 0.01, sl_points: 5.0, tp_points: 10.0, use_trend_filter: false, use_mtf_filter: false, use_atr_sizing: false, risk_percent: 1.0, allowed_sessions: "all", use_news_filter: false, stoch_rsi_len: 13, stoch_len: 13, stoch_k: 3, stoch_d: 3, macd_fast: 12, macd_slow: 26, macd_signal: 9, pj_min_score: 6, pj_use_volume: false, pj_vol_multiplier: 2.0, pj_vwap_anchor: "Session", pj_atr_mult: 1.5, pj_use_dyn_atr: true, pj_tp_target: "manual", ema_fast: 50, ema_slow: 200, adx_len: 25, adx_threshold: 30 });
+    const [botForm, setBotForm] = useState({ name: "บอทเทรดทองคำ RSI", symbol: "XAUUSD", timeframe: "M1", algorithm: "rsi_oscillator", lot_size: 0.01, sl_points: 5.0, tp_points: 10.0, use_trend_filter: false, use_mtf_filter: false, use_atr_sizing: false, risk_percent: 1.0, allowed_sessions: "all", use_news_filter: false, stoch_rsi_len: 13, stoch_len: 13, stoch_k: 3, stoch_d: 3, macd_fast: 12, macd_slow: 26, macd_signal: 9, pj_min_score: 6, pj_use_volume: false, pj_vol_multiplier: 2.0, pj_vwap_anchor: "Session", pj_atr_mult: 1.5, pj_use_dyn_atr: true, pj_tp_target: "manual", pj_cooldown_bars: 5, pj_min_bars_between: 5, pj_strict_mtf: false, pj_use_atr_block: true, pj_min_cross_count: 1, ema_fast: 50, ema_slow: 200, adx_len: 25, adx_threshold: 30, use_trailing_stop: false, trailing_stop_points: 0.0, use_break_even: false, break_even_trigger_points: 0.0, break_even_lock_points: 0.0, use_partial_tp: false, partial_tp_points: 0.0, partial_tp_ratio: 0.5, use_regime_filter: false, regime_mode: "trend" });
     const [selectedAlgos, setSelectedAlgos] = useState(["rsi_oscillator"]);
     const [signalMode, setSignalMode] = useState("or");
     const [activeRunningBotsCount, setActiveRunningBotsCount] = useState(0);
@@ -2054,10 +2054,25 @@ const TradingApp = () => {
             pj_atr_mult: bot.pj_atr_mult !== undefined ? bot.pj_atr_mult : 1.5,
             pj_use_dyn_atr: bot.pj_use_dyn_atr !== undefined ? bot.pj_use_dyn_atr : true,
             pj_tp_target: bot.pj_tp_target !== undefined ? bot.pj_tp_target : "manual",
+            pj_cooldown_bars: bot.pj_cooldown_bars !== undefined ? bot.pj_cooldown_bars : 5,
+            pj_min_bars_between: bot.pj_min_bars_between !== undefined ? bot.pj_min_bars_between : 5,
+            pj_strict_mtf: bot.pj_strict_mtf !== undefined ? bot.pj_strict_mtf : false,
+            pj_use_atr_block: bot.pj_use_atr_block !== undefined ? bot.pj_use_atr_block : true,
+            pj_min_cross_count: bot.pj_min_cross_count !== undefined ? bot.pj_min_cross_count : 1,
             ema_fast: bot.ema_fast !== undefined ? bot.ema_fast : 50,
             ema_slow: bot.ema_slow !== undefined ? bot.ema_slow : 200,
             adx_len: bot.adx_len !== undefined ? bot.adx_len : 25,
-            adx_threshold: bot.adx_threshold !== undefined ? bot.adx_threshold : 30
+            adx_threshold: bot.adx_threshold !== undefined ? bot.adx_threshold : 30,
+            use_trailing_stop: bot.use_trailing_stop || false,
+            trailing_stop_points: bot.trailing_stop_points || 0.0,
+            use_break_even: bot.use_break_even || false,
+            break_even_trigger_points: bot.break_even_trigger_points || 0.0,
+            break_even_lock_points: bot.break_even_lock_points || 0.0,
+            use_partial_tp: bot.use_partial_tp || false,
+            partial_tp_points: bot.partial_tp_points || 0.0,
+            partial_tp_ratio: bot.partial_tp_ratio || 0.5,
+            use_regime_filter: bot.use_regime_filter || false,
+            regime_mode: bot.regime_mode || "trend"
         });
         setSelectedAlgos((bot.algorithms || bot.algorithm || "").split(",").map(a => a.trim()).filter(Boolean));
         setSignalMode(bot.signal_mode || "or");
@@ -2101,10 +2116,25 @@ const TradingApp = () => {
                     pj_atr_mult: parseFloat(botForm.pj_atr_mult) || 1.5,
                     pj_use_dyn_atr: botForm.pj_use_dyn_atr || false,
                     pj_tp_target: botForm.pj_tp_target || "manual",
+                    pj_cooldown_bars: botForm.pj_cooldown_bars !== undefined && botForm.pj_cooldown_bars !== "" ? parseInt(botForm.pj_cooldown_bars) : 5,
+                    pj_min_bars_between: botForm.pj_min_bars_between !== undefined && botForm.pj_min_bars_between !== "" ? parseInt(botForm.pj_min_bars_between) : 5,
+                    pj_strict_mtf: botForm.pj_strict_mtf || false,
+                    pj_use_atr_block: botForm.pj_use_atr_block || false,
+                    pj_min_cross_count: botForm.pj_min_cross_count !== undefined && botForm.pj_min_cross_count !== "" ? parseInt(botForm.pj_min_cross_count) : 1,
                     ema_fast: parseInt(botForm.ema_fast) || 50,
                     ema_slow: parseInt(botForm.ema_slow) || 200,
                     adx_len: parseInt(botForm.adx_len) || 25,
-                    adx_threshold: parseInt(botForm.adx_threshold) || 30
+                    adx_threshold: parseInt(botForm.adx_threshold) || 30,
+                    use_trailing_stop: botForm.use_trailing_stop || false,
+                    trailing_stop_points: parseFloat(botForm.trailing_stop_points) || 0.0,
+                    use_break_even: botForm.use_break_even || false,
+                    break_even_trigger_points: parseFloat(botForm.break_even_trigger_points) || 0.0,
+                    break_even_lock_points: parseFloat(botForm.break_even_lock_points) || 0.0,
+                    use_partial_tp: botForm.use_partial_tp || false,
+                    partial_tp_points: parseFloat(botForm.partial_tp_points) || 0.0,
+                    partial_tp_ratio: parseFloat(botForm.partial_tp_ratio) || 0.5,
+                    use_regime_filter: botForm.use_regime_filter || false,
+                    regime_mode: botForm.regime_mode || "trend"
                 })
             });
             if (res.ok) {
@@ -5316,7 +5346,7 @@ const TradingApp = () => {
                                             <h4 style={{ fontSize: '13px', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
                                                 จัดการระบบอัลกอริทึม ({activeRunningBotsCount} ทำงานอยู่)
                                             </h4>
-                                            <button className="btn-create-bot" onClick={() => { setSelectedAlgos(["rsi_oscillator"]); setSignalMode("or"); setBotForm({ name: "บอทเทรดทองคำ RSI", symbol: "XAUUSD", timeframe: "M1", algorithm: "rsi_oscillator", lot_size: 0.01, sl_points: 5.0, tp_points: 10.0, use_trend_filter: false, use_mtf_filter: false, use_atr_sizing: false, risk_percent: 1.0, allowed_sessions: "all", use_news_filter: false, stoch_rsi_len: 13, stoch_len: 13, stoch_k: 3, stoch_d: 3, macd_fast: 12, macd_slow: 26, macd_signal: 9, pj_min_score: 6, pj_use_volume: false, pj_vol_multiplier: 2.0, pj_vwap_anchor: "Session", pj_atr_mult: 1.5, pj_use_dyn_atr: true, pj_tp_target: "manual", ema_fast: 50, ema_slow: 200, adx_len: 25, adx_threshold: 30 }); setEditingBotId(null); setBotFormOpen(true); }}>
+                                            <button className="btn-create-bot" onClick={() => { setSelectedAlgos(["rsi_oscillator"]); setSignalMode("or"); setBotForm({ name: "บอทเทรดทองคำ RSI", symbol: "XAUUSD", timeframe: "M1", algorithm: "rsi_oscillator", lot_size: 0.01, sl_points: 5.0, tp_points: 10.0, use_trend_filter: false, use_mtf_filter: false, use_atr_sizing: false, risk_percent: 1.0, allowed_sessions: "all", use_news_filter: false, stoch_rsi_len: 13, stoch_len: 13, stoch_k: 3, stoch_d: 3, macd_fast: 12, macd_slow: 26, macd_signal: 9, pj_min_score: 6, pj_use_volume: false, pj_vol_multiplier: 2.0, pj_vwap_anchor: "Session", pj_atr_mult: 1.5, pj_use_dyn_atr: true, pj_tp_target: "manual", pj_cooldown_bars: 5, pj_min_bars_between: 5, pj_strict_mtf: false, pj_use_atr_block: true, pj_min_cross_count: 1, ema_fast: 50, ema_slow: 200, adx_len: 25, adx_threshold: 30, use_trailing_stop: false, trailing_stop_points: 0.0, use_break_even: false, break_even_trigger_points: 0.0, break_even_lock_points: 0.0, use_partial_tp: false, partial_tp_points: 0.0, partial_tp_ratio: 0.5, use_regime_filter: false, regime_mode: "trend" }); setEditingBotId(null); setBotFormOpen(true); }}>
                                                 <Icon name="plus" size={12} />
                                                 <span>สร้างบอทใหม่</span>
                                             </button>
@@ -5385,7 +5415,8 @@ const TradingApp = () => {
                                                                                  aTrim === 'smc_bos_choch' ? 'SMC BOS/CHoCH' :
                                                                                  aTrim === 'smc_order_block' ? 'SMC Order Block' :
                                                                                  aTrim === 'smc_fvg_imbalance' ? 'SMC FVG' :
-                                                                                 aTrim === 'smc_confluence_pro' ? 'SMC Master Pro' : aTrim}
+                                                                                 aTrim === 'smc_confluence_pro' ? 'SMC Master Pro' :
+                                                                                 aTrim === 'pj_indicator_v2' ? 'PJ V2 Premium' : aTrim}
                                                                             </span>
                                                                         );
                                                                     })}
@@ -5564,6 +5595,7 @@ const TradingApp = () => {
                                                 <div className="backtest-form-section-title">กลยุทธ์อัลกอริทึม (Algorithms)</div>
                                                 <div className="backtest-checkbox-list">
                                                     {[
+                                                        { id: 'pj_indicator_v2', name: 'PJ Indicator V2 Premium', desc: 'PJ V2: ผสาน multi-factor trend score + MTF dynamic trend + swing volatility block + signal cooldowns' },
                                                         { value: 'smc_confluence_pro', label: 'SMC Confluence Pro 🌟' },
                                                         { value: 'smc_order_block', label: 'SMC Order Block 🟩' },
                                                         { value: 'smc_fvg_imbalance', label: 'SMC FVG Imbalance ⚡' },
@@ -5581,16 +5613,17 @@ const TradingApp = () => {
                                                         { value: 'support_resistance', label: 'S/R Bounce 🧱' },
                                                         { value: 'liquidity_sweep', label: 'Liquidity Sweep 🧹' }
                                                     ].map((algo) => {
-                                                        const isChecked = backtestSelectedAlgos.includes(algo.value);
+                                                        const val = algo.value || algo.id;
+                                                        const isChecked = backtestSelectedAlgos.includes(val);
                                                         return (
                                                             <div 
-                                                                key={algo.value}
+                                                                key={val}
                                                                 className="backtest-checkbox-item"
                                                                 onClick={() => {
                                                                     if (isChecked) {
-                                                                        setBacktestSelectedAlgos(backtestSelectedAlgos.filter(a => a !== algo.value));
+                                                                        setBacktestSelectedAlgos(backtestSelectedAlgos.filter(a => a !== val));
                                                                     } else {
-                                                                        setBacktestSelectedAlgos([...backtestSelectedAlgos, algo.value]);
+                                                                        setBacktestSelectedAlgos([...backtestSelectedAlgos, val]);
                                                                     }
                                                                 }}
                                                             >
@@ -5599,7 +5632,7 @@ const TradingApp = () => {
                                                                     checked={isChecked}
                                                                     readOnly
                                                                 />
-                                                                <span>{algo.label}</span>
+                                                                <span>{algo.label || algo.name}</span>
                                                             </div>
                                                         );
                                                     })}
@@ -7132,6 +7165,8 @@ const TradingApp = () => {
                                         { id: 'stoch_rsi', name: 'Stochastic RSI (StochRSI)', desc: 'จับสัญญาณซื้อขายและจุดกลับตัวได้รวดเร็วกว่า RSI ทั่วไป โดยใช้ออสซิลเลเตอร์คำนวณซ้ำบน RSI' },
                                         { id: 'macd_4c', name: 'MACD 4 Color (4C) Momentum', desc: 'ตรวจจับแรงขับเคลื่อนเทรนด้วยแท่งสีโมเมนตัม 4 มิติ (Pine Script 4-Color MACD)' },
                                         { id: 'pj_indicator', name: 'PJ Indicator', desc: 'กลยุทธ์พรีเมียมผสานเทรนและการกรองด้วย Trend Score (EMA14, RSI, MACD, Stoch, BB, VWAP)' },
+                                        { id: 'pj_indicator_v2', name: 'PJ Indicator V2 Premium', desc: 'PJ V2: ผสาน multi-factor trend score + MTF dynamic trend + swing volatility block + signal cooldowns' },
+
                                         { id: 'sma_cross', name: 'Double SMA Crossover', desc: 'เทรดตามแนวโน้มเมื่อเส้น SMA 5 ตัดกับ 15' },
                                         { id: 'macd', name: 'MACD Signal Cross', desc: 'เทรดตามโมเมนตัมเมื่อเส้น MACD ตัดกับ Signal' },
                                         { id: 'elliott_wave', name: 'Elliott Wave Theory', desc: 'ตรวจจับคลื่น Impulse/Correction จากราคาย้อนหลัง' },
@@ -7171,6 +7206,7 @@ const TradingApp = () => {
                                                                        single === "stoch_rsi" ? "StochRSI Fast Reversal" :
                                                                        single === "macd_4c" ? "MACD 4C Momentum" :
                                                                        single === "pj_indicator" ? "PJ Trend Engine" :
+                                                                       single === "pj_indicator_v2" ? "PJ V2 Premium" :
                                                                        single === "sma_cross" ? "Double SMA" :
                                                                        single === "macd" ? "MACD Cross" :
                                                                        single === "elliott_wave" ? "Elliott Wave Bot" :
@@ -7512,9 +7548,171 @@ const TradingApp = () => {
                                         </div>
                                     )}
 
+                                    {/* PJ Indicator V2 Settings */}
+                                    {selectedAlgos.includes('pj_indicator_v2') && (
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderTop: (selectedAlgos.includes('stoch_rsi') || selectedAlgos.includes('macd_4c') || selectedAlgos.includes('pj_indicator')) ? '1px dashed rgba(255,255,255,0.05)' : 'none', paddingTop: (selectedAlgos.includes('stoch_rsi') || selectedAlgos.includes('macd_4c') || selectedAlgos.includes('pj_indicator')) ? '10px' : '0' }}>
+                                            <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--accent-gold)' }}>PJ Indicator V2 Parameters:</span>
+                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+                                                <div className="input-group" style={{ margin: 0 }}>
+                                                    <label style={{ fontSize: '10px', marginBottom: '3px' }}>Min Score (1-10)</label>
+                                                    <input 
+                                                        type="number" 
+                                                        className="numeric-input" 
+                                                        required 
+                                                        min="1"
+                                                        max="10"
+                                                        value={botForm.pj_min_score}
+                                                        onChange={(e) => setBotForm({ ...botForm, pj_min_score: parseInt(e.target.value) || 6 })}
+                                                        style={{ height: '34px', fontSize: '12px', padding: '6px 8px' }}
+                                                    />
+                                                </div>
+                                                <div className="input-group" style={{ margin: 0 }}>
+                                                    <label style={{ fontSize: '10px', marginBottom: '3px' }}>Vol Multiplier</label>
+                                                    <input 
+                                                        type="number" 
+                                                        className="numeric-input" 
+                                                        required 
+                                                        step="0.1"
+                                                        value={botForm.pj_vol_multiplier}
+                                                        onChange={(e) => setBotForm({ ...botForm, pj_vol_multiplier: parseFloat(e.target.value) || 2.0 })}
+                                                        style={{ height: '34px', fontSize: '12px', padding: '6px 8px' }}
+                                                    />
+                                                </div>
+                                                <div className="input-group" style={{ margin: 0 }}>
+                                                    <label style={{ fontSize: '10px', marginBottom: '3px' }}>VWAP Anchor</label>
+                                                    <select 
+                                                        className="select-input" 
+                                                        value={botForm.pj_vwap_anchor}
+                                                        onChange={(e) => setBotForm({ ...botForm, pj_vwap_anchor: e.target.value })}
+                                                        style={{ height: '34px', fontSize: '12px', padding: '4px 6px', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#fff', width: '100%' }}
+                                                    >
+                                                        <option value="Session">Session</option>
+                                                        <option value="Week">Week</option>
+                                                        <option value="Month">Month</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginTop: '4px' }}>
+                                                <div className="input-group" style={{ margin: 0 }}>
+                                                    <label style={{ fontSize: '10px', marginBottom: '3px' }}>ATR Multiplier</label>
+                                                    <input 
+                                                        type="number" 
+                                                        className="numeric-input" 
+                                                        required 
+                                                        step="0.1"
+                                                        value={botForm.pj_atr_mult}
+                                                        onChange={(e) => setBotForm({ ...botForm, pj_atr_mult: parseFloat(e.target.value) || 1.5 })}
+                                                        style={{ height: '34px', fontSize: '12px', padding: '6px 8px' }}
+                                                    />
+                                                </div>
+                                                <div className="input-group" style={{ margin: 0 }}>
+                                                    <label style={{ fontSize: '10px', marginBottom: '3px' }}>TP Target</label>
+                                                    <select 
+                                                        className="select-input" 
+                                                        value={botForm.pj_tp_target}
+                                                        onChange={(e) => setBotForm({ ...botForm, pj_tp_target: e.target.value })}
+                                                        style={{ height: '34px', fontSize: '12px', padding: '4px 6px', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#fff', width: '100%' }}
+                                                    >
+                                                        <option value="manual">Manual Points</option>
+                                                        <option value="tp1">TP1 (1.0x)</option>
+                                                        <option value="tp1_5">TP1.5 (1.5x)</option>
+                                                        <option value="tp2">TP2 (2.0x)</option>
+                                                        <option value="tp2_5">TP2.5 (2.5x)</option>
+                                                        <option value="tp3">TP3 (3.0x)</option>
+                                                    </select>
+                                                </div>
+                                                <div className="input-group" style={{ margin: 0 }}>
+                                                    <label style={{ fontSize: '10px', marginBottom: '3px' }}>Min Crossover Signals</label>
+                                                    <input 
+                                                        type="number" 
+                                                        className="numeric-input" 
+                                                        required 
+                                                        min="1"
+                                                        max="3"
+                                                        value={botForm.pj_min_cross_count}
+                                                        onChange={(e) => setBotForm({ ...botForm, pj_min_cross_count: parseInt(e.target.value) || 1 })}
+                                                        style={{ height: '34px', fontSize: '12px', padding: '6px 8px' }}
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '4px' }}>
+                                                <div className="input-group" style={{ margin: 0 }}>
+                                                    <label style={{ fontSize: '10px', marginBottom: '3px' }}>Cooldown Bars (After SL)</label>
+                                                    <input 
+                                                        type="number" 
+                                                        className="numeric-input" 
+                                                        required 
+                                                        min="0"
+                                                        value={botForm.pj_cooldown_bars}
+                                                        onChange={(e) => setBotForm({ ...botForm, pj_cooldown_bars: parseInt(e.target.value) || 0 })}
+                                                        style={{ height: '34px', fontSize: '12px', padding: '6px 8px' }}
+                                                    />
+                                                </div>
+                                                <div className="input-group" style={{ margin: 0 }}>
+                                                    <label style={{ fontSize: '10px', marginBottom: '3px' }}>Min Bars Between Signals</label>
+                                                    <input 
+                                                        type="number" 
+                                                        className="numeric-input" 
+                                                        required 
+                                                        min="1"
+                                                        value={botForm.pj_min_bars_between}
+                                                        onChange={(e) => setBotForm({ ...botForm, pj_min_bars_between: parseInt(e.target.value) || 1 })}
+                                                        style={{ height: '34px', fontSize: '12px', padding: '6px 8px' }}
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '4px', paddingLeft: '4px' }}>
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }} onClick={() => setBotForm({ ...botForm, pj_use_volume: !botForm.pj_use_volume })}>
+                                                        <input 
+                                                            type="checkbox" 
+                                                            checked={botForm.pj_use_volume || false}
+                                                            onChange={(e) => setBotForm({ ...botForm, pj_use_volume: e.target.checked })}
+                                                            onClick={(e) => e.stopPropagation()}
+                                                            style={{ width: '13px', height: '13px', accentColor: 'var(--accent-gold)', cursor: 'pointer' }}
+                                                        />
+                                                        <span style={{ fontSize: '10px', color: 'var(--text-secondary)', cursor: 'pointer', userSelect: 'none' }}>Use Vol Filter</span>
+                                                    </div>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }} onClick={() => setBotForm({ ...botForm, pj_use_dyn_atr: !botForm.pj_use_dyn_atr })}>
+                                                        <input 
+                                                            type="checkbox" 
+                                                            checked={botForm.pj_use_dyn_atr || false}
+                                                            onChange={(e) => setBotForm({ ...botForm, pj_use_dyn_atr: e.target.checked })}
+                                                            onClick={(e) => e.stopPropagation()}
+                                                            style={{ width: '13px', height: '13px', accentColor: 'var(--accent-gold)', cursor: 'pointer' }}
+                                                        />
+                                                        <span style={{ fontSize: '10px', color: 'var(--text-secondary)', cursor: 'pointer', userSelect: 'none' }}>Use Dyn ATR</span>
+                                                    </div>
+                                                </div>
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }} onClick={() => setBotForm({ ...botForm, pj_strict_mtf: !botForm.pj_strict_mtf })}>
+                                                        <input 
+                                                            type="checkbox" 
+                                                            checked={botForm.pj_strict_mtf || false}
+                                                            onChange={(e) => setBotForm({ ...botForm, pj_strict_mtf: e.target.checked })}
+                                                            onClick={(e) => e.stopPropagation()}
+                                                            style={{ width: '13px', height: '13px', accentColor: 'var(--accent-gold)', cursor: 'pointer' }}
+                                                        />
+                                                        <span style={{ fontSize: '10px', color: 'var(--text-secondary)', cursor: 'pointer', userSelect: 'none' }}>Strict MTF Alignment</span>
+                                                    </div>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }} onClick={() => setBotForm({ ...botForm, pj_use_atr_block: !botForm.pj_use_atr_block })}>
+                                                        <input 
+                                                            type="checkbox" 
+                                                            checked={botForm.pj_use_atr_block || false}
+                                                            onChange={(e) => setBotForm({ ...botForm, pj_use_atr_block: e.target.checked })}
+                                                            onClick={(e) => e.stopPropagation()}
+                                                            style={{ width: '13px', height: '13px', accentColor: 'var(--accent-gold)', cursor: 'pointer' }}
+                                                        />
+                                                        <span style={{ fontSize: '10px', color: 'var(--text-secondary)', cursor: 'pointer', userSelect: 'none' }}>Use Volatility Block</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
                                     {/* EMA Crossover Settings */}
                                     {selectedAlgos.includes('ema_cross') && (
-                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderTop: (selectedAlgos.includes('stoch_rsi') || selectedAlgos.includes('macd_4c') || selectedAlgos.includes('pj_indicator')) ? '1px dashed rgba(255,255,255,0.05)' : 'none', paddingTop: (selectedAlgos.includes('stoch_rsi') || selectedAlgos.includes('macd_4c') || selectedAlgos.includes('pj_indicator')) ? '10px' : '0' }}>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderTop: (selectedAlgos.includes('stoch_rsi') || selectedAlgos.includes('macd_4c') || selectedAlgos.includes('pj_indicator') || selectedAlgos.includes('pj_indicator_v2')) ? '1px dashed rgba(255,255,255,0.05)' : 'none', paddingTop: (selectedAlgos.includes('stoch_rsi') || selectedAlgos.includes('macd_4c') || selectedAlgos.includes('pj_indicator') || selectedAlgos.includes('pj_indicator_v2')) ? '10px' : '0' }}>
                                             <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--accent-gold)' }}>EMA Crossover Parameters:</span>
                                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                                                 <div className="input-group" style={{ margin: 0 }}>
@@ -7545,7 +7743,7 @@ const TradingApp = () => {
 
                                     {/* ADX Settings */}
                                     {selectedAlgos.includes('adx') && (
-                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderTop: (selectedAlgos.includes('stoch_rsi') || selectedAlgos.includes('macd_4c') || selectedAlgos.includes('pj_indicator') || selectedAlgos.includes('ema_cross')) ? '1px dashed rgba(255,255,255,0.05)' : 'none', paddingTop: (selectedAlgos.includes('stoch_rsi') || selectedAlgos.includes('macd_4c') || selectedAlgos.includes('pj_indicator') || selectedAlgos.includes('ema_cross')) ? '10px' : '0' }}>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderTop: (selectedAlgos.includes('stoch_rsi') || selectedAlgos.includes('macd_4c') || selectedAlgos.includes('pj_indicator') || selectedAlgos.includes('pj_indicator_v2') || selectedAlgos.includes('ema_cross')) ? '1px dashed rgba(255,255,255,0.05)' : 'none', paddingTop: (selectedAlgos.includes('stoch_rsi') || selectedAlgos.includes('macd_4c') || selectedAlgos.includes('pj_indicator') || selectedAlgos.includes('pj_indicator_v2') || selectedAlgos.includes('ema_cross')) ? '10px' : '0' }}>
                                             <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--accent-gold)' }}>ADX Parameters:</span>
                                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                                                 <div className="input-group" style={{ margin: 0 }}>
@@ -7762,6 +7960,214 @@ const TradingApp = () => {
                                     <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontStyle: 'italic', display: 'block', lineHeight: '1.3' }}>
                                         * กรองและบล็อกคำสั่งซื้อขายอัตโนมัติเมื่อตรวจพบระดับความรุนแรงสูง (High Threat เช่น ความตึงเครียดทางสงคราม) หรือมีปัจจัยข่าวสารระดับ High Impact ที่ขัดแย้งกับการเปิดสถานะ เพื่อความปลอดภัยสูงสุดของทุนในพอร์ต
                                     </span>
+                                </div>
+
+                                {/* 4. Market Regime Adaptive Filter */}
+                                <div style={{
+                                    background: botForm.use_regime_filter ? 'rgba(0, 180, 216, 0.05)' : 'rgba(255,255,255,0.02)',
+                                    border: botForm.use_regime_filter ? '1px solid rgba(0, 180, 216, 0.2)' : '1px solid rgba(255,255,255,0.05)',
+                                    borderRadius: '8px',
+                                    padding: '12px',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '10px',
+                                    transition: 'all 0.3s ease',
+                                    boxShadow: botForm.use_regime_filter ? '0 0 10px rgba(0, 180, 216, 0.05)' : 'none'
+                                }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }} onClick={() => setBotForm({ ...botForm, use_regime_filter: !botForm.use_regime_filter })}>
+                                        <input 
+                                            type="checkbox" 
+                                            id="chk-regime-filter"
+                                            checked={botForm.use_regime_filter || false}
+                                            onChange={(e) => setBotForm({ ...botForm, use_regime_filter: e.target.checked })}
+                                            onClick={(e) => e.stopPropagation()}
+                                            style={{ accentColor: 'var(--accent-gold)', width: '16px', height: '16px', cursor: 'pointer' }}
+                                        />
+                                        <label htmlFor="chk-regime-filter" style={{ margin: 0, cursor: 'pointer', textTransform: 'none', fontSize: '11px', fontWeight: 700, color: botForm.use_regime_filter ? '#00b4d8' : 'var(--text-primary)' }}>
+                                            🤖 เปิดระบบตัวกรองสภาวะตลาดตามทิศทางความแรง (Market Regime Filter)
+                                        </label>
+                                    </div>
+                                    <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontStyle: 'italic', display: 'block', lineHeight: '1.3' }}>
+                                        * ใช้ดัชนี ADX ในการแบ่งแยกสภาวะตลาดแบบเทรนด์ (Trend) และไซด์เวย์ (Range) เพื่อกรองสัญญาณเทรด
+                                    </span>
+                                    {botForm.use_regime_filter && (
+                                        <div style={{ 
+                                            display: 'grid', 
+                                            gridTemplateColumns: '1fr 1fr', 
+                                            gap: '12px',
+                                            marginTop: '4px',
+                                            borderTop: '1px dashed rgba(255,255,255,0.05)',
+                                            paddingTop: '10px'
+                                        }}>
+                                            <div className="input-group" style={{ margin: 0 }}>
+                                                <label style={{ fontSize: '11px', marginBottom: '4px', color: 'var(--accent-gold)' }}>โหมดสภาวะตลาดที่ต้องการกรอง</label>
+                                                <select 
+                                                    className="numeric-input"
+                                                    style={{ appearance: 'auto', fontSize: '12px', padding: '6px 10px', height: '36px' }}
+                                                    value={botForm.regime_mode || "trend"}
+                                                    onChange={(e) => setBotForm({ ...botForm, regime_mode: e.target.value })}
+                                                >
+                                                    <option value="trend">เน้นเทรดตามแนวโน้ม (Trending Only)</option>
+                                                    <option value="range">เน้นเทรดในกรอบไซด์เวย์ (Ranging Only)</option>
+                                                </select>
+                                            </div>
+                                            <div style={{ display: 'flex', alignItems: 'center' }}>
+                                                <span style={{ fontSize: '10px', color: 'var(--text-secondary)', lineHeight: '1.3' }}>
+                                                    • Trending: จะอนุญาตเฉพาะบอท Trend-Following (เช่น EMA Crossover) และบล็อก Oscillator<br/>
+                                                    • Ranging: จะอนุญาตเฉพาะบอท Oscillator (เช่น RSI) และบล็อก Trend-Following
+                                                </span>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* 5. Dynamic Risk Control */}
+                                <div style={{
+                                    background: (botForm.use_break_even || botForm.use_trailing_stop || botForm.use_partial_tp) ? 'rgba(76, 201, 240, 0.05)' : 'rgba(255,255,255,0.02)',
+                                    border: (botForm.use_break_even || botForm.use_trailing_stop || botForm.use_partial_tp) ? '1px solid rgba(76, 201, 240, 0.2)' : '1px solid rgba(255,255,255,0.05)',
+                                    borderRadius: '8px',
+                                    padding: '12px',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '12px',
+                                    transition: 'all 0.3s ease'
+                                }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                         <span style={{ fontSize: '12px' }}>⚙️</span>
+                                         <label style={{ margin: 0, fontSize: '11px', fontWeight: 700, color: 'var(--accent-gold)' }}>
+                                             ระบบจัดการออเดอร์หลังเข้าเปิดสถานะ (Dynamic Risk Management)
+                                         </label>
+                                    </div>
+
+                                    {/* 5.1 Break-Even */}
+                                    <div style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', paddingBottom: '8px' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }} onClick={() => setBotForm({ ...botForm, use_break_even: !botForm.use_break_even })}>
+                                            <input 
+                                                type="checkbox" 
+                                                id="chk-use-be"
+                                                checked={botForm.use_break_even || false}
+                                                onChange={(e) => setBotForm({ ...botForm, use_break_even: e.target.checked })}
+                                                onClick={(e) => e.stopPropagation()}
+                                                style={{ accentColor: 'var(--accent-gold)', width: '15px', height: '15px', cursor: 'pointer' }}
+                                            />
+                                            <label htmlFor="chk-use-be" style={{ margin: 0, cursor: 'pointer', textTransform: 'none', fontSize: '11px', fontWeight: 600 }}>
+                                                ขยับ Stop Loss บังทุน (Break-Even)
+                                            </label>
+                                        </div>
+                                        {botForm.use_break_even && (
+                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '8px', paddingLeft: '22px' }}>
+                                                <div className="input-group" style={{ margin: 0 }}>
+                                                    <label style={{ fontSize: '10px', color: 'var(--text-secondary)', marginBottom: '2px' }}>ระยะบวกเพื่อเริ่มบังทุน (Points)</label>
+                                                    <input 
+                                                        type="number" 
+                                                        className="numeric-input" 
+                                                        step="0.1" 
+                                                        min="0"
+                                                        value={botForm.break_even_trigger_points || 0.0}
+                                                        onChange={(e) => setBotForm({ ...botForm, break_even_trigger_points: parseFloat(e.target.value) || 0.0 })}
+                                                        style={{ height: '32px', fontSize: '11px', padding: '4px 8px' }}
+                                                    />
+                                                </div>
+                                                <div className="input-group" style={{ margin: 0 }}>
+                                                    <label style={{ fontSize: '10px', color: 'var(--text-secondary)', marginBottom: '2px' }}>ระยะจุดกันหน้าทุน (Points)</label>
+                                                    <input 
+                                                        type="number" 
+                                                        className="numeric-input" 
+                                                        step="0.1" 
+                                                        min="0"
+                                                        value={botForm.break_even_lock_points || 0.0}
+                                                        onChange={(e) => setBotForm({ ...botForm, break_even_lock_points: parseFloat(e.target.value) || 0.0 })}
+                                                        style={{ height: '32px', fontSize: '11px', padding: '4px 8px' }}
+                                                     />
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* 5.2 Trailing Stop */}
+                                    <div style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', paddingBottom: '8px' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }} onClick={() => setBotForm({ ...botForm, use_trailing_stop: !botForm.use_trailing_stop })}>
+                                            <input 
+                                                type="checkbox" 
+                                                id="chk-use-ts"
+                                                checked={botForm.use_trailing_stop || false}
+                                                onChange={(e) => setBotForm({ ...botForm, use_trailing_stop: e.target.checked })}
+                                                onClick={(e) => e.stopPropagation()}
+                                                style={{ accentColor: 'var(--accent-gold)', width: '15px', height: '15px', cursor: 'pointer' }}
+                                            />
+                                            <label htmlFor="chk-use-ts" style={{ margin: 0, cursor: 'pointer', textTransform: 'none', fontSize: '11px', fontWeight: 600 }}>
+                                                เลื่อนจุด Stop Loss ตามกำไร (Trailing Stop)
+                                            </label>
+                                        </div>
+                                        {botForm.use_trailing_stop && (
+                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '8px', paddingLeft: '22px' }}>
+                                                <div className="input-group" style={{ margin: 0 }}>
+                                                    <label style={{ fontSize: '10px', color: 'var(--text-secondary)', marginBottom: '2px' }}>ระยะการลาก Stop Loss (Points)</label>
+                                                    <input 
+                                                        type="number" 
+                                                        className="numeric-input" 
+                                                        step="0.1" 
+                                                        min="0.1"
+                                                        value={botForm.trailing_stop_points || 0.0}
+                                                        onChange={(e) => setBotForm({ ...botForm, trailing_stop_points: parseFloat(e.target.value) || 0.0 })}
+                                                        style={{ height: '32px', fontSize: '11px', padding: '4px 8px' }}
+                                                    />
+                                                </div>
+                                                <div style={{ display: 'flex', alignItems: 'center' }}>
+                                                    <span style={{ fontSize: '9px', color: 'var(--text-muted)', lineHeight: '1.2' }}>
+                                                         * จะทำการเลื่อนจุด SL ตามจุดสูงสุด/ต่ำสุดแบบไดนามิก โดยห่างจากจุดสูงสุด/ต่ำสุดเท่าระยะที่ระบุ
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* 5.3 Partial Take Profit */}
+                                    <div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }} onClick={() => setBotForm({ ...botForm, use_partial_tp: !botForm.use_partial_tp })}>
+                                            <input 
+                                                type="checkbox" 
+                                                id="chk-use-ptp"
+                                                checked={botForm.use_partial_tp || false}
+                                                onChange={(e) => setBotForm({ ...botForm, use_partial_tp: e.target.checked })}
+                                                onClick={(e) => e.stopPropagation()}
+                                                style={{ accentColor: 'var(--accent-gold)', width: '15px', height: '15px', cursor: 'pointer' }}
+                                            />
+                                            <label htmlFor="chk-use-ptp" style={{ margin: 0, cursor: 'pointer', textTransform: 'none', fontSize: '11px', fontWeight: 600 }}>
+                                                แบ่งปิดทำกำไรบางส่วน (Partial Take Profit)
+                                            </label>
+                                        </div>
+                                        {botForm.use_partial_tp && (
+                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '8px', paddingLeft: '22px' }}>
+                                                <div className="input-group" style={{ margin: 0 }}>
+                                                    <label style={{ fontSize: '10px', color: 'var(--text-secondary)', marginBottom: '2px' }}>เป้าหมายเพื่อแบ่งปิด (Points)</label>
+                                                    <input 
+                                                        type="number" 
+                                                        className="numeric-input" 
+                                                        step="0.1" 
+                                                        min="0.1"
+                                                        value={botForm.partial_tp_points || 0.0}
+                                                        onChange={(e) => setBotForm({ ...botForm, partial_tp_points: parseFloat(e.target.value) || 0.0 })}
+                                                        style={{ height: '32px', fontSize: '11px', padding: '4px 8px' }}
+                                                    />
+                                                </div>
+                                                <div className="input-group" style={{ margin: 0 }}>
+                                                     <label style={{ fontSize: '10px', color: 'var(--text-secondary)', marginBottom: '2px' }}>สัดส่วนที่จะแบ่งปิดล็อต (Ratio)</label>
+                                                     <select 
+                                                         className="numeric-input"
+                                                         style={{ appearance: 'auto', fontSize: '11px', padding: '4px 8px', height: '32px' }}
+                                                         value={botForm.partial_tp_ratio || 0.5}
+                                                         onChange={(e) => setBotForm({ ...botForm, partial_tp_ratio: parseFloat(e.target.value) || 0.5 })}
+                                                     >
+                                                         <option value="0.25">25% ของล็อตทั้งหมด</option>
+                                                         <option value="0.33">33% ของล็อตทั้งหมด</option>
+                                                         <option value="0.5">50% (ครึ่งหนึ่ง) ของล็อตทั้งหมด</option>
+                                                         <option value="0.75">75% ของล็อตทั้งหมด</option>
+                                                     </select>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
 

@@ -1,0 +1,445 @@
+//@version=6
+// © เทรดตามรายใหญ่ 2026
+indicator("PJ_indicator_V2", overlay=true, max_labels_count=500, max_boxes_count=500, max_lines_count=500, max_bars_back=1000)
+
+// COLORS
+color c_gold      = #D4AF37
+color c_turquoise = #40E0D0
+color c_black     = #111111
+color c_panel     = #1A1A1A
+color c_white     = #FFFFFF
+color c_green     = #00C853
+color c_red       = #FF1744
+color c_gray      = #8E8E8E
+color c_blue      = #2196F3
+color c_orange    = #FF6D00
+
+// ============================================================
+// INPUTS
+// ============================================================
+groupVis      = "Visuals & Premium UI"
+dashTextSize  = input.string("small", "Dashboard Font Size", options=["tiny","small","normal"], group=groupVis)
+tradeTextSize = input.string("small", "Trade Label Size",    options=["tiny","small","normal"], group=groupVis)
+labelOffset   = input.int(12,   "Label Right Offset", minval=1, group=groupVis)
+showPremiumBg = input.bool(true, "Show Premium Background Glow", group=groupVis)
+showBB        = input.bool(true, "Show BB14",                    group=groupVis)
+showRibbon    = input.bool(true, "Show Premium Trend Ribbon",    group=groupVis)
+showHistory   = input.bool(true, "Show Last 10 Signal History",  group=groupVis)
+
+// [1] Session Filter
+groupSession  = "Session Filter"
+useSession    = input.bool(true, "Enable Session Filter", group=groupSession, tooltip="เปิด = สัญญาณยิงเฉพาะใน Session ที่เลือก | ปิด = เทรดตลอด 24 ชม.")
+sessionChoice = input.string("NY", "Session", options=["NY", "London", "Both"], group=groupSession, tooltip="NY = 20:30-03:00 ไทย | London = 14:00-22:30 ไทย")
+
+groupRisk    = "Risk Management"
+atrMult      = input.float(1.5, "SL ATR14 Multiplier (Base)", minval=0.1, step=0.1, group=groupRisk)
+useDynATR    = input.bool(true, "Dynamic ATR Multiplier", group=groupRisk)
+// [5] ATR Sideway Block
+useAtrBlock  = input.bool(true, "Block Signal During Sideway (ATR Filter)", group=groupRisk, tooltip="ATR < 75% ของค่าเฉลี่ย 50 bars = ตลาดนิ่ง -> บล็อกสัญญาณทันที")
+tp1RR        = input.float(1.0, "TP1 RR", minval=0.1, step=0.1, group=groupRisk)
+tp2RR        = input.float(2.0, "TP2 RR", minval=0.1, step=0.1, group=groupRisk)
+tp3RR        = input.float(3.0, "TP3 RR", minval=0.1, step=0.1, group=groupRisk)
+
+groupSig      = "Signal Filter"
+minScore      = input.int(6,    "Minimum Trend Score 0-10", minval=1, maxval=10, group=groupSig)
+useVolume     = input.bool(false, "Use Volume Filter", group=groupSig)
+volMultiplier = input.float(2.0, "High Volume Multiplier", minval=1.0, step=0.1, group=groupSig)
+vwapAnchor    = input.string("Session", "VWAP Anchor", options=["Session","Week","Month"], group=groupSig)
+// [6] Cooldown
+cooldownBars    = input.int(5, "Cooldown Bars After SL Hit", minval=1, maxval=50, group=groupSig, tooltip="หลัง SL โดน รอกี่แท่งก่อนยิงสัญญาณใหม่ | ป้องกัน revenge trade")
+// [7] Min Bars Between Signals
+minBarsBetween  = input.int(5, "Min Bars Between Signals",   minval=1, maxval=50, group=groupSig, tooltip="ต้องรออย่างน้อยกี่ bar ระหว่างสัญญาณ — ป้องกัน over-trading")
+// [8] Strict MTF
+useStrictMtf    = input.bool(false, "Strict MTF (EMA Slope + EMA50)", group=groupSig, tooltip="เปิด = MTF ต้องมี EMA20>EMA50 และ slope ถูกทิศ — กรอง false signal ได้ดีขึ้น")
+// [9] Min Cross Signals
+minCrossCount   = input.int(1, "Min Cross Signals (1-3)", minval=1, maxval=3, group=groupSig, tooltip="1 = OR logic (ง่าย) | 2 = ต้องการ 2 indicator cross พร้อมกัน | 3 = ต้องครบทั้ง 3")
+
+// ============================================================
+// FUNCTIONS
+// ============================================================
+f_addDashRow(_table, _row, _title, _val, _col, _size) =>
+    table.cell(_table, 0, _row, _title, text_color=c_white, text_halign=text.align_left,  text_size=_size)
+    table.cell(_table, 1, _row, _val,   text_color=_col,    text_halign=text.align_right, text_size=_size)
+
+f_status(_bull, _bear) =>
+    _bull ? "BULL" : _bear ? "BEAR" : "NEUTRAL"
+
+f_statusColor(_bull, _bear) =>
+    _bull ? c_green : _bear ? c_red : c_gray
+
+f_h1_macdBull() =>
+    [ml, ms, _] = ta.macd(close, 15, 35, 9)
+    ml > ms
+
+// ============================================================
+// [1] SESSION FILTER — NY=13:30-20:00 UTC | London=07:00-15:30 UTC
+// ============================================================
+in_ny      = not na(time(timeframe.period, "1330-2000:1234567", "UTC"))
+in_lon     = not na(time(timeframe.period, "0700-1530:1234567", "UTC"))
+in_session = not useSession or (sessionChoice == "NY" ? in_ny : sessionChoice == "London" ? in_lon : in_ny or in_lon)
+
+// ============================================================
+// [3] DYNAMIC MTF — ปรับตาม TF ปัจจุบัน
+// ============================================================
+tfSecs   = timeframe.in_seconds()
+mtfTF    = tfSecs <= 300  ? "15"  :   // 1M,3M,5M → 15M
+           tfSecs <= 900  ? "60"  :   // 15M → 1H
+           tfSecs <= 3600 ? "240" : "D"  // 30M,1H → 4H | 4H+ → Daily
+mtfLabel = tfSecs <= 300  ? "15M" :
+           tfSecs <= 900  ? "1H"  :
+           tfSecs <= 3600 ? "4H"  : "Daily"
+
+// ============================================================
+// INDICATORS
+// ============================================================
+// [4] เปลี่ยน EMA14 → EMA20 (noise น้อยกว่า, trend ชัดขึ้น)
+ema20  = ta.ema(close, 20)
+atr14  = ta.atr(14)
+rsi14  = ta.rsi(close, 14)
+
+[macdLine, macdSignal, _] = ta.macd(close, 15, 35, 9)
+
+stochRaw = ta.stoch(close, high, low, 9)
+stochK   = ta.sma(stochRaw, 3)
+stochD   = ta.sma(stochK,   3)
+
+[bbBasis, bbUpper, bbLower] = ta.bb(close, 14, 2.0)
+
+bool newWeek  = timeframe.change("W")
+bool newMonth = timeframe.change("M")
+vwapVal = vwapAnchor == "Week" ? ta.vwap(hlc3, newWeek) : vwapAnchor == "Month" ? ta.vwap(hlc3, newMonth) : ta.vwap(hlc3)
+
+volAvg  = ta.sma(volume, 20)
+highVol = volume > volAvg * volMultiplier
+
+// DYNAMIC ATR
+atrSma      = ta.sma(atr14, 50)
+atrRatio    = atr14 / atrSma
+dynamicMult = useDynATR ? (atrRatio > 1.5 ? atrMult * 0.8 : atrRatio < 0.7 ? atrMult * 1.2 : atrMult) : atrMult
+atrStatus   = atrRatio > 1.0 ? "HIGH VOL" : "NORMAL"
+
+// [5] ATR Sideway Block
+is_volatile = not useAtrBlock or atrRatio >= 0.75
+
+// ============================================================
+// TREND ENGINE
+// ============================================================
+emaBull   = close > ema20
+emaBear   = close < ema20
+rsiBull   = rsi14 > 55
+rsiBear   = rsi14 < 45
+macdBull  = macdLine > macdSignal
+macdBear  = macdLine < macdSignal
+stochBull = stochK > stochD and stochK > 50
+stochBear = stochK < stochD and stochK < 50
+bbBull    = close > bbBasis
+bbBear    = close < bbBasis
+vwapBull  = close > vwapVal
+vwapBear  = close < vwapVal
+
+bullScore = (emaBull ? 2 : 0) + (vwapBull ? 2 : 0) + (macdBull ? 2 : 0) + (rsiBull ? 2 : 0) + (stochBull ? 1 : 0) + (bbBull ? 1 : 0)
+bearScore = (emaBear ? 2 : 0) + (vwapBear ? 2 : 0) + (macdBear ? 2 : 0) + (rsiBear ? 2 : 0) + (stochBear ? 1 : 0) + (bbBear ? 1 : 0)
+
+bullPct = bullScore / 10.0 * 100
+
+trendBull = bullScore >= minScore and bullScore > bearScore
+trendBear = bearScore >= minScore and bearScore > bullScore
+
+trendText = trendBull ? "UPTREND" : trendBear ? "DOWNTREND" : "SIDEWAY"
+trendCol  = trendBull ? c_green : trendBear ? c_red : c_gold
+
+// ============================================================
+// [3] MULTI-TIMEFRAME — Dynamic (ไม่ hardcode "60" อีกต่อไป)
+// ============================================================
+h1_close    = request.security(syminfo.tickerid, mtfTF, close[1],              lookahead=barmerge.lookahead_off)
+h1_ema20    = request.security(syminfo.tickerid, mtfTF, ta.ema(close, 20)[1],  lookahead=barmerge.lookahead_off)
+h1_rsi14    = request.security(syminfo.tickerid, mtfTF, ta.rsi(close, 14)[1],  lookahead=barmerge.lookahead_off)
+h1_vwap     = request.security(syminfo.tickerid, mtfTF, ta.vwap(hlc3)[1],      lookahead=barmerge.lookahead_off)
+h1_macdBull   = request.security(syminfo.tickerid, mtfTF, f_h1_macdBull()[1],    lookahead=barmerge.lookahead_off)
+h1_ema50      = request.security(syminfo.tickerid, mtfTF, ta.ema(close, 50)[1],  lookahead=barmerge.lookahead_off)
+h1_ema20_prev = request.security(syminfo.tickerid, mtfTF, ta.ema(close, 20)[4],  lookahead=barmerge.lookahead_off)
+
+h1_emaBull  = h1_close > h1_ema20
+h1_rsiBull  = h1_rsi14 > 55
+h1_rsiBear  = h1_rsi14 < 45
+h1_vwapBull = h1_close > h1_vwap
+
+h1_bullCount = (h1_emaBull  ? 1 : 0) + (h1_rsiBull    ? 1 : 0) + (h1_macdBull ? 1 : 0) + (h1_vwapBull ? 1 : 0)
+h1_bearCount = (not h1_emaBull ? 1 : 0) + (h1_rsiBear ? 1 : 0) + (not h1_macdBull ? 1 : 0) + (not h1_vwapBull ? 1 : 0)
+
+h1_trendBull = h1_bullCount >= 3
+h1_trendBear = h1_bearCount >= 3
+h1_trendText = h1_trendBull ? "UPTREND" : h1_trendBear ? "DOWNTREND" : "SIDEWAY"
+h1_trendCol  = h1_trendBull ? c_green : h1_trendBear ? c_red : c_gold
+
+// ── [8] Strict MTF (EMA Slope + EMA50) ───────────────────────────────────
+h1_emaSlope        = h1_ema20 - h1_ema20_prev       // slope ใน 3 bars ของ MTF
+h1_slopeBull       = h1_emaSlope > 0
+h1_slopeBear       = h1_emaSlope < 0
+h1_aboveEma50      = h1_ema20 > h1_ema50
+h1_belowEma50      = h1_ema20 < h1_ema50
+h1_trendBullStrict = h1_trendBull and h1_aboveEma50 and h1_slopeBull
+h1_trendBearStrict = h1_trendBear and h1_belowEma50 and h1_slopeBear
+h1_trendBullFinal  = useStrictMtf ? h1_trendBullStrict : h1_trendBull
+h1_trendBearFinal  = useStrictMtf ? h1_trendBearStrict : h1_trendBear
+
+mtfConfirm     = (trendBull and h1_trendBullFinal) or (trendBear and h1_trendBearFinal)
+mtfConfirmText = mtfConfirm ? "CONFIRMED" : "NOT MATCH"
+mtfConfirmCol  = mtfConfirm ? c_green : c_red
+
+// ============================================================
+// [6] COOLDOWN COUNTER — reset เมื่อ SL โดน
+// ============================================================
+var int barsSinceSlHit = 999  // 999 = ไม่อยู่ใน cooldown ตอนเริ่มต้น
+inCooldown = barsSinceSlHit < cooldownBars
+
+// ============================================================
+// [7] MIN BARS BETWEEN SIGNALS — ป้องกัน over-trading
+// ============================================================
+var int barsSinceLastSignal = 999
+barsSinceLastSignal := barsSinceLastSignal + 1
+canTrade = barsSinceLastSignal >= minBarsBetween
+
+// ============================================================
+// SIGNAL LOGIC
+// ============================================================
+emaCrossUp     = ta.crossover(close,     ema20)
+emaCrossDown   = ta.crossunder(close,    ema20)
+macdCrossUp    = ta.crossover(macdLine,  macdSignal)
+macdCrossDown  = ta.crossunder(macdLine, macdSignal)
+stochCrossUp   = ta.crossover(stochK,   stochD)
+stochCrossDown = ta.crossunder(stochK,  stochD)
+
+crossBullCount = (emaCrossUp[1] ? 1 : 0) + (macdCrossUp[1] ? 1 : 0) + (stochCrossUp[1] ? 1 : 0)
+crossBearCount = (emaCrossDown[1] ? 1 : 0) + (macdCrossDown[1] ? 1 : 0) + (stochCrossDown[1] ? 1 : 0)
+buySignalRaw  = trendBull[1] and crossBullCount >= minCrossCount
+sellSignalRaw = trendBear[1] and crossBearCount >= minCrossCount
+
+buySignal  = useVolume ? buySignalRaw  and highVol[1] : buySignalRaw
+sellSignal = useVolume ? sellSignalRaw and highVol[1] : sellSignalRaw
+
+// SIGNAL STATE + [1][5][6] Session / Volatile / Cooldown gate
+var int lastSignalState = 0
+
+triggerBuy  = buySignal  and mtfConfirm and lastSignalState != 1  and in_session and is_volatile and not inCooldown and canTrade
+triggerSell = sellSignal and mtfConfirm and lastSignalState != -1 and in_session and is_volatile and not inCooldown and canTrade
+
+// ============================================================
+// TRADE SETUP
+// ============================================================
+var float entryP = na
+var float slP    = na
+var float tp1    = na
+var float tp2    = na
+var float tp3    = na
+var bool  tp1Hit = false
+var bool  tp2Hit = false
+var bool  tp3Hit = false
+var bool  slHit  = false
+
+// รีเซ็ต min-bar counter เมื่อ signal ยิง
+if triggerBuy or triggerSell
+    barsSinceLastSignal := 0
+
+if triggerBuy or triggerSell
+    lastSignalState := triggerBuy ? 1 : -1
+    entryP := close[1]
+    risk    = atr14[1] * dynamicMult
+    slP    := triggerBuy ? entryP - risk : entryP + risk
+    tp1    := triggerBuy ? entryP + risk * tp1RR : entryP - risk * tp1RR
+    tp2    := triggerBuy ? entryP + risk * tp2RR : entryP - risk * tp2RR
+    tp3    := triggerBuy ? entryP + risk * tp3RR : entryP - risk * tp3RR
+    tp1Hit := false
+    tp2Hit := false
+    tp3Hit := false
+    slHit  := false
+
+// HIT DETECTION
+if lastSignalState == 1 and not na(entryP)
+    if low <= slP
+        slHit           := true
+        tp1Hit          := false
+        tp2Hit          := false
+        tp3Hit          := false
+        lastSignalState := 0
+        barsSinceSlHit  := 0   // [6] เริ่ม cooldown
+    else
+        if high >= tp1
+            tp1Hit := true
+        if tp1Hit and high >= tp2
+            tp2Hit := true
+        if tp2Hit and high >= tp3
+            tp3Hit := true
+
+if lastSignalState == -1 and not na(entryP)
+    if high >= slP
+        slHit           := true
+        tp1Hit          := false
+        tp2Hit          := false
+        tp3Hit          := false
+        lastSignalState := 0
+        barsSinceSlHit  := 0   // [6] เริ่ม cooldown
+    else
+        if low <= tp1
+            tp1Hit := true
+        if tp1Hit and low <= tp2
+            tp2Hit := true
+        if tp2Hit and low <= tp3
+            tp3Hit := true
+
+// [6] เพิ่ม counter ทุก bar
+barsSinceSlHit := barsSinceSlHit + 1
+
+// ============================================================
+// VISUALS
+// ============================================================
+bgCol = trendBull ? color.new(c_green, 92) : trendBear ? color.new(c_red, 92) : color.new(c_gold, 96)
+bgcolor(showPremiumBg and in_session ? bgCol : na)  // [1] แสดง BG เฉพาะใน session
+
+// [4] เปลี่ยน EMA14 → EMA20
+emaColor = trendBull ? c_gold : trendBear ? c_red : c_gray
+plotEma  = plot(ema20, "EMA20 Premium", color=emaColor, linewidth=2)
+plotMid  = plot(bbBasis, "BB14 Basis", color=color.new(c_white, 70), linewidth=1, display=showBB ? display.all : display.none)
+
+plot(showBB ? bbUpper : na, "BB14 Upper", color=color.new(c_blue, 60))
+plot(showBB ? bbLower : na, "BB14 Lower", color=color.new(c_blue, 60))
+
+ribbonCol = trendBull ? color.new(c_gold, 82) : trendBear ? color.new(c_red, 85) : color.new(c_gray, 90)
+fill(plotEma, plotMid, color=showRibbon ? ribbonCol : na)
+
+barCol = highVol ? c_gold : trendBull ? color.new(c_green, 35) : trendBear ? color.new(c_red, 35) : na
+barcolor(barCol)
+
+// SIGNAL ARROWS
+plotshape(triggerBuy,  title="BUY",  text="BUY",  style=shape.labelup,   location=location.belowbar, color=c_gold,   textcolor=c_black, size=size.small)
+plotshape(triggerSell, title="SELL", text="SELL", style=shape.labeldown, location=location.abovebar, color=c_orange, textcolor=c_white, size=size.small)
+
+// HISTORY LABEL — 10 signal ล่าสุด
+var label[] histLabels = array.new_label()
+
+if (triggerBuy or triggerSell) and showHistory
+    isBuy  = triggerBuy
+    _entry = close[1]
+    _risk  = atr14[1] * dynamicMult
+    _sl    = isBuy ? _entry - _risk : _entry + _risk
+    _tp1   = isBuy ? _entry + _risk * tp1RR : _entry - _risk * tp1RR
+    _tp2   = isBuy ? _entry + _risk * tp2RR : _entry - _risk * tp2RR
+    _tp3   = isBuy ? _entry + _risk * tp3RR : _entry - _risk * tp3RR
+
+    _side  = isBuy ? "BUY" : "SELL"
+    _txt   = _side + "\n" +
+             "E  : " + str.tostring(_entry, "#.##") + "\n" +
+             "SL : " + str.tostring(_sl,    "#.##") + "\n" +
+             "TP1: " + str.tostring(_tp1,   "#.##") + "\n" +
+             "TP2: " + str.tostring(_tp2,   "#.##") + "\n" +
+             "TP3: " + str.tostring(_tp3,   "#.##")
+
+    _yPos  = isBuy ? low  - atr14 * 0.5 : high + atr14 * 0.5
+    _bgCol = isBuy ? c_gold : c_orange
+    _txCol = isBuy ? c_black : c_white
+    _style = isBuy ? label.style_label_up : label.style_label_down
+
+    _lbl = label.new(bar_index, _yPos, _txt, color=_bgCol, textcolor=_txCol, style=_style, size=tradeTextSize, textalign=text.align_left)
+    array.push(histLabels, _lbl)
+
+    if array.size(histLabels) > 10
+        label.delete(array.shift(histLabels))
+
+// CURRENT TRADE LINES + LABELS
+var line lEntry = na
+var line lSL    = na
+var line lTP1   = na
+var line lTP2   = na
+var line lTP3   = na
+
+var label lbEntry = label.new(na, na, "", color=c_gold,      textcolor=c_black, style=label.style_label_left, size=tradeTextSize)
+var label lbSL    = label.new(na, na, "", color=c_red,       textcolor=c_white, style=label.style_label_left, size=tradeTextSize)
+var label lbTP1   = label.new(na, na, "", color=c_green,     textcolor=c_white, style=label.style_label_left, size=tradeTextSize)
+var label lbTP2   = label.new(na, na, "", color=c_green,     textcolor=c_white, style=label.style_label_left, size=tradeTextSize)
+var label lbTP3   = label.new(na, na, "", color=c_turquoise, textcolor=c_black, style=label.style_label_left, size=tradeTextSize)
+
+if triggerBuy or triggerSell
+    line.delete(lEntry)
+    line.delete(lSL)
+    line.delete(lTP1)
+    line.delete(lTP2)
+    line.delete(lTP3)
+    lEntry := line.new(bar_index, entryP, bar_index + 20, entryP, color=c_white,     width=2, extend=extend.right)
+    lSL    := line.new(bar_index, slP,    bar_index + 20, slP,    color=c_red,       width=2, style=line.style_solid,  extend=extend.right)
+    lTP1   := line.new(bar_index, tp1,    bar_index + 20, tp1,    color=c_green,     width=1, style=line.style_dashed, extend=extend.right)
+    lTP2   := line.new(bar_index, tp2,    bar_index + 20, tp2,    color=c_green,     width=2, style=line.style_dashed, extend=extend.right)
+    lTP3   := line.new(bar_index, tp3,    bar_index + 20, tp3,    color=c_turquoise, width=3, style=line.style_solid,  extend=extend.right)
+
+if lastSignalState != 0 and not na(entryP)
+    int x    = bar_index + labelOffset
+    sideText = lastSignalState == 1 ? "BUY" : "SELL"
+    line.set_color(lTP1, tp1Hit ? c_turquoise : c_green)
+    line.set_color(lTP2, tp2Hit ? c_turquoise : c_green)
+    line.set_color(lTP3, tp3Hit ? c_gold      : c_turquoise)
+    line.set_color(lSL,  slHit  ? c_red       : color.new(c_red, 0))
+    label.set_xy(lbEntry, x, entryP)
+    label.set_text(lbEntry, sideText + " ENTRY : " + str.tostring(entryP, "#.##"))
+    label.set_xy(lbSL, x, slP)
+    label.set_text(lbSL,    "SL : " + str.tostring(slP, "#.##") + (slHit ? " [X]"  : ""))
+    label.set_xy(lbTP1, x, tp1)
+    label.set_text(lbTP1,   "TP1: " + str.tostring(tp1, "#.##") + (tp1Hit ? " [OK]" : ""))
+    label.set_xy(lbTP2, x, tp2)
+    label.set_text(lbTP2,   "TP2: " + str.tostring(tp2, "#.##") + (tp2Hit ? " [OK]" : ""))
+    label.set_xy(lbTP3, x, tp3)
+    label.set_text(lbTP3,   "TP3: " + str.tostring(tp3, "#.##") + (tp3Hit ? " [!!]" : ""))
+
+// ============================================================
+// DASHBOARD — [2] แก้ version | [3] Dynamic MTF label | เพิ่ม Session/Volatile/Cooldown
+// ============================================================
+var table d = table.new(position.top_right, 2, 22, bgcolor=color.new(c_panel, 8), border_width=1, border_color=c_gold)
+
+if barstate.islast
+    sesText     = in_session ? sessionChoice + " SESSION" : "OUT OF SESSION"
+    sesCol      = in_session ? c_green : c_gray
+    cdText      = inCooldown ? str.tostring(math.max(0, cooldownBars - barsSinceSlHit + 1)) + " bars left" : "READY"
+    cdCol       = inCooldown ? c_red : c_green
+    mgText      = canTrade ? "READY" : str.tostring(math.max(0, minBarsBetween - barsSinceLastSignal)) + " bars left"
+    mgCol       = canTrade ? c_green : c_orange
+    volText     = is_volatile ? "VOLATILE" : "SIDEWAY — BLOCKED"
+    volCol      = is_volatile ? c_green : c_red
+    slopeDir    = h1_slopeBull ? "UP" : h1_slopeBear ? "DOWN" : "FLAT"
+    ema50Pos    = h1_aboveEma50 ? "EMA20>50" : "EMA20<50"
+    slopeText   = useStrictMtf ? (slopeDir + " / " + ema50Pos) : "DISABLED"
+    slopeCol    = useStrictMtf ? (h1_slopeBull and trendBull ? c_green : h1_slopeBear and trendBear ? c_red : c_gray) : c_gray
+
+    table.cell(d, 0, 0, "PJ_indicator_V2", text_color=c_black, bgcolor=c_gold, text_size=dashTextSize)
+    table.cell(d, 1, 0, trendText,          text_color=c_black, bgcolor=c_gold, text_size=dashTextSize)
+    f_addDashRow(d,  1, "Session",      sesText,                                                          sesCol,                           dashTextSize)
+    f_addDashRow(d,  2, "Volatile",     volText,                                                          volCol,                           dashTextSize)
+    f_addDashRow(d,  3, "Cooldown",     cdText,                                                           cdCol,                            dashTextSize)
+    f_addDashRow(d,  4, "Min Bar Gap",  mgText,                                                           mgCol,                            dashTextSize)
+    f_addDashRow(d,  5, "Trend/Cross",  str.tostring(bullScore) + "B/" + str.tostring(bearScore) + "S | X:" + str.tostring(crossBullCount) + "/" + str.tostring(crossBearCount) + "(≥" + str.tostring(minCrossCount) + ")", trendCol, dashTextSize)
+    f_addDashRow(d,  6, "Bull Power",   str.tostring(bullPct, "#") + "%",                                 bullPct >= 60 ? c_green : c_gray, dashTextSize)
+    f_addDashRow(d,  7, "ATR14",        str.tostring(atr14, "#.##") + " / " + atrStatus,                 c_gold,                           dashTextSize)
+    f_addDashRow(d,  8, "ATR Mult",     str.tostring(dynamicMult, "#.##") + "x",                         c_gold,                           dashTextSize)
+    f_addDashRow(d,  9, "RSI14",        str.tostring(rsi14, "#.#"),                                       rsiBull ? c_green : rsiBear ? c_red : c_gold, dashTextSize)
+    f_addDashRow(d, 10, "MACD",         f_status(macdBull, macdBear),                                    f_statusColor(macdBull, macdBear), dashTextSize)
+    f_addDashRow(d, 11, "Stoch",        str.tostring(stochK, "#.#") + " / " + str.tostring(stochD, "#.#"), f_statusColor(stochBull, stochBear), dashTextSize)
+    f_addDashRow(d, 12, "BB14",         close > bbUpper ? "OVER BUY" : close < bbLower ? "OVER SELL" : f_status(bbBull, bbBear), f_statusColor(bbBull, bbBear), dashTextSize)
+    f_addDashRow(d, 13, "EMA20",        f_status(emaBull, emaBear),                                      f_statusColor(emaBull, emaBear),  dashTextSize)
+    f_addDashRow(d, 14, "VWAP",         f_status(vwapBull, vwapBear),                                    f_statusColor(vwapBull, vwapBear), dashTextSize)
+    table.cell(d, 0, 15, "-- MTF: " + mtfLabel + " --", text_color=c_gold, text_halign=text.align_left, text_size=dashTextSize)
+    table.cell(d, 1, 15, "", text_size=dashTextSize)
+    f_addDashRow(d, 16, mtfLabel + " Trend",  h1_trendText,                                               h1_trendCol,                      dashTextSize)
+    f_addDashRow(d, 17, "MTF Slope",          slopeText,                                                  slopeCol,                         dashTextSize)
+    f_addDashRow(d, 18, mtfLabel + " Score",  str.tostring(h1_bullCount) + "B / " + str.tostring(h1_bearCount) + "S (max4)", h1_trendCol,  dashTextSize)
+    f_addDashRow(d, 19, "MTF Confirm",        mtfConfirmText,                                             mtfConfirmCol,                    dashTextSize)
+    f_addDashRow(d, 20, "Signal",             triggerBuy ? "NEW BUY" : triggerSell ? "NEW SELL" : "WAIT", triggerBuy ? c_green : triggerSell ? c_red : c_gold, dashTextSize)
+    f_addDashRow(d, 21, "MTF Strict",         useStrictMtf ? "ON" : "OFF",                                useStrictMtf ? c_green : c_gray,  dashTextSize)
+
+// ============================================================
+// ALERTS
+// ============================================================
+alertcondition(triggerBuy,                 title="BUY SIGNAL",         message="PJ_indicator_V2: BUY Signal")
+alertcondition(triggerSell,                title="SELL SIGNAL",        message="PJ_indicator_V2: SELL Signal")
+alertcondition(triggerBuy  and mtfConfirm, title="BUY MTF CONFIRMED",  message="PJ_indicator_V2: BUY - MTF Confirmed!")
+alertcondition(triggerSell and mtfConfirm, title="SELL MTF CONFIRMED", message="PJ_indicator_V2: SELL - MTF Confirmed!")
+alertcondition(tp1Hit,                     title="TP1 HIT",            message="PJ_indicator_V2: TP1 Hit")
+alertcondition(tp2Hit,                     title="TP2 HIT",            message="PJ_indicator_V2: TP2 Hit")
+alertcondition(tp3Hit,                     title="TP3 HIT",            message="PJ_indicator_V2: TP3 Hit")
+alertcondition(slHit,                      title="SL HIT",             message="PJ_indicator_V2: SL Hit")

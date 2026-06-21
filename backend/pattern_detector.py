@@ -222,6 +222,12 @@ def detect_elliott_waves(candles):
         if (S0["type"] == "high" and S1["type"] == "low" and 
             S2["type"] == "high" and S3["type"] == "low" and 
             S4["type"] == "high" and S5["type"] == "low"):
+            # Wave 1 is downward (p1 < p0)
+            # Wave 2 retraces part of Wave 1 but remains below Wave 1 start (p2 < p0 and p2 > p1)
+            # Wave 3 breaks below Wave 1 bottom (p3 < p1)
+            # Wave 4 correction remains below Wave 1 bottom (no overlap) (p4 < p1 and p4 > p3)
+            # Wave 5 extends below Wave 3 bottom (p5 < p3)
+            if (p1 < p0 and p2 < p0 and p2 > p1 and p3 < p1 and p4 > p3 and p4 < p1 and p5 < p3):
                 return {
                     "pattern": "Elliott Wave 5 Trough (Bullish Correction Expected)",
                     "direction": "bullish",
@@ -294,7 +300,7 @@ def calculate_atr(candles, period=14):
         
     return atr_vals
 
-def calculate_stoch_rsi(prices, rsi_period=14, stoch_period=14, k_period=3, d_period=3):
+def calculate_stoch_rsi(prices, rsi_period=13, stoch_period=13, k_period=3, d_period=3):
     """
     Calculates Stochastic RSI (%K and %D lines).
     Returns list of %K and %D values (0 to 100).
@@ -365,23 +371,23 @@ def calculate_macd_4c(prices, fast_period=12, slow_period=26, signal_period=9):
     Calculates 4 Color MACD (MACD 4C) values and their corresponding colors.
     Returns: lists of (macd_vals, colors)
     """
-    if len(prices) < slow_period:
+    if len(prices) < slow_period + signal_period:
         return [None] * len(prices), [None] * len(prices)
         
-    fast_ema = calculate_ema(prices, fast_period)
-    slow_ema = calculate_ema(prices, slow_period)
+    macd_line, signal_line = calculate_macd(prices, fast_period, slow_period, signal_period)
     
-    macd_vals = []
-    for f, s in zip(fast_ema, slow_ema):
-        if f is None or s is None:
-            macd_vals.append(None)
+    # Calculate Histogram = MACD Line - Signal Line
+    hist_vals = []
+    for m, s in zip(macd_line, signal_line):
+        if m is None or s is None:
+            hist_vals.append(None)
         else:
-            macd_vals.append(f - s)
+            hist_vals.append(m - s)
             
-    colors = [None] * len(macd_vals)
-    for i in range(1, len(macd_vals)):
-        curr = macd_vals[i]
-        prev = macd_vals[i - 1]
+    colors = [None] * len(hist_vals)
+    for i in range(1, len(hist_vals)):
+        curr = hist_vals[i]
+        prev = hist_vals[i - 1]
         
         if curr is None or prev is None:
             continue
@@ -391,7 +397,7 @@ def calculate_macd_4c(prices, fast_period=12, slow_period=26, signal_period=9):
         else:
             colors[i] = "maroon" if curr < prev else "red"
             
-    return macd_vals, colors
+    return hist_vals, colors
 
 def detect_rsi_divergence(candles, rsi_period=14):
     """
@@ -1156,6 +1162,343 @@ def calculate_pj_dynamic_levels(candles, order_type, tp_target, atr_mult=1.5, us
     
     # Calculate SL and TP distances
     return risk, risk * tp_mult
+
+
+def get_mtf_timeframe_and_seconds(timeframe_str: str) -> tuple:
+    """
+    Returns the dynamic MTF timeframe and its duration in seconds matching the current chart timeframe.
+    M1, M5 -> M15 (900s)
+    M15 -> H1 (3600s)
+    M30, H1 -> H4 (14400s)
+    Others (H4, D1) -> D1 (86400s)
+    """
+    spacing_map = {"M1": 60, "M5": 300, "M15": 900, "M30": 1800, "H1": 3600, "H4": 14400, "D1": 86400}
+    tf_secs = spacing_map.get(timeframe_str, 3600)
+    if tf_secs <= 300:
+        return "M15", 900
+    elif tf_secs <= 900:
+        return "H1", 3600
+    elif tf_secs <= 3600:
+        return "H4", 14400
+    else:
+        return "D1", 86400
+
+
+def calculate_pj_indicator_v2_trend_and_score(
+    candles,
+    mtf_candles,
+    mtf_timeframe,
+    min_score=6,
+    use_volume=False,
+    vol_multiplier=2.0,
+    vwap_anchor="Session",
+    pj_atr_mult=1.5,
+    pj_use_dyn_atr=True,
+    cooldown_bars=5,
+    min_bars_between=5,
+    use_strict_mtf=False,
+    use_atr_block=True,
+    min_cross_count=1,
+    allowed_sessions="all"
+):
+    """
+    Calculates the PJ Indicator V2 strategy.
+    Evaluates confluence score, volatility ATR block, cooldowns, min bar gaps, and strict MTF.
+    """
+    from datetime import datetime, timezone, timedelta
+    n = len(candles)
+    if n < 55:
+        return [{
+            "trigger_buy": False,
+            "trigger_sell": False,
+            "bull_score": 0,
+            "bear_score": 0,
+            "trend_text": "SIDEWAY",
+            "trend_col": "#D4AF37",
+            "in_cooldown": False,
+            "can_trade": True,
+            "is_volatile": True,
+            "mtf_confirm": False,
+            "mtf_trend_text": "SIDEWAY",
+            "bars_since_sl_hit": 999,
+            "bars_since_last_signal": 999
+        }] * n
+
+    # Helper function for session check
+    def is_ts_in_sessions(ts, sessions_str):
+        if not sessions_str or sessions_str.lower() == "all":
+            return True
+        dt = datetime.fromtimestamp(ts, tz=timezone(timedelta(hours=7)))
+        hm = dt.hour + dt.minute / 60.0
+        sessions_list = [s.strip().lower() for s in sessions_str.split(",") if s.strip()]
+        for s in sessions_list:
+            if s == "asian" and (7.0 <= hm < 15.0):
+                return True
+            elif s in ["london", "lon"] and (14.0 <= hm <= 22.5):
+                return True
+            elif s in ["newyork", "ny"] and (20.5 <= hm or hm < 3.0):
+                return True
+            elif s == "london_ny" and (20.0 <= hm < 23.0):
+                return True
+            elif s == "both" and ((20.5 <= hm or hm < 3.0) or (14.0 <= hm <= 22.5)):
+                return True
+        return False
+
+    # 1. Main chart indicators
+    closes = [c["close"] for c in candles]
+    ema20 = calculate_ema(closes, 20)
+    atr14 = calculate_atr(candles, 14)
+    rsi14 = calculate_rsi(closes, 14)
+    macd_line, macd_sig = calculate_macd(closes, 15, 35, 9)
+    stoch_k, stoch_d = calculate_stochastic(candles, 9, 3, 3)
+    bb_basis, bb_upper, bb_lower = calculate_bollinger_bands(closes, 14, 2.0)
+    vwap_vals = calculate_vwap(candles, anchor=vwap_anchor)
+
+    vol_prices = [c.get("volume", 1.0) for c in candles]
+    vol_avg = calculate_sma(vol_prices, 20)
+    high_vol = []
+    for i in range(n):
+        vol = candles[i].get("volume", 1.0)
+        avg = vol_avg[i]
+        high_vol.append(vol > avg * vol_multiplier if avg is not None else False)
+
+    atr_sma = []
+    for i in range(len(atr14)):
+        sub = atr14[max(0, i - 49) : i + 1]
+        valid_sub = [x for x in sub if x is not None]
+        if len(valid_sub) < 50:
+            atr_sma.append(None)
+        else:
+            atr_sma.append(sum(valid_sub) / 50)
+
+    # 2. MTF indicators
+    mtf_closes = [c["close"] for c in mtf_candles]
+    mtf_ema20 = calculate_ema(mtf_closes, 20)
+    mtf_ema50 = calculate_ema(mtf_closes, 50)
+    mtf_rsi14 = calculate_rsi(mtf_closes, 14)
+    mtf_macd_line, mtf_macd_sig = calculate_macd(mtf_closes, 15, 35, 9)
+    mtf_vwap = calculate_vwap(mtf_candles, anchor="Session")
+
+    spacing_map = {"M1": 60, "M5": 300, "M15": 900, "M30": 1800, "H1": 3600, "H4": 14400, "D1": 86400}
+    mtf_seconds = spacing_map.get(mtf_timeframe, 3600)
+
+    aligned_j = []
+    j = 0
+    for i in range(n):
+        t_i = candles[i]["time"]
+        while j < len(mtf_candles) and mtf_candles[j]["time"] + mtf_seconds <= t_i:
+            j += 1
+        aligned_j.append(j - 1 if j > 0 else None)
+
+    # State machine variables
+    barsSinceSlHit = 999
+    barsSinceLastSignal = 999
+    lastSignalState = 0
+    entryP = None
+    slP = None
+    slHit = False
+
+    results = []
+
+    for i in range(n):
+        barsSinceLastSignal += 1
+        barsSinceSlHit += 1
+
+        inCooldown = barsSinceSlHit < cooldown_bars
+        canTrade = barsSinceLastSignal >= min_bars_between
+
+        if (ema20[i] is None or atr14[i] is None or rsi14[i] is None or 
+            macd_line[i] is None or macd_sig[i] is None or 
+            stoch_k[i] is None or stoch_d[i] is None or 
+            bb_basis[i] is None or vwap_vals[i] is None or 
+            atr_sma[i] is None or atr_sma[i] == 0):
+            results.append({
+                "trigger_buy": False, "trigger_sell": False,
+                "bull_score": 0, "bear_score": 0,
+                "trend_bull": False, "trend_bear": False,
+                "trend_text": "SIDEWAY", "trend_col": "#D4AF37",
+                "in_cooldown": inCooldown, "can_trade": canTrade, "is_volatile": True,
+                "mtf_confirm": False, "mtf_trend_text": "SIDEWAY",
+                "bars_since_sl_hit": barsSinceSlHit, "bars_since_last_signal": barsSinceLastSignal
+            })
+            continue
+
+        close_i = closes[i]
+        atr14_i = atr14[i]
+        atr_ratio = atr14_i / atr_sma[i]
+        is_volatile = not use_atr_block or atr_ratio >= 0.75
+
+        # Confluence Score Main Chart
+        ema_bull = close_i > ema20[i]
+        vwap_bull = close_i > vwap_vals[i]
+        macd_bull = macd_line[i] > macd_sig[i]
+        rsi_bull = rsi14[i] > 55
+        stoch_bull = stoch_k[i] > stoch_d[i] and stoch_k[i] > 50
+        bb_bull = close_i > bb_basis[i]
+
+        bull_score = (2 if ema_bull else 0) + (2 if vwap_bull else 0) + (2 if macd_bull else 0) + (2 if rsi_bull else 0) + (1 if stoch_bull else 0) + (1 if bb_bull else 0)
+
+        ema_bear = close_i < ema20[i]
+        vwap_bear = close_i < vwap_vals[i]
+        macd_bear = macd_line[i] < macd_sig[i]
+        rsi_bear = rsi14[i] < 45
+        stoch_bear = stoch_k[i] < stoch_d[i] and stoch_k[i] < 50
+        bb_bear = close_i < bb_basis[i]
+
+        bear_score = (2 if ema_bear else 0) + (2 if vwap_bear else 0) + (2 if macd_bear else 0) + (2 if rsi_bear else 0) + (1 if stoch_bear else 0) + (1 if bb_bear else 0)
+
+        trend_bull = bull_score >= min_score and bull_score > bear_score
+        trend_bear = bear_score >= min_score and bear_score > bull_score
+
+        trend_text = "UPTREND" if trend_bull else "DOWNTREND" if trend_bear else "SIDEWAY"
+        trend_col = "#00C853" if trend_bull else "#FF1744" if trend_bear else "#D4AF37"
+
+        # MTF Alignment
+        mtf_confirm = False
+        mtf_trend_text = "SIDEWAY"
+        j_aligned = aligned_j[i]
+
+        if j_aligned is not None:
+            h1_close = mtf_closes[j_aligned]
+            h1_ema20 = mtf_ema20[j_aligned]
+            h1_rsi14 = mtf_rsi14[j_aligned]
+            h1_vwap = mtf_vwap[j_aligned]
+            h1_macd_line = mtf_macd_line[j_aligned]
+            h1_macd_sig = mtf_macd_sig[j_aligned]
+            h1_ema50 = mtf_ema50[j_aligned]
+            
+            h1_ema20_prev = mtf_ema20[j_aligned - 3] if j_aligned >= 3 else None
+
+            if (h1_ema20 is not None and h1_rsi14 is not None and h1_vwap is not None and 
+                h1_macd_line is not None and h1_macd_sig is not None and h1_ema50 is not None):
+                
+                h1_macdBull = h1_macd_line > h1_macd_sig
+                h1_emaBull = h1_close > h1_ema20
+                h1_rsiBull = h1_rsi14 > 55
+                h1_rsiBear = h1_rsi14 < 45
+                h1_vwapBull = h1_close > h1_vwap
+
+                h1_bullCount = int(h1_emaBull) + int(h1_rsiBull) + int(h1_macdBull) + int(h1_vwapBull)
+                h1_bearCount = int(not h1_emaBull) + int(h1_rsiBear) + int(not h1_macdBull) + int(not h1_vwapBull)
+
+                h1_trendBull = h1_bullCount >= 3
+                h1_trendBear = h1_bearCount >= 3
+                mtf_trend_text = "UPTREND" if h1_trendBull else "DOWNTREND" if h1_trendBear else "SIDEWAY"
+
+                # Strict MTF
+                if use_strict_mtf and h1_ema20_prev is not None:
+                    h1_emaSlope = h1_ema20 - h1_ema20_prev
+                    h1_slopeBull = h1_emaSlope > 0
+                    h1_slopeBear = h1_emaSlope < 0
+                    h1_aboveEma50 = h1_ema20 > h1_ema50
+                    h1_belowEma50 = h1_ema20 < h1_ema50
+
+                    h1_trendBullFinal = h1_trendBull and h1_aboveEma50 and h1_slopeBull
+                    h1_trendBearFinal = h1_trendBear and h1_belowEma50 and h1_slopeBear
+                else:
+                    h1_trendBullFinal = h1_trendBull
+                    h1_trendBearFinal = h1_trendBear
+
+                mtf_confirm = (trend_bull and h1_trendBullFinal) or (trend_bear and h1_trendBearFinal)
+
+        # Monitor current trade SL hit (chronological hit detection)
+        if lastSignalState == 1 and entryP is not None and slP is not None:
+            if candles[i]["low"] <= slP:
+                slHit = True
+                lastSignalState = 0
+                barsSinceSlHit = 0
+        elif lastSignalState == -1 and entryP is not None and slP is not None:
+            if candles[i]["high"] >= slP:
+                slHit = True
+                lastSignalState = 0
+                barsSinceSlHit = 0
+
+        # Crossover logic at index i - 1
+        trigger_buy = False
+        trigger_sell = False
+
+        if i >= 2:
+            c_prev = closes[i-1]
+            c_prev2 = closes[i-2]
+            
+            e_prev = ema20[i-1]
+            e_prev2 = ema20[i-2]
+            
+            ml_prev = macd_line[i-1]
+            ml_prev2 = macd_line[i-2]
+            ms_prev = macd_sig[i-1]
+            ms_prev2 = macd_sig[i-2]
+            
+            sk_prev = stoch_k[i-1]
+            sk_prev2 = stoch_k[i-2]
+            sd_prev = stoch_d[i-1]
+            sd_prev2 = stoch_d[i-2]
+
+            if (e_prev is not None and e_prev2 is not None and ml_prev is not None and 
+                ml_prev2 is not None and ms_prev is not None and ms_prev2 is not None and 
+                sk_prev is not None and sk_prev2 is not None and sd_prev is not None and sd_prev2 is not None):
+
+                emaCrossUp = (c_prev2 <= e_prev2 and c_prev > e_prev)
+                macdCrossUp = (ml_prev2 <= ms_prev2 and ml_prev > ms_prev)
+                stochCrossUp = (sk_prev2 <= sd_prev2 and sk_prev > sd_prev)
+
+                emaCrossDown = (c_prev2 >= e_prev2 and c_prev < e_prev)
+                macdCrossDown = (ml_prev2 >= ms_prev2 and ml_prev < ms_prev)
+                stochCrossDown = (sk_prev2 >= sd_prev2 and sk_prev < sd_prev)
+
+                crossBullCount = int(emaCrossUp) + int(macdCrossUp) + int(stochCrossUp)
+                crossBearCount = int(emaCrossDown) + int(macdCrossDown) + int(stochCrossDown)
+
+                trend_bull_prev = results[i-1]["trend_bull"]
+                trend_bear_prev = results[i-1]["trend_bear"]
+                high_vol_prev = high_vol[i-1]
+
+                buySignalRaw = trend_bull_prev and crossBullCount >= min_cross_count
+                sellSignalRaw = trend_bear_prev and crossBearCount >= min_cross_count
+
+                buySignal = buySignalRaw and high_vol_prev if use_volume else buySignalRaw
+                sellSignal = sellSignalRaw and high_vol_prev if use_volume else sellSignalRaw
+
+                in_session = is_ts_in_sessions(candles[i]["time"], allowed_sessions)
+
+                trigger_buy = buySignal and mtf_confirm and lastSignalState != 1 and in_session and is_volatile and not inCooldown and canTrade
+                trigger_sell = sellSignal and mtf_confirm and lastSignalState != -1 and in_session and is_volatile and not inCooldown and canTrade
+
+                if trigger_buy or trigger_sell:
+                    barsSinceLastSignal = 0
+                    lastSignalState = 1 if trigger_buy else -1
+                    entryP = closes[i-1]
+                    
+                    dynamic_mult = pj_atr_mult
+                    if pj_use_dyn_atr:
+                        if atr_ratio > 1.5:
+                            dynamic_mult = pj_atr_mult * 0.8
+                        elif atr_ratio < 0.7:
+                            dynamic_mult = pj_atr_mult * 1.2
+                    
+                    risk = atr14[i-1] * dynamic_mult
+                    slP = entryP - risk if trigger_buy else entryP + risk
+                    slHit = False
+
+        results.append({
+            "trigger_buy": trigger_buy,
+            "trigger_sell": trigger_sell,
+            "bull_score": bull_score,
+            "bear_score": bear_score,
+            "trend_bull": trend_bull,
+            "trend_bear": trend_bear,
+            "trend_text": trend_text,
+            "trend_col": trend_col,
+            "in_cooldown": inCooldown,
+            "can_trade": canTrade,
+            "is_volatile": is_volatile,
+            "mtf_confirm": mtf_confirm,
+            "mtf_trend_text": mtf_trend_text,
+            "bars_since_sl_hit": barsSinceSlHit,
+            "bars_since_last_signal": barsSinceLastSignal
+        })
+
+    return results
 
 
 

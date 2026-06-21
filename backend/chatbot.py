@@ -351,7 +351,7 @@ class ChatbotAssistant:
                 if candles and len(candles) >= 35:
                     from backend.pattern_detector import calculate_stoch_rsi, calculate_rsi
                     close_prices = [c["close"] for c in candles]
-                    k_vals, d_vals = calculate_stoch_rsi(close_prices, 14, 14, 3, 3)
+                    k_vals, d_vals = calculate_stoch_rsi(close_prices, 13, 13, 3, 3)
                     rsi_vals = calculate_rsi(close_prices, 14)
                     
                     k = k_vals[-1]
@@ -523,7 +523,7 @@ class ChatbotAssistant:
                     analysis = (
                         f"📊 **วิเคราะห์ MACD 4C (4 Color MACD) เรียลไทม์ ({symbol} - {timeframe})** ⚡\n\n"
                         f"• 💰 **ราคาล่าสุด**: `{price_str}`\n"
-                        f"• 📈 **MACD Line Value**: `{macd_val_str}`\n"
+                        f"• 📈 **MACD Histogram Value**: `{macd_val_str}`\n"
                         f"• 🏷️ **สีของแท่งโมเมนตัม**: `{color.upper() if color else 'N/A'}` {status_color}\n"
                         f"• 🔍 **สภาวะแนวโน้ม**: **{status_text}**\n"
                         f"• 💡 **ความหมายเชิงลึก**: {desc_thai}\n"

@@ -1,9 +1,11 @@
 import os
 import random
 import time
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import threading
 import logging
+
+BANGKOK_TZ = timezone(timedelta(hours=7))
 
 try:
     import MetaTrader5 as mt5
@@ -225,8 +227,8 @@ class MT5Manager:
         """
         Calculate the shift in seconds to convert broker server time representation to local machine time.
         """
-        is_dst = time.localtime().tm_isdst
-        local_offset = -time.altzone if (is_dst > 0) else -time.timezone
+        # Force local offset to +7 hours (GMT+7)
+        local_offset = 7 * 3600
         
         # Broker offset from UTC in seconds
         broker_offset = self.get_broker_timezone_offset()
@@ -444,6 +446,7 @@ class MT5Manager:
             pos_list = []
             for pos in positions:
                 # pos attributes: ticket, time, type (0=buy, 1=sell), volume, price_open, sl, tp, price_current, profit
+                utc_timestamp = pos.time - self.get_broker_timezone_offset()
                 pos_list.append({
                     "ticket": pos.ticket,
                     "symbol": pos.symbol,
@@ -455,8 +458,8 @@ class MT5Manager:
                     "tp": pos.tp,
                     "profit": pos.profit,
                     "comment": pos.comment,
-                    "time": datetime.fromtimestamp(pos.time).strftime("%Y-%m-%d %H:%M:%S"),
-                    "time_raw": pos.time - self.get_broker_timezone_offset()
+                    "time": datetime.fromtimestamp(utc_timestamp, BANGKOK_TZ).strftime("%Y-%m-%d %H:%M:%S"),
+                    "time_raw": utc_timestamp
                 })
             return pos_list
         else:
@@ -546,7 +549,7 @@ class MT5Manager:
                 "volume": volume,
                 "open_price": result.price,
                 "profit": 0.0,
-                "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                "time": datetime.fromtimestamp(time.time(), BANGKOK_TZ).strftime("%Y-%m-%d %H:%M:%S")
             }
             self._notify_discord_open(
                 ticket=res_dict["ticket"],
@@ -577,7 +580,7 @@ class MT5Manager:
                 "tp": tp,
                 "profit": 0.0,
                 "comment": comment,
-                "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "time": datetime.fromtimestamp(time.time(), BANGKOK_TZ).strftime("%Y-%m-%d %H:%M:%S"),
                 "time_raw": int(time.time())
             }
             
@@ -717,12 +720,154 @@ class MT5Manager:
                 "open_price": target_pos["open_price"],
                 "close_price": close_price,
                 "open_time": target_pos["time"],
-                "close_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "close_time": datetime.fromtimestamp(time.time(), BANGKOK_TZ).strftime("%Y-%m-%d %H:%M:%S"),
+                "open_time_raw": target_pos.get("time_raw", int(time.time())),
+                "close_time_raw": int(time.time()),
                 "profit": profit,
                 "sl": target_pos.get("sl", 0.0),
                 "tp": target_pos.get("tp", 0.0),
                 "comment": target_pos.get("comment", "Manual")
             }
+
+    def modify_position(self, ticket: int, sl: float, tp: float) -> dict:
+        """Modifies the SL and TP levels of an active position."""
+        if not self.is_simulated and self.is_connected:
+            positions = mt5.positions_get(ticket=ticket)
+            if positions is None or len(positions) == 0:
+                raise Exception(f"Active position with ticket {ticket} not found in MT5.")
+            position = positions[0]
+            
+            request = {
+                "action": mt5.TRADE_ACTION_SLTP,
+                "position": position.ticket,
+                "symbol": position.symbol,
+                "sl": round(sl, 4),
+                "tp": round(tp, 4)
+            }
+            res = mt5.order_send(request)
+            if res is not None and res.retcode == mt5.TRADE_RETCODE_DONE:
+                return {"success": True, "ticket": ticket, "sl": sl, "tp": tp}
+            else:
+                err_str = res.comment if res is not None else str(mt5.last_error())
+                raise Exception(f"Failed to modify SL/TP: {err_str}")
+        else:
+            # Simulation mode
+            for pos in self.sim_positions:
+                if pos["ticket"] == ticket:
+                    pos["sl"] = round(sl, 4)
+                    pos["tp"] = round(tp, 4)
+                    return {"success": True, "ticket": ticket, "sl": sl, "tp": tp}
+            raise Exception(f"Simulated position with ticket {ticket} not found.")
+
+    def partial_close_position(self, ticket: int, volume_to_close: float) -> dict:
+        """Closes a portion of the position's volume."""
+        if not self.is_simulated and self.is_connected:
+            positions = mt5.positions_get(ticket=ticket)
+            if positions is None or len(positions) == 0:
+                raise Exception(f"Active position with ticket {ticket} not found in MT5.")
+            
+            position = positions[0]
+            if volume_to_close >= position.volume:
+                # If we're closing everything or more, use normal close
+                return self.close_position(ticket)
+                
+            close_type = mt5.ORDER_TYPE_SELL if position.type == 0 else mt5.ORDER_TYPE_BUY
+            price = mt5.symbol_info_tick(position.symbol).bid if position.type == 0 else mt5.symbol_info_tick(position.symbol).ask
+            
+            request = {
+                "action": mt5.TRADE_ACTION_DEAL,
+                "symbol": position.symbol,
+                "volume": round(volume_to_close, 2),
+                "type": close_type,
+                "position": position.ticket,
+                "price": price,
+                "deviation": 20,
+                "magic": 234000,
+                "comment": "PartClose",
+                "type_time": mt5.ORDER_TIME_GTC,
+            }
+            
+            filling_modes = [mt5.ORDER_FILLING_IOC, mt5.ORDER_FILLING_FOK, mt5.ORDER_FILLING_RETURN]
+            result = None
+            last_err_str = ""
+            for fill in filling_modes:
+                request["type_filling"] = fill
+                res = mt5.order_send(request)
+                if res is not None and res.retcode == mt5.TRADE_RETCODE_DONE:
+                    result = res
+                    break
+                elif res is not None:
+                    last_err_str = res.comment
+            
+            if result is None:
+                raise Exception(f"Failed to partial close position: {last_err_str}")
+                
+            deal_profit = 0.0
+            if hasattr(result, "profit"):
+                deal_profit = result.profit
+                
+            self._notify_discord_close(
+                ticket=ticket,
+                symbol=position.symbol,
+                order_type="buy" if position.type == 0 else "sell",
+                volume=volume_to_close,
+                open_price=position.price_open,
+                close_price=price,
+                profit=deal_profit,
+                comment=f"Partial Close ({volume_to_close:.2f} Lots)",
+                is_live=True
+            )
+                
+            return {
+                "success": True,
+                "ticket": ticket,
+                "closed_volume": volume_to_close,
+                "remaining_volume": round(position.volume - volume_to_close, 2),
+                "profit": deal_profit
+            }
+        else:
+            # Simulation mode
+            for pos in self.sim_positions:
+                if pos["ticket"] == ticket:
+                    if volume_to_close >= pos["volume"]:
+                        return self.close_position(ticket)
+                    
+                    old_volume = pos["volume"]
+                    pos["volume"] = round(old_volume - volume_to_close, 2)
+                    
+                    # Calculate profit of closed portion
+                    price_dict = self.sim_prices.get(pos["symbol"], {"bid": pos["open_price"], "ask": pos["open_price"]})
+                    close_price = price_dict["bid"] if pos["type"] == "buy" else price_dict["ask"]
+                    
+                    multiplier = 100.0 if "XAU" in pos["symbol"] else 1.0 if "BTC" in pos["symbol"] else 10.0
+                    if pos["type"] == "buy":
+                        pnl = (close_price - pos["open_price"]) * volume_to_close * multiplier
+                    else:
+                        pnl = (pos["open_price"] - close_price) * volume_to_close * multiplier
+                    
+                    pnl = round(pnl, 2)
+                    self.sim_balance += pnl
+                    
+                    self._notify_discord_close(
+                        ticket=ticket,
+                        symbol=pos["symbol"],
+                        order_type=pos["type"],
+                        volume=volume_to_close,
+                        open_price=pos["open_price"],
+                        close_price=close_price,
+                        profit=pnl,
+                        comment=f"Partial Close ({volume_to_close:.2f} Lots)",
+                        is_live=False
+                    )
+                    
+                    return {
+                        "success": True,
+                        "ticket": ticket,
+                        "closed_volume": volume_to_close,
+                        "remaining_volume": pos["volume"],
+                        "profit": pnl
+                    }
+            raise Exception(f"Simulated position with ticket {ticket} not found.")
 
     def _notify_discord_open(self, ticket: int, symbol: str, order_type: str, volume: float, open_price: float, comment: str, is_live: bool):
         """Builds and broadcasts a beautifully formatted Discord embed for open order event."""
