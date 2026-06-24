@@ -433,7 +433,7 @@ const TradingApp = () => {
     const [activeBot, setActiveBot] = useState(null);
     const [botLogs, setBotLogs] = useState([]);
     const [botFormOpen, setBotFormOpen] = useState(false);
-    const [botForm, setBotForm] = useState({ name: "บอทเทรดทองคำ RSI", symbol: "XAUUSD", timeframe: "M1", algorithm: "rsi_overbought_oversold", lot_size: 0.01, sl_points: 5.0, tp_points: 10.0, use_trend_filter: false, use_mtf_filter: false, use_atr_sizing: false, risk_percent: 1.0, allowed_sessions: "all", use_news_filter: false, stoch_rsi_len: 13, stoch_len: 13, stoch_k: 3, stoch_d: 3, macd_fast: 12, macd_slow: 26, macd_signal: 9, pj_min_score: 6, pj_use_volume: false, pj_vol_multiplier: 2.0, pj_vwap_anchor: "Session", pj_atr_mult: 1.5, pj_use_dyn_atr: true, pj_tp_target: "manual", pj_cooldown_bars: 5, pj_min_bars_between: 5, pj_strict_mtf: false, pj_use_atr_block: true, pj_min_cross_count: 1, ema_fast: 50, ema_slow: 200, adx_len: 25, adx_threshold: 30, use_trailing_stop: false, trailing_stop_points: 0.0, use_break_even: false, break_even_trigger_points: 0.0, break_even_lock_points: 0.0, use_partial_tp: false, partial_tp_points: 0.0, partial_tp_ratio: 0.5, use_regime_filter: false, regime_mode: "trend" });
+    const [botForm, setBotForm] = useState({ name: "บอทเทรดทองคำ RSI", symbol: "XAUUSD", timeframe: "M1", algorithm: "rsi_overbought_oversold", lot_size: 0.01, sl_points: 5.0, tp_points: 10.0, use_trend_filter: false, use_mtf_filter: false, use_atr_sizing: false, risk_percent: 1.0, allowed_sessions: "all", use_news_filter: false, stoch_rsi_len: 13, stoch_len: 13, stoch_k: 3, stoch_d: 3, macd_fast: 12, macd_slow: 26, macd_signal: 9, pj_min_score: 6, pj_use_volume: false, pj_vol_multiplier: 2.0, pj_vwap_anchor: "Session", pj_atr_mult: 1.5, pj_use_dyn_atr: true, pj_tp_target: "manual", pj_cooldown_bars: 5, pj_min_bars_between: 5, pj_strict_mtf: false, pj_use_atr_block: true, pj_min_cross_count: 1, ema_fast: 50, ema_slow: 200, adx_len: 25, adx_threshold: 30, adx_mode: "cross_rising", use_trailing_stop: false, trailing_stop_points: 0.0, use_break_even: false, break_even_trigger_points: 0.0, break_even_lock_points: 0.0, use_partial_tp: false, partial_tp_points: 0.0, partial_tp_ratio: 0.5, use_regime_filter: false, regime_mode: "trend" });
     const [selectedAlgos, setSelectedAlgos] = useState(["rsi_overbought_oversold"]);
     const [signalMode, setSignalMode] = useState("or");
     const [activeRunningBotsCount, setActiveRunningBotsCount] = useState(0);
@@ -2080,6 +2080,7 @@ const TradingApp = () => {
             ema_slow: bot.ema_slow !== undefined ? bot.ema_slow : 200,
             adx_len: bot.adx_len !== undefined ? bot.adx_len : 25,
             adx_threshold: bot.adx_threshold !== undefined ? bot.adx_threshold : 30,
+            adx_mode: bot.adx_mode || "cross_rising",
             use_trailing_stop: bot.use_trailing_stop || false,
             trailing_stop_points: bot.trailing_stop_points || 0.0,
             use_break_even: bot.use_break_even || false,
@@ -2142,6 +2143,7 @@ const TradingApp = () => {
                     ema_slow: parseInt(botForm.ema_slow) || 200,
                     adx_len: parseInt(botForm.adx_len) || 25,
                     adx_threshold: parseInt(botForm.adx_threshold) || 30,
+                    adx_mode: botForm.adx_mode || "cross_rising",
                     use_trailing_stop: botForm.use_trailing_stop || false,
                     trailing_stop_points: parseFloat(botForm.trailing_stop_points) || 0.0,
                     use_break_even: botForm.use_break_even || false,
@@ -8061,7 +8063,7 @@ const TradingApp = () => {
                                     {selectedAlgos.includes('adx') && (
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderTop: (selectedAlgos.includes('stoch_rsi') || selectedAlgos.includes('macd_4c') || selectedAlgos.includes('pj_indicator') || selectedAlgos.includes('pj_indicator_v2') || selectedAlgos.includes('ema_cross')) ? '1px dashed rgba(255,255,255,0.05)' : 'none', paddingTop: (selectedAlgos.includes('stoch_rsi') || selectedAlgos.includes('macd_4c') || selectedAlgos.includes('pj_indicator') || selectedAlgos.includes('pj_indicator_v2') || selectedAlgos.includes('ema_cross')) ? '10px' : '0' }}>
                                             <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--accent-gold)' }}>ADX Parameters:</span>
-                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.2fr', gap: '8px' }}>
                                                 <div className="input-group" style={{ margin: 0 }}>
                                                     <label style={{ fontSize: '10px', marginBottom: '3px' }}>ADX Smoothing Period</label>
                                                     <input 
@@ -8083,6 +8085,18 @@ const TradingApp = () => {
                                                         onChange={(e) => setBotForm({ ...botForm, adx_threshold: parseInt(e.target.value) || 30 })}
                                                         style={{ height: '34px', fontSize: '12px', padding: '6px 8px' }}
                                                     />
+                                                </div>
+                                                <div className="input-group" style={{ margin: 0 }}>
+                                                    <label style={{ fontSize: '10px', marginBottom: '3px' }}>ADX Mode (รูปแบบเทรด)</label>
+                                                    <select 
+                                                        className="select-input" 
+                                                        value={botForm.adx_mode || "cross_rising"} 
+                                                        onChange={(e) => setBotForm({ ...botForm, adx_mode: e.target.value })}
+                                                        style={{ height: '34px', fontSize: '12px', padding: '4px 6px', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#fff', width: '100%' }}
+                                                    >
+                                                        <option value="cross_rising">DI Cross + ADX Rising</option>
+                                                        <option value="state_breakout">State-based + ADX Breakout</option>
+                                                    </select>
                                                 </div>
                                             </div>
                                         </div>
