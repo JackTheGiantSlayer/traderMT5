@@ -433,8 +433,8 @@ const TradingApp = () => {
     const [activeBot, setActiveBot] = useState(null);
     const [botLogs, setBotLogs] = useState([]);
     const [botFormOpen, setBotFormOpen] = useState(false);
-    const [botForm, setBotForm] = useState({ name: "บอทเทรดทองคำ RSI", symbol: "XAUUSD", timeframe: "M1", algorithm: "rsi_oscillator", lot_size: 0.01, sl_points: 5.0, tp_points: 10.0, use_trend_filter: false, use_mtf_filter: false, use_atr_sizing: false, risk_percent: 1.0, allowed_sessions: "all", use_news_filter: false, stoch_rsi_len: 13, stoch_len: 13, stoch_k: 3, stoch_d: 3, macd_fast: 12, macd_slow: 26, macd_signal: 9, pj_min_score: 6, pj_use_volume: false, pj_vol_multiplier: 2.0, pj_vwap_anchor: "Session", pj_atr_mult: 1.5, pj_use_dyn_atr: true, pj_tp_target: "manual", pj_cooldown_bars: 5, pj_min_bars_between: 5, pj_strict_mtf: false, pj_use_atr_block: true, pj_min_cross_count: 1, ema_fast: 50, ema_slow: 200, adx_len: 25, adx_threshold: 30, use_trailing_stop: false, trailing_stop_points: 0.0, use_break_even: false, break_even_trigger_points: 0.0, break_even_lock_points: 0.0, use_partial_tp: false, partial_tp_points: 0.0, partial_tp_ratio: 0.5, use_regime_filter: false, regime_mode: "trend" });
-    const [selectedAlgos, setSelectedAlgos] = useState(["rsi_oscillator"]);
+    const [botForm, setBotForm] = useState({ name: "บอทเทรดทองคำ RSI", symbol: "XAUUSD", timeframe: "M1", algorithm: "rsi_overbought_oversold", lot_size: 0.01, sl_points: 5.0, tp_points: 10.0, use_trend_filter: false, use_mtf_filter: false, use_atr_sizing: false, risk_percent: 1.0, allowed_sessions: "all", use_news_filter: false, stoch_rsi_len: 13, stoch_len: 13, stoch_k: 3, stoch_d: 3, macd_fast: 12, macd_slow: 26, macd_signal: 9, pj_min_score: 6, pj_use_volume: false, pj_vol_multiplier: 2.0, pj_vwap_anchor: "Session", pj_atr_mult: 1.5, pj_use_dyn_atr: true, pj_tp_target: "manual", pj_cooldown_bars: 5, pj_min_bars_between: 5, pj_strict_mtf: false, pj_use_atr_block: true, pj_min_cross_count: 1, ema_fast: 50, ema_slow: 200, adx_len: 25, adx_threshold: 30, use_trailing_stop: false, trailing_stop_points: 0.0, use_break_even: false, break_even_trigger_points: 0.0, break_even_lock_points: 0.0, use_partial_tp: false, partial_tp_points: 0.0, partial_tp_ratio: 0.5, use_regime_filter: false, regime_mode: "trend" });
+    const [selectedAlgos, setSelectedAlgos] = useState(["rsi_overbought_oversold"]);
     const [signalMode, setSignalMode] = useState("or");
     const [activeRunningBotsCount, setActiveRunningBotsCount] = useState(0);
     const [editingBotId, setEditingBotId] = useState(null);
@@ -450,7 +450,7 @@ const TradingApp = () => {
         initial_balance: 10000.0,
         signal_mode: "or"
     });
-    const [backtestSelectedAlgos, setBacktestSelectedAlgos] = useState(["rsi_oscillator"]);
+    const [backtestSelectedAlgos, setBacktestSelectedAlgos] = useState(["rsi_overbought_oversold"]);
     const [backtestResult, setBacktestResult] = useState(null);
     const [backtestLoading, setBacktestLoading] = useState(false);
     const [backtestSubTab, setBacktestSubTab] = useState("stats"); // 'stats' | 'price' | 'equity' | 'deals'
@@ -3559,7 +3559,7 @@ const TradingApp = () => {
                                             { value: 'smc_order_block', label: 'SMC Order Block 🟩' },
                                             { value: 'smc_fvg_imbalance', label: 'SMC FVG Imbalance ⚡' },
                                             { value: 'smc_bos_choch', label: 'SMC BOS / CHoCH 📈' },
-                                            { value: 'rsi_oscillator', label: 'RSI Overbought/Oversold 🌊' },
+                                            { value: 'rsi_overbought_oversold', label: 'RSI Overbought/Oversold 🌊' },
                                             { value: 'stoch_rsi', label: 'Stochastic RSI ⚡' },
                                             { value: 'macd_4c', label: 'MACD 4 Color 📊' },
                                             { value: 'macd', label: 'MACD Crossover 🎛️' },
@@ -5346,7 +5346,7 @@ const TradingApp = () => {
                                             <h4 style={{ fontSize: '13px', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
                                                 จัดการระบบอัลกอริทึม ({activeRunningBotsCount} ทำงานอยู่)
                                             </h4>
-                                            <button className="btn-create-bot" onClick={() => { setSelectedAlgos(["rsi_oscillator"]); setSignalMode("or"); setBotForm({ name: "บอทเทรดทองคำ RSI", symbol: "XAUUSD", timeframe: "M1", algorithm: "rsi_oscillator", lot_size: 0.01, sl_points: 5.0, tp_points: 10.0, use_trend_filter: false, use_mtf_filter: false, use_atr_sizing: false, risk_percent: 1.0, allowed_sessions: "all", use_news_filter: false, stoch_rsi_len: 13, stoch_len: 13, stoch_k: 3, stoch_d: 3, macd_fast: 12, macd_slow: 26, macd_signal: 9, pj_min_score: 6, pj_use_volume: false, pj_vol_multiplier: 2.0, pj_vwap_anchor: "Session", pj_atr_mult: 1.5, pj_use_dyn_atr: true, pj_tp_target: "manual", pj_cooldown_bars: 5, pj_min_bars_between: 5, pj_strict_mtf: false, pj_use_atr_block: true, pj_min_cross_count: 1, ema_fast: 50, ema_slow: 200, adx_len: 25, adx_threshold: 30, use_trailing_stop: false, trailing_stop_points: 0.0, use_break_even: false, break_even_trigger_points: 0.0, break_even_lock_points: 0.0, use_partial_tp: false, partial_tp_points: 0.0, partial_tp_ratio: 0.5, use_regime_filter: false, regime_mode: "trend" }); setEditingBotId(null); setBotFormOpen(true); }}>
+                                            <button className="btn-create-bot" onClick={() => { setSelectedAlgos(["rsi_overbought_oversold"]); setSignalMode("or"); setBotForm({ name: "บอทเทรดทองคำ RSI", symbol: "XAUUSD", timeframe: "M1", algorithm: "rsi_overbought_oversold", lot_size: 0.01, sl_points: 5.0, tp_points: 10.0, use_trend_filter: false, use_mtf_filter: false, use_atr_sizing: false, risk_percent: 1.0, allowed_sessions: "all", use_news_filter: false, stoch_rsi_len: 13, stoch_len: 13, stoch_k: 3, stoch_d: 3, macd_fast: 12, macd_slow: 26, macd_signal: 9, pj_min_score: 6, pj_use_volume: false, pj_vol_multiplier: 2.0, pj_vwap_anchor: "Session", pj_atr_mult: 1.5, pj_use_dyn_atr: true, pj_tp_target: "manual", pj_cooldown_bars: 5, pj_min_bars_between: 5, pj_strict_mtf: false, pj_use_atr_block: true, pj_min_cross_count: 1, ema_fast: 50, ema_slow: 200, adx_len: 25, adx_threshold: 30, use_trailing_stop: false, trailing_stop_points: 0.0, use_break_even: false, break_even_trigger_points: 0.0, break_even_lock_points: 0.0, use_partial_tp: false, partial_tp_points: 0.0, partial_tp_ratio: 0.5, use_regime_filter: false, regime_mode: "trend" }); setEditingBotId(null); setBotFormOpen(true); }}>
                                                 <Icon name="plus" size={12} />
                                                 <span>สร้างบอทใหม่</span>
                                             </button>
@@ -5385,7 +5385,7 @@ const TradingApp = () => {
                                                                 <span className="bot-metric-value">{bot.timeframe}</span>
                                                             </div>
                                                             <div className="bot-metric-item" style={{ gridColumn: 'span 3', display: 'flex', flexDirection: 'column', gap: '4px', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '6px', marginTop: '4px' }}>
-                                                                <span className="bot-metric-label">กลยุทธ์ ({bot.signal_mode ? bot.signal_mode.toUpperCase() : 'OR'})</span>
+                                                                <span className="bot-metric-label">กลยุทธ์{((bot.algorithms || bot.algorithm || "").split(",").map(a => a.trim()).filter(Boolean).length > 1) ? ` (${bot.signal_mode ? bot.signal_mode.toUpperCase() : 'OR'})` : ''}</span>
                                                                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
                                                                     {(bot.algorithms || bot.algorithm || "").split(",").map((a, i) => {
                                                                         const aTrim = a.trim();
@@ -5400,7 +5400,7 @@ const TradingApp = () => {
                                                                                 border: '1px solid rgba(255,183,3,0.25)',
                                                                                 fontWeight: 500
                                                                             }}>
-                                                                                {aTrim === 'rsi_oscillator' ? 'RSI' : 
+                                                                                {aTrim === 'rsi_overbought_oversold' ? 'RSI Overbought/Oversold' : 
                                                                                  aTrim === 'stoch_rsi' ? 'StochRSI' : 
                                                                                  aTrim === 'macd_4c' ? 'MACD 4C Momentum' :
                                                                                  aTrim === 'sma_cross' ? 'SMA Cross' : 
@@ -5600,7 +5600,7 @@ const TradingApp = () => {
                                                         { value: 'smc_order_block', label: 'SMC Order Block 🟩' },
                                                         { value: 'smc_fvg_imbalance', label: 'SMC FVG Imbalance ⚡' },
                                                         { value: 'smc_bos_choch', label: 'SMC BOS / CHoCH 📈' },
-                                                        { value: 'rsi_oscillator', label: 'RSI Overbought/Oversold 🌊' },
+                                                        { value: 'rsi_overbought_oversold', label: 'RSI Overbought/Oversold 🌊' },
                                                         { value: 'stoch_rsi', label: 'Stochastic RSI ⚡' },
                                                         { value: 'macd_4c', label: 'MACD 4 Color 📊' },
                                                         { value: 'macd', label: 'MACD Crossover 🎛️' },
@@ -7161,7 +7161,7 @@ const TradingApp = () => {
                                     border: '1px solid rgba(255,255,255,0.05)'
                                 }}>
                                     {[
-                                        { id: 'rsi_oscillator', name: 'RSI Overbought/Oversold', desc: 'เทรดเมื่อจุดกลับตัวจากเขต RSI Overbought/Oversold' },
+                                        { id: 'rsi_overbought_oversold', name: 'RSI Overbought/Oversold', desc: 'เทรดเมื่อจุดกลับตัวจากเขต RSI Overbought/Oversold' },
                                         { id: 'stoch_rsi', name: 'Stochastic RSI (StochRSI)', desc: 'จับสัญญาณซื้อขายและจุดกลับตัวได้รวดเร็วกว่า RSI ทั่วไป โดยใช้ออสซิลเลเตอร์คำนวณซ้ำบน RSI' },
                                         { id: 'macd_4c', name: 'MACD 4 Color (4C) Momentum', desc: 'ตรวจจับแรงขับเคลื่อนเทรนด้วยแท่งสีโมเมนตัม 4 มิติ (Pine Script 4-Color MACD)' },
                                         { id: 'pj_indicator', name: 'PJ Indicator', desc: 'กลยุทธ์พรีเมียมผสานเทรนและการกรองด้วย Trend Score (EMA14, RSI, MACD, Stoch, BB, VWAP)' },
@@ -7202,7 +7202,7 @@ const TradingApp = () => {
                                                     let name = `บอทเทรด ${botForm.symbol}`;
                                                     if (nextAlgos.length === 1) {
                                                         const single = nextAlgos[0];
-                                                        const suffix = single === "rsi_oscillator" ? "RSI Overbought/Oversold" :
+                                                        const suffix = single === "rsi_overbought_oversold" ? "RSI Overbought/Oversold" :
                                                                        single === "stoch_rsi" ? "StochRSI Fast Reversal" :
                                                                        single === "macd_4c" ? "MACD 4C Momentum" :
                                                                        single === "pj_indicator" ? "PJ Trend Engine" :
