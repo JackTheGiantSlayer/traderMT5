@@ -578,6 +578,7 @@ const TradingApp = () => {
     const chatbotEndRef = useRef(null);
     const watchlistRef = useRef([]);
     const historyPriceLinesRef = useRef({});
+    const lastCandleTimesRef = useRef({});
 
     // Dynamic chart resizing to match sidebar collapse/expand animations
     useEffect(() => {
@@ -705,6 +706,12 @@ const TradingApp = () => {
                 if (data && data.length > 0 && series && chart) {
                     series.setData(data);
                     chart.timeScale().fitContent();
+                    
+                    // Keep track of the last candle time to avoid updating with older/stale timestamps from websocket
+                    const lastCandle = data[data.length - 1];
+                    if (lastCandle && lastCandle.time) {
+                        lastCandleTimesRef.current[paneId] = lastCandle.time;
+                    }
                 }
             }
         } catch (err) {
@@ -848,6 +855,7 @@ const TradingApp = () => {
         chartsRef.current = {};
         candlestickSeriesesRef.current = {};
         swingSeriesesRef.current = {};
+        lastCandleTimesRef.current = {};
 
         // Initialize active chart panes
         activePaneIds.forEach((paneId) => {
@@ -1149,6 +1157,7 @@ const TradingApp = () => {
             ws = new WebSocket(wsUrl);
 
             ws.onmessage = (event) => {
+                if (isClosed) return; // Prevent updates if this connection is being closed
                 try {
                     const data = JSON.parse(event.data);
                     
@@ -1167,13 +1176,20 @@ const TradingApp = () => {
                             const tick = data.charts[paneTf];
                             const series = candlestickSeriesesRef.current[pId];
                             if (tick && series) {
-                                series.update({
-                                    time: tick.time,
-                                    open: tick.open,
-                                    high: tick.high,
-                                    low: tick.low,
-                                    close: tick.close
-                                });
+                                const lastTime = lastCandleTimesRef.current[pId];
+                                // Lightweight Charts throws if a tick's timestamp is older than the last candle in the series
+                                if (lastTime === undefined || tick.time >= lastTime) {
+                                    series.update({
+                                        time: tick.time,
+                                        open: tick.open,
+                                        high: tick.high,
+                                        low: tick.low,
+                                        close: tick.close
+                                    });
+                                    lastCandleTimesRef.current[pId] = tick.time;
+                                } else {
+                                    console.warn(`[Chart Pane ${pId}] Ignored outdated tick time ${tick.time} (last candle time: ${lastTime})`);
+                                }
                             }
                         });
                     }
@@ -1183,6 +1199,7 @@ const TradingApp = () => {
             };
 
             ws.onerror = (err) => {
+                if (isClosed) return;
                 console.error("WebSocket error:", err);
                 ws.close();
             };
@@ -3555,6 +3572,8 @@ const TradingApp = () => {
                                     <div className="backtest-form-section-title">กลยุทธ์อัลกอริทึม (Algorithms)</div>
                                     <div className="backtest-checkbox-list">
                                         {[
+                                            { value: 'pj_indicator_v2', label: 'PJ Indicator V2 Premium 🌟' },
+                                            { value: 'pj_indicator', label: 'PJ Indicator V1 🌟' },
                                             { value: 'smc_confluence_pro', label: 'SMC Confluence Pro 🌟' },
                                             { value: 'smc_order_block', label: 'SMC Order Block 🟩' },
                                             { value: 'smc_fvg_imbalance', label: 'SMC FVG Imbalance ⚡' },
@@ -3565,6 +3584,8 @@ const TradingApp = () => {
                                             { value: 'macd', label: 'MACD Crossover 🎛️' },
                                             { value: 'sma_cross', label: 'SMA Crossover ⚔️' },
                                             { value: 'ema_cross_50_200', label: 'EMA Crossover 50/200 🧬' },
+                                            { value: 'ema_cross', label: 'Custom EMA Crossover 🧬' },
+                                            { value: 'adx', label: 'ADX Trend & DI Cross 📊' },
                                             { value: 'harmonic_patterns', label: 'Harmonic Patterns 📐' },
                                             { value: 'elliott_wave', label: 'Elliott Wave 🌊' },
                                             { value: 'rsi_divergence', label: 'RSI Divergence 🎯' },
@@ -3658,6 +3679,152 @@ const TradingApp = () => {
                                             onChange={(e) => setBacktestForm({ ...backtestForm, tp_points: parseFloat(e.target.value) || 0.0 })}
                                             style={{ height: '36px', fontSize: '12px', padding: '6px 10px' }}
                                         />
+                                    </div>
+                                </div>
+
+                                {/* Advanced Risk & Filters */}
+                                <div style={{
+                                    marginTop: '8px',
+                                    borderTop: '1px solid rgba(255,255,255,0.06)',
+                                    paddingTop: '12px',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '10px'
+                                }}>
+                                    <h4 style={{ 
+                                        fontSize: '11.5px', 
+                                        color: 'var(--accent-gold)', 
+                                        textTransform: 'uppercase', 
+                                        letterSpacing: '0.5px',
+                                        margin: '0 0 2px 0',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '6px'
+                                    }}>
+                                        <Icon name="shield" size={12} />
+                                        <span>การบริหารความเสี่ยงและตัวกรองขั้นสูง (Advanced Risk & Filters)</span>
+                                    </h4>
+
+                                    <div className="input-group" style={{ 
+                                        display: 'flex', 
+                                        alignItems: 'center', 
+                                        gap: '8px', 
+                                        background: 'rgba(255,255,255,0.02)',
+                                        padding: '8px 10px',
+                                        borderRadius: '6px',
+                                        border: '1px solid rgba(255,255,255,0.05)',
+                                        cursor: 'pointer',
+                                        margin: 0
+                                    }} onClick={() => setBacktestForm({ ...backtestForm, use_trend_filter: !backtestForm.use_trend_filter })}>
+                                        <input 
+                                            type="checkbox" 
+                                            checked={backtestForm.use_trend_filter || false}
+                                            onChange={(e) => setBacktestForm({ ...backtestForm, use_trend_filter: e.target.checked })}
+                                            onClick={(e) => e.stopPropagation()}
+                                            style={{ accentColor: 'var(--accent-gold)', width: '14px', height: '14px', cursor: 'pointer' }}
+                                        />
+                                        <label style={{ margin: 0, cursor: 'pointer', textTransform: 'none', fontSize: '11px', fontWeight: 600 }}>
+                                            กรองเทรด EMA 200 (Trend Filter)
+                                        </label>
+                                    </div>
+
+                                    <div className="input-group" style={{ 
+                                        display: 'flex', 
+                                        alignItems: 'center', 
+                                        gap: '8px', 
+                                        background: 'rgba(255,255,255,0.02)',
+                                        padding: '8px 10px',
+                                        borderRadius: '6px',
+                                        border: '1px solid rgba(255,255,255,0.05)',
+                                        cursor: 'pointer',
+                                        margin: 0
+                                    }} onClick={() => setBacktestForm({ ...backtestForm, use_mtf_filter: !backtestForm.use_mtf_filter })}>
+                                        <input 
+                                            type="checkbox" 
+                                            checked={backtestForm.use_mtf_filter || false}
+                                            onChange={(e) => setBacktestForm({ ...backtestForm, use_mtf_filter: e.target.checked })}
+                                            onClick={(e) => e.stopPropagation()}
+                                            style={{ accentColor: 'var(--accent-gold)', width: '14px', height: '14px', cursor: 'pointer' }}
+                                        />
+                                        <label style={{ margin: 0, cursor: 'pointer', textTransform: 'none', fontSize: '11px', fontWeight: 600 }}>
+                                            กรองกรอบเวลาใหญ่ (Multi-TF Filter)
+                                        </label>
+                                    </div>
+
+                                    <div style={{
+                                        background: 'rgba(255,255,255,0.02)',
+                                        border: '1px solid rgba(255,255,255,0.05)',
+                                        borderRadius: '6px',
+                                        padding: '10px',
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        gap: '8px'
+                                    }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }} onClick={() => setBacktestForm({ ...backtestForm, use_atr_sizing: !backtestForm.use_atr_sizing })}>
+                                            <input 
+                                                type="checkbox" 
+                                                checked={backtestForm.use_atr_sizing || false}
+                                                onChange={(e) => setBacktestForm({ ...backtestForm, use_atr_sizing: e.target.checked })}
+                                                onClick={(e) => e.stopPropagation()}
+                                                style={{ accentColor: 'var(--accent-gold)', width: '14px', height: '14px', cursor: 'pointer' }}
+                                            />
+                                            <label style={{ margin: 0, cursor: 'pointer', textTransform: 'none', fontSize: '11px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                                คำนวณ Lot ขนาดตามความเสี่ยงพอร์ต (ATR Sizing)
+                                            </label>
+                                        </div>
+                                        
+                                        {backtestForm.use_atr_sizing && (
+                                            <div style={{ 
+                                                display: 'flex', 
+                                                flexDirection: 'column',
+                                                gap: '6px',
+                                                marginTop: '2px',
+                                                borderTop: '1px dashed rgba(255,255,255,0.05)',
+                                                paddingTop: '6px'
+                                            }}>
+                                                <div className="input-group" style={{ margin: 0 }}>
+                                                    <label style={{ fontSize: '10px', marginBottom: '2px', color: 'var(--accent-gold)' }}>เปอร์เซ็นต์ความเสี่ยงต่อไม้ (Risk %)</label>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                        <input 
+                                                            type="number" 
+                                                            className="numeric-input" 
+                                                            required={backtestForm.use_atr_sizing}
+                                                            step="0.1" 
+                                                            min="0.1" 
+                                                            max="10.0"
+                                                            value={backtestForm.risk_percent || 1.0}
+                                                            onChange={(e) => setBacktestForm({ ...backtestForm, risk_percent: parseFloat(e.target.value) || 1.0 })}
+                                                            style={{ height: '28px', fontSize: '11px', padding: '4px 8px', width: '80px' }}
+                                                        />
+                                                        <span style={{ fontSize: '11px', fontWeight: 600 }}>% ของบาลานซ์เริ่มต้น</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div style={{
+                                        background: backtestForm.use_news_filter ? 'rgba(212, 175, 55, 0.05)' : 'rgba(255,255,255,0.02)',
+                                        border: backtestForm.use_news_filter ? '1px solid rgba(212, 175, 55, 0.2)' : '1px solid rgba(255,255,255,0.05)',
+                                        borderRadius: '6px',
+                                        padding: '10px',
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        gap: '6px',
+                                        transition: 'all 0.3s ease'
+                                    }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }} onClick={() => setBacktestForm({ ...backtestForm, use_news_filter: !backtestForm.use_news_filter })}>
+                                            <input 
+                                                type="checkbox" 
+                                                checked={backtestForm.use_news_filter || false}
+                                                onChange={(e) => setBacktestForm({ ...backtestForm, use_news_filter: e.target.checked })}
+                                                onClick={(e) => e.stopPropagation()}
+                                                style={{ accentColor: 'var(--accent-gold)', width: '14px', height: '14px', cursor: 'pointer' }}
+                                            />
+                                            <label style={{ margin: 0, cursor: 'pointer', textTransform: 'none', fontSize: '11px', fontWeight: 700 }}>
+                                                ตัวกรองข่าวเศรษฐกิจและภูมิรัฐศาสตร์ (AI News Filter)
+                                            </label>
+                                        </div>
                                     </div>
                                 </div>
 
@@ -5595,7 +5762,8 @@ const TradingApp = () => {
                                                 <div className="backtest-form-section-title">กลยุทธ์อัลกอริทึม (Algorithms)</div>
                                                 <div className="backtest-checkbox-list">
                                                     {[
-                                                        { id: 'pj_indicator_v2', name: 'PJ Indicator V2 Premium', desc: 'PJ V2: ผสาน multi-factor trend score + MTF dynamic trend + swing volatility block + signal cooldowns' },
+                                                        { value: 'pj_indicator_v2', label: 'PJ Indicator V2 Premium 🌟' },
+                                                        { value: 'pj_indicator', label: 'PJ Indicator V1 🌟' },
                                                         { value: 'smc_confluence_pro', label: 'SMC Confluence Pro 🌟' },
                                                         { value: 'smc_order_block', label: 'SMC Order Block 🟩' },
                                                         { value: 'smc_fvg_imbalance', label: 'SMC FVG Imbalance ⚡' },
@@ -5606,6 +5774,8 @@ const TradingApp = () => {
                                                         { value: 'macd', label: 'MACD Crossover 🎛️' },
                                                         { value: 'sma_cross', label: 'SMA Crossover ⚔️' },
                                                         { value: 'ema_cross_50_200', label: 'EMA Crossover 50/200 🧬' },
+                                                        { value: 'ema_cross', label: 'Custom EMA Crossover 🧬' },
+                                                        { value: 'adx', label: 'ADX Trend & DI Cross 📊' },
                                                         { value: 'harmonic_patterns', label: 'Harmonic Patterns 📐' },
                                                         { value: 'elliott_wave', label: 'Elliott Wave 🌊' },
                                                         { value: 'rsi_divergence', label: 'RSI Divergence 🎯' },
@@ -5700,6 +5870,152 @@ const TradingApp = () => {
                                                         onChange={(e) => setBacktestForm({ ...backtestForm, tp_points: parseFloat(e.target.value) || 0.0 })}
                                                         style={{ height: '36px', fontSize: '12px', padding: '6px 10px' }}
                                                     />
+                                                </div>
+                                            </div>
+
+                                            {/* Advanced Risk & Filters */}
+                                            <div style={{
+                                                marginTop: '8px',
+                                                borderTop: '1px solid rgba(255,255,255,0.06)',
+                                                paddingTop: '12px',
+                                                display: 'flex',
+                                                flexDirection: 'column',
+                                                gap: '10px'
+                                            }}>
+                                                <h4 style={{ 
+                                                    fontSize: '11.5px', 
+                                                    color: 'var(--accent-gold)', 
+                                                    textTransform: 'uppercase', 
+                                                    letterSpacing: '0.5px',
+                                                    margin: '0 0 2px 0',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '6px'
+                                                }}>
+                                                    <Icon name="shield" size={12} />
+                                                    <span>การบริหารความเสี่ยงและตัวกรองขั้นสูง (Advanced Risk & Filters)</span>
+                                                </h4>
+
+                                                <div className="input-group" style={{ 
+                                                    display: 'flex', 
+                                                    alignItems: 'center', 
+                                                    gap: '8px', 
+                                                    background: 'rgba(255,255,255,0.02)',
+                                                    padding: '8px 10px',
+                                                    borderRadius: '6px',
+                                                    border: '1px solid rgba(255,255,255,0.05)',
+                                                    cursor: 'pointer',
+                                                    margin: 0
+                                                }} onClick={() => setBacktestForm({ ...backtestForm, use_trend_filter: !backtestForm.use_trend_filter })}>
+                                                    <input 
+                                                        type="checkbox" 
+                                                        checked={backtestForm.use_trend_filter || false}
+                                                        onChange={(e) => setBacktestForm({ ...backtestForm, use_trend_filter: e.target.checked })}
+                                                        onClick={(e) => e.stopPropagation()}
+                                                        style={{ accentColor: 'var(--accent-gold)', width: '14px', height: '14px', cursor: 'pointer' }}
+                                                    />
+                                                    <label style={{ margin: 0, cursor: 'pointer', textTransform: 'none', fontSize: '11px', fontWeight: 600 }}>
+                                                        กรองเทรด EMA 200 (Trend Filter)
+                                                    </label>
+                                                </div>
+
+                                                <div className="input-group" style={{ 
+                                                    display: 'flex', 
+                                                    alignItems: 'center', 
+                                                    gap: '8px', 
+                                                    background: 'rgba(255,255,255,0.02)',
+                                                    padding: '8px 10px',
+                                                    borderRadius: '6px',
+                                                    border: '1px solid rgba(255,255,255,0.05)',
+                                                    cursor: 'pointer',
+                                                    margin: 0
+                                                }} onClick={() => setBacktestForm({ ...backtestForm, use_mtf_filter: !backtestForm.use_mtf_filter })}>
+                                                    <input 
+                                                        type="checkbox" 
+                                                        checked={backtestForm.use_mtf_filter || false}
+                                                        onChange={(e) => setBacktestForm({ ...backtestForm, use_mtf_filter: e.target.checked })}
+                                                        onClick={(e) => e.stopPropagation()}
+                                                        style={{ accentColor: 'var(--accent-gold)', width: '14px', height: '14px', cursor: 'pointer' }}
+                                                    />
+                                                    <label style={{ margin: 0, cursor: 'pointer', textTransform: 'none', fontSize: '11px', fontWeight: 600 }}>
+                                                        กรองกรอบเวลาใหญ่ (Multi-TF Filter)
+                                                    </label>
+                                                </div>
+
+                                                <div style={{
+                                                    background: 'rgba(255,255,255,0.02)',
+                                                    border: '1px solid rgba(255,255,255,0.05)',
+                                                    borderRadius: '6px',
+                                                    padding: '10px',
+                                                    display: 'flex',
+                                                    flexDirection: 'column',
+                                                    gap: '8px'
+                                                }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }} onClick={() => setBacktestForm({ ...backtestForm, use_atr_sizing: !backtestForm.use_atr_sizing })}>
+                                                        <input 
+                                                            type="checkbox" 
+                                                            checked={backtestForm.use_atr_sizing || false}
+                                                            onChange={(e) => setBacktestForm({ ...backtestForm, use_atr_sizing: e.target.checked })}
+                                                            onClick={(e) => e.stopPropagation()}
+                                                            style={{ accentColor: 'var(--accent-gold)', width: '14px', height: '14px', cursor: 'pointer' }}
+                                                        />
+                                                        <label style={{ margin: 0, cursor: 'pointer', textTransform: 'none', fontSize: '11px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                                            คำนวณ Lot ขนาดตามความเสี่ยงพอร์ต (ATR Sizing)
+                                                        </label>
+                                                    </div>
+                                                    
+                                                    {backtestForm.use_atr_sizing && (
+                                                        <div style={{ 
+                                                            display: 'flex', 
+                                                            flexDirection: 'column',
+                                                            gap: '6px',
+                                                            marginTop: '2px',
+                                                            borderTop: '1px dashed rgba(255,255,255,0.05)',
+                                                            paddingTop: '6px'
+                                                        }}>
+                                                            <div className="input-group" style={{ margin: 0 }}>
+                                                                <label style={{ fontSize: '10px', marginBottom: '2px', color: 'var(--accent-gold)' }}>เปอร์เซ็นต์ความเสี่ยงต่อไม้ (Risk %)</label>
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                                    <input 
+                                                                        type="number" 
+                                                                        className="numeric-input" 
+                                                                        required={backtestForm.use_atr_sizing}
+                                                                        step="0.1" 
+                                                                        min="0.1" 
+                                                                        max="10.0"
+                                                                        value={backtestForm.risk_percent || 1.0}
+                                                                        onChange={(e) => setBacktestForm({ ...backtestForm, risk_percent: parseFloat(e.target.value) || 1.0 })}
+                                                                        style={{ height: '28px', fontSize: '11px', padding: '4px 8px', width: '80px' }}
+                                                                    />
+                                                                    <span style={{ fontSize: '11px', fontWeight: 600 }}>% ของบาลานซ์เริ่มต้น</span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                <div style={{
+                                                    background: backtestForm.use_news_filter ? 'rgba(212, 175, 55, 0.05)' : 'rgba(255,255,255,0.02)',
+                                                    border: backtestForm.use_news_filter ? '1px solid rgba(212, 175, 55, 0.2)' : '1px solid rgba(255,255,255,0.05)',
+                                                    borderRadius: '6px',
+                                                    padding: '10px',
+                                                    display: 'flex',
+                                                    flexDirection: 'column',
+                                                    gap: '6px',
+                                                    transition: 'all 0.3s ease'
+                                                }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }} onClick={() => setBacktestForm({ ...backtestForm, use_news_filter: !backtestForm.use_news_filter })}>
+                                                        <input 
+                                                            type="checkbox" 
+                                                            checked={backtestForm.use_news_filter || false}
+                                                            onChange={(e) => setBacktestForm({ ...backtestForm, use_news_filter: e.target.checked })}
+                                                            onClick={(e) => e.stopPropagation()}
+                                                            style={{ accentColor: 'var(--accent-gold)', width: '14px', height: '14px', cursor: 'pointer' }}
+                                                        />
+                                                        <label style={{ margin: 0, cursor: 'pointer', textTransform: 'none', fontSize: '11px', fontWeight: 700 }}>
+                                                            ตัวกรองข่าวเศรษฐกิจและภูมิรัฐศาสตร์ (AI News Filter)
+                                                        </label>
+                                                    </div>
                                                 </div>
                                             </div>
 

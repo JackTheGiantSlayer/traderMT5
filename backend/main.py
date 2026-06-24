@@ -154,12 +154,16 @@ try:
             print("Database Migration: Successfully added 'ema_slow' column to 'bot_settings' table.")
             
         if "adx_len" not in columns:
-            conn.execute(text("ALTER TABLE bot_settings ADD COLUMN adx_len INTEGER DEFAULT 25"))
+            conn.execute(text("ALTER TABLE bot_settings ADD COLUMN adx_len INTEGER DEFAULT 14"))
             print("Database Migration: Successfully added 'adx_len' column to 'bot_settings' table.")
             
         if "adx_threshold" not in columns:
-            conn.execute(text("ALTER TABLE bot_settings ADD COLUMN adx_threshold INTEGER DEFAULT 30"))
+            conn.execute(text("ALTER TABLE bot_settings ADD COLUMN adx_threshold INTEGER DEFAULT 20"))
             print("Database Migration: Successfully added 'adx_threshold' column to 'bot_settings' table.")
+            
+        if "adx_mode" not in columns:
+            conn.execute(text("ALTER TABLE bot_settings ADD COLUMN adx_mode VARCHAR(20) DEFAULT 'cross_rising'"))
+            print("Database Migration: Successfully added 'adx_mode' column to 'bot_settings' table.")
             
         if "use_trailing_stop" not in columns:
             conn.execute(text("ALTER TABLE bot_settings ADD COLUMN use_trailing_stop BOOLEAN DEFAULT 0"))
@@ -417,8 +421,9 @@ class BotCreateRequest(BaseModel):
     pj_min_cross_count: int = 1
     ema_fast: int = 50
     ema_slow: int = 200
-    adx_len: int = 25
-    adx_threshold: int = 30
+    adx_len: int = 14
+    adx_threshold: int = 20
+    adx_mode: str = "cross_rising"
     use_trailing_stop: bool = False
     trailing_stop_points: float = 0.0
     use_break_even: bool = False
@@ -1314,8 +1319,9 @@ def serialize_bot(bot: BotSettings):
         "pj_min_cross_count": getattr(bot, "pj_min_cross_count", 1) if getattr(bot, "pj_min_cross_count", 1) is not None else 1,
         "ema_fast": getattr(bot, "ema_fast", 50) if getattr(bot, "ema_fast", 50) is not None else 50,
         "ema_slow": getattr(bot, "ema_slow", 200) if getattr(bot, "ema_slow", 200) is not None else 200,
-        "adx_len": getattr(bot, "adx_len", 25) if getattr(bot, "adx_len", 25) is not None else 25,
-        "adx_threshold": getattr(bot, "adx_threshold", 30) if getattr(bot, "adx_threshold", 30) is not None else 30,
+        "adx_len": getattr(bot, "adx_len", 14) if getattr(bot, "adx_len", 14) is not None else 14,
+        "adx_threshold": getattr(bot, "adx_threshold", 20) if getattr(bot, "adx_threshold", 20) is not None else 20,
+        "adx_mode": getattr(bot, "adx_mode", "cross_rising") or "cross_rising",
         "use_trailing_stop": getattr(bot, "use_trailing_stop", False),
         "trailing_stop_points": getattr(bot, "trailing_stop_points", 0.0),
         "use_break_even": getattr(bot, "use_break_even", False),
@@ -1372,6 +1378,7 @@ def create_bot(req: BotCreateRequest, db: Session = Depends(get_db)):
         ema_slow=req.ema_slow,
         adx_len=req.adx_len,
         adx_threshold=req.adx_threshold,
+        adx_mode=req.adx_mode,
         use_trailing_stop=req.use_trailing_stop,
         trailing_stop_points=req.trailing_stop_points,
         use_break_even=req.use_break_even,
@@ -1445,8 +1452,9 @@ def update_bot(bot_id: int, req: BotCreateRequest, db: Session = Depends(get_db)
     if getattr(bot, "pj_min_cross_count", 1) != req.pj_min_cross_count: changes.append(f"PJ Min Cross Count: {getattr(bot, 'pj_min_cross_count', 1)} -> {req.pj_min_cross_count}")
     if getattr(bot, "ema_fast", 50) != req.ema_fast: changes.append(f"EMA Fast: {getattr(bot, 'ema_fast', 50)} -> {req.ema_fast}")
     if getattr(bot, "ema_slow", 200) != req.ema_slow: changes.append(f"EMA Slow: {getattr(bot, 'ema_slow', 200)} -> {req.ema_slow}")
-    if getattr(bot, "adx_len", 25) != req.adx_len: changes.append(f"ADX Len: {getattr(bot, 'adx_len', 25)} -> {req.adx_len}")
-    if getattr(bot, "adx_threshold", 30) != req.adx_threshold: changes.append(f"ADX Threshold: {getattr(bot, 'adx_threshold', 30)} -> {req.adx_threshold}")
+    if getattr(bot, "adx_len", 14) != req.adx_len: changes.append(f"ADX Len: {getattr(bot, 'adx_len', 14)} -> {req.adx_len}")
+    if getattr(bot, "adx_threshold", 20) != req.adx_threshold: changes.append(f"ADX Threshold: {getattr(bot, 'adx_threshold', 20)} -> {req.adx_threshold}")
+    if getattr(bot, "adx_mode", "cross_rising") != req.adx_mode: changes.append(f"ADX Mode: {getattr(bot, 'adx_mode', 'cross_rising')} -> {req.adx_mode}")
     if getattr(bot, "use_trailing_stop", False) != req.use_trailing_stop: changes.append(f"Trailing Stop: {getattr(bot, 'use_trailing_stop', False)} -> {req.use_trailing_stop}")
     if getattr(bot, "trailing_stop_points", 0.0) != req.trailing_stop_points: changes.append(f"Trailing Stop Points: {getattr(bot, 'trailing_stop_points', 0.0)} -> {req.trailing_stop_points}")
     if getattr(bot, "use_break_even", False) != req.use_break_even: changes.append(f"Break-Even: {getattr(bot, 'use_break_even', False)} -> {req.use_break_even}")
@@ -1496,6 +1504,7 @@ def update_bot(bot_id: int, req: BotCreateRequest, db: Session = Depends(get_db)
     bot.ema_slow = req.ema_slow
     bot.adx_len = req.adx_len
     bot.adx_threshold = req.adx_threshold
+    bot.adx_mode = req.adx_mode
     bot.use_trailing_stop = req.use_trailing_stop
     bot.trailing_stop_points = req.trailing_stop_points
     bot.use_break_even = req.use_break_even
@@ -1581,6 +1590,7 @@ def get_advisor_signals(symbol: str = "XAUUSD", timeframe: str = "H1", db: Sessi
         
         algos = [
             {"id": "rsi_overbought_oversold", "name": "RSI Overbought/Oversold"},
+            {"id": "adx", "name": "ADX Trend & DI Cross"},
             {"id": "pj_indicator", "name": "PJ Indicator 🔮"},
             {"id": "stoch_rsi", "name": "Stochastic RSI (StochRSI)"},
             {"id": "macd_4c", "name": "MACD 4 Color (4C) Momentum"},
@@ -1836,6 +1846,36 @@ class BacktestRequest(BaseModel):
     pj_tp_target: str = "manual"
     initial_balance: float = 10000.0
     allowed_sessions: str = "all"
+    adx_len: int = 14
+    adx_threshold: int = 20
+    adx_mode: str = "cross_rising"
+    use_trend_filter: bool = False
+    use_mtf_filter: bool = False
+    use_atr_sizing: bool = False
+    risk_percent: float = 1.0
+    use_news_filter: bool = False
+    
+    # Custom indicator settings
+    stoch_rsi_len: int = 13
+    stoch_len: int = 13
+    stoch_k: int = 3
+    stoch_d: int = 3
+    macd_fast: int = 12
+    macd_slow: int = 26
+    macd_signal: int = 9
+    pj_min_score: int = 6
+    pj_use_volume: bool = False
+    pj_vol_multiplier: float = 2.0
+    pj_vwap_anchor: str = "Session"
+    pj_atr_mult: float = 1.5
+    pj_use_dyn_atr: bool = True
+    pj_cooldown_bars: int = 5
+    pj_min_bars_between: int = 5
+    pj_strict_mtf: bool = False
+    pj_use_atr_block: bool = True
+    pj_min_cross_count: int = 1
+    ema_fast: int = 50
+    ema_slow: int = 200
 
 
 def get_point_multiplier(symbol: str) -> float:
@@ -1873,6 +1913,32 @@ def run_backtest(req: BacktestRequest):
         
         algorithms_list = [a.strip() for a in req.algorithm.split(",") if a.strip()]
         multiplier = get_point_multiplier(req.symbol)
+        
+        backtest_params = {
+            "adx_len": req.adx_len,
+            "adx_threshold": req.adx_threshold,
+            "adx_mode": req.adx_mode,
+            "stoch_rsi_len": req.stoch_rsi_len,
+            "stoch_len": req.stoch_len,
+            "stoch_k": req.stoch_k,
+            "stoch_d": req.stoch_d,
+            "macd_fast": req.macd_fast,
+            "macd_slow": req.macd_slow,
+            "macd_signal": req.macd_signal,
+            "pj_min_score": req.pj_min_score,
+            "pj_use_volume": req.pj_use_volume,
+            "pj_vol_multiplier": req.pj_vol_multiplier,
+            "pj_vwap_anchor": req.pj_vwap_anchor,
+            "pj_atr_mult": req.pj_atr_mult,
+            "pj_use_dyn_atr": req.pj_use_dyn_atr,
+            "pj_cooldown_bars": req.pj_cooldown_bars,
+            "pj_min_bars_between": req.pj_min_bars_between,
+            "pj_strict_mtf": req.pj_strict_mtf,
+            "pj_use_atr_block": req.pj_use_atr_block,
+            "pj_min_cross_count": req.pj_min_cross_count,
+            "ema_fast": req.ema_fast,
+            "ema_slow": req.ema_slow
+        }
         
         # Start at index 35 so indicators like EMA/RSI have enough initialization data
         for i in range(35, len(candles)):
@@ -1927,11 +1993,19 @@ def run_backtest(req: BacktestRequest):
                     elif sl > 0 and high_p >= sl:
                         hit_sl = True
                         
-                # Check for opposite exit signals
                 opp_signal = False
-                sig = evaluate_multi_signals(close_prices_slice, algorithms_list, req.signal_mode, candles=candles_slice, symbol=req.symbol, timeframe=req.timeframe)
+                sig = evaluate_multi_signals(
+                    close_prices_slice, 
+                    algorithms_list, 
+                    req.signal_mode, 
+                    candles=candles_slice, 
+                    symbol=req.symbol, 
+                    timeframe=req.timeframe,
+                    **backtest_params
+                )
                 if not is_allowed:
                     sig = "none"
+                
                 if t_type == "buy" and sig == "sell":
                     opp_signal = True
                 elif t_type == "sell" and sig == "buy":
@@ -1949,10 +2023,11 @@ def run_backtest(req: BacktestRequest):
                         close_reason = "Stop Loss"
                         
                     # Compute simulated gain/loss
+                    trade_lot = active_trade.get("lot_size", req.lot_size)
                     if t_type == "buy":
-                        pnl = (close_p - open_p) * req.lot_size * multiplier
+                        pnl = (close_p - open_p) * trade_lot * multiplier
                     else:
-                        pnl = (open_p - close_p) * req.lot_size * multiplier
+                        pnl = (open_p - close_p) * trade_lot * multiplier
                         
                     balance += pnl
                     
@@ -1981,9 +2056,88 @@ def run_backtest(req: BacktestRequest):
                     
             # 2. Look for new trades if none active
             if not active_trade:
-                sig = evaluate_multi_signals(close_prices_slice, algorithms_list, req.signal_mode, candles=candles_slice, symbol=req.symbol, timeframe=req.timeframe)
+                sig = evaluate_multi_signals(
+                    close_prices_slice, 
+                    algorithms_list, 
+                    req.signal_mode, 
+                    candles=candles_slice, 
+                    symbol=req.symbol, 
+                    timeframe=req.timeframe,
+                    **backtest_params
+                )
                 if not is_allowed:
                     sig = "none"
+                    
+                if sig in ["buy", "sell"]:
+                    # A. Apply EMA 200 Trend Filter
+                    if req.use_trend_filter:
+                        from backend.pattern_detector import calculate_ema
+                        ema200 = calculate_ema(close_prices_slice, 200)
+                        if ema200 and ema200[-1] is not None:
+                            if sig == "buy" and current_price < ema200[-1]:
+                                sig = "none"
+                            elif sig == "sell" and current_price > ema200[-1]:
+                                sig = "none"
+                                
+                if sig in ["buy", "sell"]:
+                    # B. Apply Multi-Timeframe Trend Filter (HTF EMA 200)
+                    if req.use_mtf_filter:
+                        try:
+                            htf = "H1"
+                            tf = req.timeframe.upper()
+                            if tf == "M1": htf = "M15"
+                            elif tf == "M5": htf = "H1"
+                            elif tf == "M15": htf = "H1"
+                            elif tf == "M30": htf = "H4"
+                            elif tf == "H1": htf = "H4"
+                            elif tf == "H4": htf = "D1"
+                            else: htf = "D1"
+                            
+                            htf_candles = mt5_manager.get_historical_candles(req.symbol, htf, count=250)
+                            htf_candles_past = [c for c in htf_candles if c["time"] <= current_time]
+                            if len(htf_candles_past) >= 200:
+                                from backend.pattern_detector import calculate_ema
+                                htf_close = [c["close"] for c in htf_candles_past]
+                                htf_ema200 = calculate_ema(htf_close, 200)
+                                htf_current = htf_close[-1]
+                                if htf_ema200[-1] is not None:
+                                    if sig == "buy" and htf_current < htf_ema200[-1]:
+                                        sig = "none"
+                                    elif sig == "sell" and htf_current > htf_ema200[-1]:
+                                        sig = "none"
+                        except Exception:
+                            pass
+                            
+                if sig in ["buy", "sell"]:
+                    # C. Apply News Sentiment Filter
+                    if req.use_news_filter:
+                        try:
+                            from backend.database import SessionLocal
+                            from backend.models import NewsRecord
+                            with SessionLocal() as db_session:
+                                latest_news = db_session.query(NewsRecord).filter(
+                                    NewsRecord.published_at <= datetime.fromtimestamp(current_time)
+                                ).order_by(NewsRecord.published_at.desc()).limit(10).all()
+                                
+                                has_high_geopolitical = any(
+                                    n.category == "geopolitical" and n.impact_level == "high" 
+                                    for n in latest_news
+                                )
+                                has_bearish_macro = any(
+                                    n.category == "macroeconomic" and n.sentiment == "bearish" and n.impact_level in ["high", "medium"]
+                                    for n in latest_news
+                                )
+                                
+                                symbol_upper = req.symbol.upper()
+                                is_gold = "XAU" in symbol_upper or "GOLD" in symbol_upper
+                                
+                                if has_high_geopolitical and is_gold and sig == "sell":
+                                    sig = "none"
+                                elif has_bearish_macro and is_gold and sig == "buy":
+                                    sig = "none"
+                        except Exception:
+                            pass
+                            
                 if sig in ["buy", "sell"]:
                     sl_p = 0.0
                     tp_p = 0.0
@@ -2037,6 +2191,21 @@ def run_backtest(req: BacktestRequest):
                             if req.sl_points > 0: sl_p = current_price + req.sl_points
                             if req.tp_points > 0: tp_p = current_price - req.tp_points
                         
+                    # D. Calculate dynamic position lot size
+                    trade_lot = req.lot_size
+                    if req.use_atr_sizing:
+                        try:
+                            from backend.pattern_detector import calculate_atr
+                            atr_vals = calculate_atr(candles_slice, 14)
+                            atr_val = atr_vals[-1] if (atr_vals and atr_vals[-1] is not None) else 0.0
+                            sl_dist = req.sl_points if req.sl_points > 0 else (1.5 * atr_val)
+                            if sl_dist > 0:
+                                risk_amt = balance * (req.risk_percent / 100.0)
+                                calc_lot = risk_amt / (sl_dist * multiplier)
+                                trade_lot = round(max(0.01, min(10.0, calc_lot)), 2)
+                        except Exception:
+                            pass
+                            
                     active_trade = {
                         "ticket": ticket_counter,
                         "type": sig,
@@ -2044,7 +2213,8 @@ def run_backtest(req: BacktestRequest):
                         "open_time": datetime.fromtimestamp(current_time, BANGKOK_TZ).strftime("%Y-%m-%d %H:%M:%S"),
                         "open_timestamp": current_time,
                         "sl": sl_p,
-                        "tp": tp_p
+                        "tp": tp_p,
+                        "lot_size": trade_lot
                     }
                     ticket_counter += 1
                     
@@ -2053,11 +2223,12 @@ def run_backtest(req: BacktestRequest):
             t_type = active_trade["type"]
             open_p = active_trade["open_price"]
             close_p = candles[-1]["close"]
+            trade_lot = active_trade.get("lot_size", req.lot_size)
             
             if t_type == "buy":
-                pnl = (close_p - open_p) * req.lot_size * multiplier
+                pnl = (close_p - open_p) * trade_lot * multiplier
             else:
-                pnl = (open_p - close_p) * req.lot_size * multiplier
+                pnl = (open_p - close_p) * trade_lot * multiplier
                 
             balance += pnl
             
@@ -2205,6 +2376,14 @@ class AdvancedBacktestRequest(BaseModel):
     allowed_sessions: str = "all"
     start_date: str = ""
     end_date: str = ""
+    adx_len: int = 14
+    adx_threshold: int = 20
+    adx_mode: str = "cross_rising"
+    use_trend_filter: bool = False
+    use_mtf_filter: bool = False
+    use_atr_sizing: bool = False
+    risk_percent: float = 1.0
+    use_news_filter: bool = False
 
 @app.post("/api/backtest/advanced")
 def api_run_advanced_backtest(req: AdvancedBacktestRequest, db: Session = Depends(get_db)):
@@ -2236,7 +2415,15 @@ def api_run_advanced_backtest(req: AdvancedBacktestRequest, db: Session = Depend
             initial_balance=req.initial_balance,
             allowed_sessions=req.allowed_sessions,
             start_dt=start_dt,
-            end_dt=end_dt
+            end_dt=end_dt,
+            adx_len=req.adx_len,
+            adx_threshold=req.adx_threshold,
+            adx_mode=req.adx_mode,
+            use_trend_filter=req.use_trend_filter,
+            use_mtf_filter=req.use_mtf_filter,
+            use_atr_sizing=req.use_atr_sizing,
+            risk_percent=req.risk_percent,
+            use_news_filter=req.use_news_filter
         )
         return result
     except Exception as e:

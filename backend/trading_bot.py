@@ -296,13 +296,15 @@ def evaluate_signals(prices, algorithm, candles=None, symbol="XAUUSD", timeframe
         from backend.pattern_detector import detect_fvg
         return detect_fvg(candles)
     elif algorithm == "adx":
-        adx_len = kwargs.get("adx_len") or 25
-        adx_threshold = kwargs.get("adx_threshold") or 30
+        adx_len = kwargs.get("adx_len") or 14
+        adx_threshold = kwargs.get("adx_threshold") or 20
+        adx_mode = kwargs.get("adx_mode") or "cross_rising"
+        
         if candles is None or len(candles) < (adx_len + 10):
             return "none"
         from backend.pattern_detector import calculate_adx
         adx_vals, plus_di, minus_di = calculate_adx(candles, adx_len)
-        if (len(adx_vals) < 3 or adx_vals[-2] is None or 
+        if (len(adx_vals) < 3 or adx_vals[-2] is None or adx_vals[-3] is None or
             plus_di[-2] is None or plus_di[-3] is None or 
             minus_di[-2] is None or minus_di[-3] is None):
             return "none"
@@ -312,14 +314,28 @@ def evaluate_signals(prices, algorithm, candles=None, symbol="XAUUSD", timeframe
         minus_di_prev2 = minus_di[-3]
         minus_di_prev = minus_di[-2]
         adx_prev = adx_vals[-2]
+        adx_prev2 = adx_vals[-3]
         
-        is_bullish_cross = plus_di_prev2 <= minus_di_prev2 and plus_di_prev > minus_di_prev
-        is_bearish_cross = plus_di_prev2 >= minus_di_prev2 and plus_di_prev < minus_di_prev
-        
-        if is_bullish_cross and adx_prev is not None and adx_prev > adx_threshold:
-            return "buy"
-        if is_bearish_cross and adx_prev is not None and adx_prev > adx_threshold:
-            return "sell"
+        if adx_mode == "state_breakout":
+            # Option 1: State-based + ADX Breakout
+            is_adx_breakout = adx_prev2 <= adx_threshold and adx_prev > adx_threshold
+            if is_adx_breakout:
+                if plus_di_prev > minus_di_prev:
+                    return "buy"
+                elif minus_di_prev > plus_di_prev:
+                    return "sell"
+        else:
+            # Option 2: DI Cross + ADX Rising (Default)
+            is_bullish_cross = plus_di_prev2 <= minus_di_prev2 and plus_di_prev > minus_di_prev
+            is_bearish_cross = plus_di_prev2 >= minus_di_prev2 and plus_di_prev < minus_di_prev
+            is_adx_rising = adx_prev > adx_prev2
+            
+            if is_bullish_cross and is_adx_rising:
+                return "buy"
+            if is_bearish_cross and is_adx_rising:
+                return "sell"
+                
+        return "none"
             
     elif algorithm == "pj_indicator":
         if candles is None or len(candles) < 55:
@@ -804,8 +820,9 @@ class BotManager:
             pj_vwap_anchor=getattr(bot, "pj_vwap_anchor", "Session") or "Session",
             ema_fast=getattr(bot, "ema_fast", 50) if getattr(bot, "ema_fast", 50) is not None else 50,
             ema_slow=getattr(bot, "ema_slow", 200) if getattr(bot, "ema_slow", 200) is not None else 200,
-            adx_len=getattr(bot, "adx_len", 25) if getattr(bot, "adx_len", 25) is not None else 25,
-            adx_threshold=getattr(bot, "adx_threshold", 30) if getattr(bot, "adx_threshold", 30) is not None else 30
+            adx_len=getattr(bot, "adx_len", 14) if getattr(bot, "adx_len", 14) is not None else 14,
+            adx_threshold=getattr(bot, "adx_threshold", 20) if getattr(bot, "adx_threshold", 20) is not None else 20,
+            adx_mode=getattr(bot, "adx_mode", "cross_rising") or "cross_rising"
         )
         
         # Apply Geopolitical & News Sentiment Filter
@@ -1147,7 +1164,7 @@ class BotManager:
                                 ind_info_list.append(f"RSI={rsi:.2f}")
                         elif algo == "adx":
                             from backend.pattern_detector import calculate_adx
-                            a_len = getattr(bot, "adx_len", 25) or 25
+                            a_len = getattr(bot, "adx_len", 14) or 14
                             adx_vals, plus_di, minus_di = calculate_adx(candles, a_len)
                             if adx_vals[-1] is not None:
                                 ind_info_list.append(f"ADX={adx_vals[-1]:.1f}, +DI={plus_di[-1]:.1f}, -DI={minus_di[-1]:.1f}")

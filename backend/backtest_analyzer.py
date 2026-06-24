@@ -181,7 +181,7 @@ def get_point_multiplier(symbol: str) -> float:
     else:
         return 1.0
 
-def execute_backtest_on_candles(candles: list, algorithm: str, signal_mode: str, lot_size: float, sl_points: float, tp_points: float, initial_balance: float, allowed_sessions: str, symbol: str, timeframe: str) -> dict:
+def execute_backtest_on_candles(candles: list, algorithm: str, signal_mode: str, lot_size: float, sl_points: float, tp_points: float, initial_balance: float, allowed_sessions: str, symbol: str, timeframe: str, **kwargs) -> dict:
     """Executes the simulation loop on a provided array of candles."""
     from backend.trading_bot import evaluate_multi_signals
     
@@ -243,7 +243,7 @@ def execute_backtest_on_candles(candles: list, algorithm: str, signal_mode: str,
                     
             # Opposite Exit Signal
             opp_signal = False
-            sig = evaluate_multi_signals(close_prices_slice, algorithms_list, signal_mode, candles=candles_slice, symbol=symbol, timeframe=timeframe)
+            sig = evaluate_multi_signals(close_prices_slice, algorithms_list, signal_mode, candles=candles_slice, symbol=symbol, timeframe=timeframe, **kwargs)
             if not is_allowed:
                 sig = "none"
                 
@@ -262,10 +262,11 @@ def execute_backtest_on_candles(candles: list, algorithm: str, signal_mode: str,
                     close_p = sl
                     close_reason = "Stop Loss"
                     
+                trade_lot = active_trade.get("lot_size", lot_size)
                 if t_type == "buy":
-                    pnl = (close_p - open_p) * lot_size * multiplier
+                    pnl = (close_p - open_p) * trade_lot * multiplier
                 else:
-                    pnl = (open_p - close_p) * lot_size * multiplier
+                    pnl = (open_p - close_p) * trade_lot * multiplier
                     
                 balance += pnl
                 trades_history.append({
@@ -288,9 +289,85 @@ def execute_backtest_on_candles(candles: list, algorithm: str, signal_mode: str,
                 
         # 2. Look for new trades
         if not active_trade:
-            sig = evaluate_multi_signals(close_prices_slice, algorithms_list, signal_mode, candles=candles_slice, symbol=symbol, timeframe=timeframe)
+            sig = evaluate_multi_signals(close_prices_slice, algorithms_list, signal_mode, candles=candles_slice, symbol=symbol, timeframe=timeframe, **kwargs)
             if not is_allowed:
                 sig = "none"
+                
+            use_trend_filter = kwargs.get("use_trend_filter", False)
+            use_mtf_filter = kwargs.get("use_mtf_filter", False)
+            use_news_filter = kwargs.get("use_news_filter", False)
+            use_atr_sizing = kwargs.get("use_atr_sizing", False)
+            risk_percent = kwargs.get("risk_percent", 1.0)
+            
+            if sig in ["buy", "sell"]:
+                # A. Apply EMA 200 Trend Filter
+                if use_trend_filter:
+                    from backend.pattern_detector import calculate_ema
+                    ema200 = calculate_ema(close_prices_slice, 200)
+                    if ema200 and ema200[-1] is not None:
+                        if sig == "buy" and current_price < ema200[-1]:
+                            sig = "none"
+                        elif sig == "sell" and current_price > ema200[-1]:
+                            sig = "none"
+                            
+            if sig in ["buy", "sell"]:
+                # B. Apply Multi-Timeframe Trend Filter (HTF EMA 200)
+                if use_mtf_filter:
+                    try:
+                        htf = "H1"
+                        tf = timeframe.upper()
+                        if tf == "M1": htf = "M15"
+                        elif tf == "M5": htf = "H1"
+                        elif tf == "M15": htf = "H1"
+                        elif tf == "M30": htf = "H4"
+                        elif tf == "H1": htf = "H4"
+                        elif tf == "H4": htf = "D1"
+                        else: htf = "D1"
+                        
+                        htf_candles = mt5_manager.get_historical_candles(symbol, htf, count=250)
+                        htf_candles_past = [c for c in htf_candles if c["time"] <= current_time]
+                        if len(htf_candles_past) >= 200:
+                            from backend.pattern_detector import calculate_ema
+                            htf_close = [c["close"] for c in htf_candles_past]
+                            htf_ema200 = calculate_ema(htf_close, 200)
+                            htf_current = htf_close[-1]
+                            if htf_ema200[-1] is not None:
+                                if sig == "buy" and htf_current < htf_ema200[-1]:
+                                    sig = "none"
+                                elif sig == "sell" and htf_current > htf_ema200[-1]:
+                                    sig = "none"
+                    except Exception:
+                        pass
+                        
+            if sig in ["buy", "sell"]:
+                # C. Apply News Sentiment Filter
+                if use_news_filter:
+                    try:
+                        from backend.database import SessionLocal
+                        from backend.models import NewsRecord
+                        with SessionLocal() as db_session:
+                            latest_news = db_session.query(NewsRecord).filter(
+                                NewsRecord.published_at <= datetime.fromtimestamp(current_time)
+                            ).order_by(NewsRecord.published_at.desc()).limit(10).all()
+                            
+                            has_high_geopolitical = any(
+                                n.category == "geopolitical" and n.impact_level == "high" 
+                                for n in latest_news
+                            )
+                            has_bearish_macro = any(
+                                n.category == "macroeconomic" and n.sentiment == "bearish" and n.impact_level in ["high", "medium"]
+                                for n in latest_news
+                            )
+                            
+                            symbol_upper = symbol.upper()
+                            is_gold = "XAU" in symbol_upper or "GOLD" in symbol_upper
+                            
+                            if has_high_geopolitical and is_gold and sig == "sell":
+                                sig = "none"
+                            elif has_bearish_macro and is_gold and sig == "buy":
+                                sig = "none"
+                    except Exception:
+                        pass
                 
             if sig in ["buy", "sell"]:
                 sl_p = 0.0
@@ -318,6 +395,21 @@ def execute_backtest_on_candles(candles: list, algorithm: str, signal_mode: str,
                         if sl_points > 0: sl_p = current_price + sl_points
                         if tp_points > 0: tp_p = current_price - tp_points
                         
+                # D. Calculate Dynamic Position size
+                trade_lot = lot_size
+                if use_atr_sizing:
+                    try:
+                        from backend.pattern_detector import calculate_atr
+                        atr_vals = calculate_atr(candles_slice, 14)
+                        atr_val = atr_vals[-1] if (atr_vals and atr_vals[-1] is not None) else 0.0
+                        sl_dist = sl_points if sl_points > 0 else (1.5 * atr_val)
+                        if sl_dist > 0:
+                            risk_amt = balance * (risk_percent / 100.0)
+                            calc_lot = risk_amt / (sl_dist * multiplier)
+                            trade_lot = round(max(0.01, min(10.0, calc_lot)), 2)
+                    except Exception:
+                        pass
+                        
                 active_trade = {
                     "ticket": ticket_counter,
                     "type": sig,
@@ -325,7 +417,8 @@ def execute_backtest_on_candles(candles: list, algorithm: str, signal_mode: str,
                     "open_time": datetime.fromtimestamp(current_time, BANGKOK_TZ).strftime("%Y-%m-%d %H:%M:%S"),
                     "open_timestamp": current_time,
                     "sl": sl_p,
-                    "tp": tp_p
+                    "tp": tp_p,
+                    "lot_size": trade_lot
                 }
                 ticket_counter += 1
                 
@@ -334,7 +427,8 @@ def execute_backtest_on_candles(candles: list, algorithm: str, signal_mode: str,
         t_type = active_trade["type"]
         open_p = active_trade["open_price"]
         close_p = candles[-1]["close"]
-        pnl = (close_p - open_p) * lot_size * multiplier if t_type == "buy" else (open_p - close_p) * lot_size * multiplier
+        trade_lot = active_trade.get("lot_size", lot_size)
+        pnl = (close_p - open_p) * trade_lot * multiplier if t_type == "buy" else (open_p - close_p) * trade_lot * multiplier
         balance += pnl
         trades_history.append({
             "ticket": active_trade["ticket"],
@@ -359,7 +453,7 @@ def execute_backtest_on_candles(candles: list, algorithm: str, signal_mode: str,
         "equity_curve": equity_curve
     }
 
-def run_advanced_backtest(db: Session, symbol: str, timeframe: str, algorithm: str, signal_mode: str, lot_size: float, sl_points: float, tp_points: float, initial_balance: float, allowed_sessions: str, start_dt: datetime, end_dt: datetime) -> dict:
+def run_advanced_backtest(db: Session, symbol: str, timeframe: str, algorithm: str, signal_mode: str, lot_size: float, sl_points: float, tp_points: float, initial_balance: float, allowed_sessions: str, start_dt: datetime, end_dt: datetime, **kwargs) -> dict:
     """
     Runs an advanced historical backtest on cached DB candles, 
     calculates stats, WFO, Monte Carlo, and Monthly metrics, and commits results.
@@ -384,7 +478,7 @@ def run_advanced_backtest(db: Session, symbol: str, timeframe: str, algorithm: s
     
     # 2. Execute full backtest
     full_result = execute_backtest_on_candles(
-        candles, algorithm, signal_mode, lot_size, sl_points, tp_points, initial_balance, allowed_sessions, symbol, timeframe
+        candles, algorithm, signal_mode, lot_size, sl_points, tp_points, initial_balance, allowed_sessions, symbol, timeframe, **kwargs
     )
     
     trades_history = full_result["trades"]

@@ -190,7 +190,9 @@ class MT5Manager:
                 local_utc_time = int(time.time())
                 # Only use tick time if it's recent (within 30 seconds) to avoid weekend/market-close issues
                 if abs(local_utc_time - tick_time) < 30:
-                    offset = tick_time - local_utc_time
+                    raw_offset = tick_time - local_utc_time
+                    # Round to nearest hour to prevent second-by-second timezone shift fluctuations
+                    offset = int(round(raw_offset / 3600.0) * 3600)
                     self._cached_broker_offset = offset
                     return offset
         except Exception as e:
