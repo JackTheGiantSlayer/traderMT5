@@ -448,7 +448,36 @@ const TradingApp = () => {
         sl_points: 5.0,
         tp_points: 10.0,
         initial_balance: 10000.0,
-        signal_mode: "or"
+        signal_mode: "or",
+        stoch_rsi_len: 13,
+        stoch_len: 13,
+        stoch_k: 3,
+        stoch_d: 3,
+        macd_fast: 12,
+        macd_slow: 26,
+        macd_signal: 9,
+        pj_min_score: 6,
+        pj_use_volume: false,
+        pj_vol_multiplier: 2.0,
+        pj_vwap_anchor: "Session",
+        pj_atr_mult: 1.5,
+        pj_use_dyn_atr: true,
+        pj_tp_target: "manual",
+        pj_cooldown_bars: 5,
+        pj_min_bars_between: 5,
+        pj_strict_mtf: false,
+        pj_use_atr_block: true,
+        pj_min_cross_count: 1,
+        ema_fast: 50,
+        ema_slow: 200,
+        adx_len: 14,
+        adx_threshold: 20,
+        adx_mode: "cross_rising",
+        use_trend_filter: false,
+        use_mtf_filter: false,
+        use_atr_sizing: false,
+        risk_percent: 1.0,
+        use_news_filter: false
     });
     const [backtestSelectedAlgos, setBacktestSelectedAlgos] = useState(["rsi_overbought_oversold"]);
     const [backtestResult, setBacktestResult] = useState(null);
@@ -1544,7 +1573,36 @@ const TradingApp = () => {
                     lot_size: parseFloat(backtestForm.lot_size) || 0.1,
                     sl_points: parseFloat(backtestForm.sl_points) || 0.0,
                     tp_points: parseFloat(backtestForm.tp_points) || 0.0,
-                    initial_balance: parseFloat(backtestForm.initial_balance) || 10000.0
+                    initial_balance: parseFloat(backtestForm.initial_balance) || 10000.0,
+                    pj_min_score: parseInt(backtestForm.pj_min_score) || 6,
+                    pj_use_volume: backtestForm.pj_use_volume || false,
+                    pj_vol_multiplier: parseFloat(backtestForm.pj_vol_multiplier) || 2.0,
+                    pj_vwap_anchor: backtestForm.pj_vwap_anchor || "Session",
+                    pj_atr_mult: parseFloat(backtestForm.pj_atr_mult) || 1.5,
+                    pj_use_dyn_atr: backtestForm.pj_use_dyn_atr || false,
+                    pj_tp_target: backtestForm.pj_tp_target || "manual",
+                    pj_cooldown_bars: parseInt(backtestForm.pj_cooldown_bars) || 5,
+                    pj_min_bars_between: parseInt(backtestForm.pj_min_bars_between) || 5,
+                    pj_strict_mtf: backtestForm.pj_strict_mtf || false,
+                    pj_use_atr_block: backtestForm.pj_use_atr_block || false,
+                    pj_min_cross_count: parseInt(backtestForm.pj_min_cross_count) || 1,
+                    stoch_rsi_len: parseInt(backtestForm.stoch_rsi_len) || 13,
+                    stoch_len: parseInt(backtestForm.stoch_len) || 13,
+                    stoch_k: parseInt(backtestForm.stoch_k) || 3,
+                    stoch_d: parseInt(backtestForm.stoch_d) || 3,
+                    macd_fast: parseInt(backtestForm.macd_fast) || 12,
+                    macd_slow: parseInt(backtestForm.macd_slow) || 26,
+                    macd_signal: parseInt(backtestForm.macd_signal) || 9,
+                    ema_fast: parseInt(backtestForm.ema_fast) || 50,
+                    ema_slow: parseInt(backtestForm.ema_slow) || 200,
+                    adx_len: parseInt(backtestForm.adx_len) || 14,
+                    adx_threshold: parseInt(backtestForm.adx_threshold) || 20,
+                    adx_mode: backtestForm.adx_mode || "cross_rising",
+                    use_trend_filter: backtestForm.use_trend_filter || false,
+                    use_mtf_filter: backtestForm.use_mtf_filter || false,
+                    use_atr_sizing: backtestForm.use_atr_sizing || false,
+                    risk_percent: parseFloat(backtestForm.risk_percent) || 1.0,
+                    use_news_filter: backtestForm.use_news_filter || false
                 })
             });
 
@@ -3619,6 +3677,246 @@ const TradingApp = () => {
                                         })}
                                     </div>
                                 </div>
+
+                                {/* Dynamic Indicator Parameters */}
+                                {(backtestSelectedAlgos.includes('stoch_rsi') ||
+                                  backtestSelectedAlgos.includes('macd') ||
+                                  backtestSelectedAlgos.includes('macd_4c') ||
+                                  backtestSelectedAlgos.includes('pj_indicator') ||
+                                  backtestSelectedAlgos.includes('pj_indicator_v2') ||
+                                  backtestSelectedAlgos.includes('ema_cross') ||
+                                  backtestSelectedAlgos.includes('adx')) && (
+                                    <div style={{
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        gap: '10px',
+                                        background: 'rgba(255,255,255,0.01)',
+                                        padding: '10px',
+                                        borderRadius: '6px',
+                                        border: '1px solid rgba(255,255,255,0.04)',
+                                        marginTop: '6px',
+                                        marginBottom: '10px'
+                                    }}>
+                                        <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--accent-gold)' }}>พารามิเตอร์กลยุทธ์ (Indicator Settings)</div>
+
+                                        {/* Stochastic RSI */}
+                                        {backtestSelectedAlgos.includes('stoch_rsi') && (
+                                            <div style={{ borderBottom: '1px dashed rgba(255,255,255,0.05)', paddingBottom: '6px' }}>
+                                                <span style={{ fontSize: '10px', color: '#999', display: 'block', marginBottom: '4px' }}>Stochastic RSI Parameters:</span>
+                                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '6px' }}>
+                                                    <div className="input-group" style={{ margin: 0 }}>
+                                                        <label style={{ fontSize: '9px', marginBottom: '2px' }}>RSI Len</label>
+                                                        <input type="number" className="numeric-input" value={backtestForm.stoch_rsi_len} onChange={(e) => setBacktestForm({ ...backtestForm, stoch_rsi_len: parseInt(e.target.value) || 13 })} style={{ height: '28px', fontSize: '11px', padding: '4px', width: '100%' }} />
+                                                    </div>
+                                                    <div className="input-group" style={{ margin: 0 }}>
+                                                        <label style={{ fontSize: '9px', marginBottom: '2px' }}>Stoch Len</label>
+                                                        <input type="number" className="numeric-input" value={backtestForm.stoch_len} onChange={(e) => setBacktestForm({ ...backtestForm, stoch_len: parseInt(e.target.value) || 13 })} style={{ height: '28px', fontSize: '11px', padding: '4px', width: '100%' }} />
+                                                    </div>
+                                                    <div className="input-group" style={{ margin: 0 }}>
+                                                        <label style={{ fontSize: '9px', marginBottom: '2px' }}>%K</label>
+                                                        <input type="number" className="numeric-input" value={backtestForm.stoch_k} onChange={(e) => setBacktestForm({ ...backtestForm, stoch_k: parseInt(e.target.value) || 3 })} style={{ height: '28px', fontSize: '11px', padding: '4px', width: '100%' }} />
+                                                    </div>
+                                                    <div className="input-group" style={{ margin: 0 }}>
+                                                        <label style={{ fontSize: '9px', marginBottom: '2px' }}>%D</label>
+                                                        <input type="number" className="numeric-input" value={backtestForm.stoch_d} onChange={(e) => setBacktestForm({ ...backtestForm, stoch_d: parseInt(e.target.value) || 3 })} style={{ height: '28px', fontSize: '11px', padding: '4px', width: '100%' }} />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* MACD / MACD 4 Color */}
+                                        {(backtestSelectedAlgos.includes('macd') || backtestSelectedAlgos.includes('macd_4c')) && (
+                                            <div style={{ borderBottom: '1px dashed rgba(255,255,255,0.05)', paddingBottom: '6px' }}>
+                                                <span style={{ fontSize: '10px', color: '#999', display: 'block', marginBottom: '4px' }}>MACD Parameters:</span>
+                                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px' }}>
+                                                    <div className="input-group" style={{ margin: 0 }}>
+                                                        <label style={{ fontSize: '9px', marginBottom: '2px' }}>Fast Period</label>
+                                                        <input type="number" className="numeric-input" value={backtestForm.macd_fast} onChange={(e) => setBacktestForm({ ...backtestForm, macd_fast: parseInt(e.target.value) || 12 })} style={{ height: '28px', fontSize: '11px', padding: '4px', width: '100%' }} />
+                                                    </div>
+                                                    <div className="input-group" style={{ margin: 0 }}>
+                                                        <label style={{ fontSize: '9px', marginBottom: '2px' }}>Slow Period</label>
+                                                        <input type="number" className="numeric-input" value={backtestForm.macd_slow} onChange={(e) => setBacktestForm({ ...backtestForm, macd_slow: parseInt(e.target.value) || 26 })} style={{ height: '28px', fontSize: '11px', padding: '4px', width: '100%' }} />
+                                                    </div>
+                                                    <div className="input-group" style={{ margin: 0 }}>
+                                                        <label style={{ fontSize: '9px', marginBottom: '2px' }}>Signal Smooth</label>
+                                                        <input type="number" className="numeric-input" value={backtestForm.macd_signal} onChange={(e) => setBacktestForm({ ...backtestForm, macd_signal: parseInt(e.target.value) || 9 })} style={{ height: '28px', fontSize: '11px', padding: '4px', width: '100%' }} />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* PJ Indicator V1 */}
+                                        {backtestSelectedAlgos.includes('pj_indicator') && (
+                                            <div style={{ borderBottom: '1px dashed rgba(255,255,255,0.05)', paddingBottom: '6px' }}>
+                                                <span style={{ fontSize: '10px', color: '#999', display: 'block', marginBottom: '4px' }}>PJ V1 Parameters:</span>
+                                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px' }}>
+                                                    <div className="input-group" style={{ margin: 0 }}>
+                                                        <label style={{ fontSize: '9px', marginBottom: '2px' }}>Min Score (1-10)</label>
+                                                        <input type="number" className="numeric-input" min="1" max="10" value={backtestForm.pj_min_score} onChange={(e) => setBacktestForm({ ...backtestForm, pj_min_score: parseInt(e.target.value) || 6 })} style={{ height: '28px', fontSize: '11px', padding: '4px', width: '100%' }} />
+                                                    </div>
+                                                    <div className="input-group" style={{ margin: 0 }}>
+                                                        <label style={{ fontSize: '9px', marginBottom: '2px' }}>Vol Multiplier</label>
+                                                        <input type="number" className="numeric-input" step="0.1" value={backtestForm.pj_vol_multiplier} onChange={(e) => setBacktestForm({ ...backtestForm, pj_vol_multiplier: parseFloat(e.target.value) || 2.0 })} style={{ height: '28px', fontSize: '11px', padding: '4px', width: '100%' }} />
+                                                    </div>
+                                                    <div className="input-group" style={{ margin: 0 }}>
+                                                        <label style={{ fontSize: '9px', marginBottom: '2px' }}>VWAP Anchor</label>
+                                                        <select value={backtestForm.pj_vwap_anchor} onChange={(e) => setBacktestForm({ ...backtestForm, pj_vwap_anchor: e.target.value })} style={{ height: '28px', fontSize: '11px', padding: '2px 4px', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '4px', color: '#fff', width: '100%' }}>
+                                                            <option value="Session">Session</option>
+                                                            <option value="Week">Week</option>
+                                                            <option value="Month">Month</option>
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginTop: '6px' }}>
+                                                    <div className="input-group" style={{ margin: 0 }}>
+                                                        <label style={{ fontSize: '9px', marginBottom: '2px' }}>ATR Multiplier</label>
+                                                        <input type="number" className="numeric-input" step="0.1" value={backtestForm.pj_atr_mult} onChange={(e) => setBacktestForm({ ...backtestForm, pj_atr_mult: parseFloat(e.target.value) || 1.5 })} style={{ height: '28px', fontSize: '11px', padding: '4px', width: '100%' }} />
+                                                    </div>
+                                                    <div className="input-group" style={{ margin: 0 }}>
+                                                        <label style={{ fontSize: '9px', marginBottom: '2px' }}>TP Target</label>
+                                                        <select value={backtestForm.pj_tp_target} onChange={(e) => setBacktestForm({ ...backtestForm, pj_tp_target: e.target.value })} style={{ height: '28px', fontSize: '11px', padding: '2px 4px', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '4px', color: '#fff', width: '100%' }}>
+                                                            <option value="manual">Manual Points</option>
+                                                            <option value="tp1">TP1 (1.0x)</option>
+                                                            <option value="tp1_5">TP1.5 (1.5x)</option>
+                                                            <option value="tp2">TP2 (2.0x)</option>
+                                                            <option value="tp2_5">TP2.5 (2.5x)</option>
+                                                            <option value="tp3">TP3 (3.0x)</option>
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                                <div style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }} onClick={() => setBacktestForm({ ...backtestForm, pj_use_volume: !backtestForm.pj_use_volume })}>
+                                                        <input type="checkbox" checked={backtestForm.pj_use_volume || false} onChange={(e) => setBacktestForm({ ...backtestForm, pj_use_volume: e.target.checked })} onClick={(e) => e.stopPropagation()} style={{ width: '12px', height: '12px', accentColor: 'var(--accent-gold)' }} />
+                                                        <span style={{ fontSize: '9.5px', color: '#ccc', userSelect: 'none' }}>Use Vol Filter</span>
+                                                    </div>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }} onClick={() => setBacktestForm({ ...backtestForm, pj_use_dyn_atr: !backtestForm.pj_use_dyn_atr })}>
+                                                        <input type="checkbox" checked={backtestForm.pj_use_dyn_atr || false} onChange={(e) => setBacktestForm({ ...backtestForm, pj_use_dyn_atr: e.target.checked })} onClick={(e) => e.stopPropagation()} style={{ width: '12px', height: '12px', accentColor: 'var(--accent-gold)' }} />
+                                                        <span style={{ fontSize: '9.5px', color: '#ccc', userSelect: 'none' }}>Use Dyn ATR</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* PJ Indicator V2 */}
+                                        {backtestSelectedAlgos.includes('pj_indicator_v2') && (
+                                            <div style={{ borderBottom: '1px dashed rgba(255,255,255,0.05)', paddingBottom: '6px' }}>
+                                                <span style={{ fontSize: '10px', color: '#999', display: 'block', marginBottom: '4px' }}>PJ V2 Parameters:</span>
+                                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px' }}>
+                                                    <div className="input-group" style={{ margin: 0 }}>
+                                                        <label style={{ fontSize: '9px', marginBottom: '2px' }}>Min Score (1-10)</label>
+                                                        <input type="number" className="numeric-input" min="1" max="10" value={backtestForm.pj_min_score} onChange={(e) => setBacktestForm({ ...backtestForm, pj_min_score: parseInt(e.target.value) || 6 })} style={{ height: '28px', fontSize: '11px', padding: '4px', width: '100%' }} />
+                                                    </div>
+                                                    <div className="input-group" style={{ margin: 0 }}>
+                                                        <label style={{ fontSize: '9px', marginBottom: '2px' }}>Vol Multiplier</label>
+                                                        <input type="number" className="numeric-input" step="0.1" value={backtestForm.pj_vol_multiplier} onChange={(e) => setBacktestForm({ ...backtestForm, pj_vol_multiplier: parseFloat(e.target.value) || 2.0 })} style={{ height: '28px', fontSize: '11px', padding: '4px', width: '100%' }} />
+                                                    </div>
+                                                    <div className="input-group" style={{ margin: 0 }}>
+                                                        <label style={{ fontSize: '9px', marginBottom: '2px' }}>VWAP Anchor</label>
+                                                        <select value={backtestForm.pj_vwap_anchor} onChange={(e) => setBacktestForm({ ...backtestForm, pj_vwap_anchor: e.target.value })} style={{ height: '28px', fontSize: '11px', padding: '2px 4px', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '4px', color: '#fff', width: '100%' }}>
+                                                            <option value="Session">Session</option>
+                                                            <option value="Week">Week</option>
+                                                            <option value="Month">Month</option>
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px', marginTop: '6px' }}>
+                                                    <div className="input-group" style={{ margin: 0 }}>
+                                                        <label style={{ fontSize: '9px', marginBottom: '2px' }}>ATR Multiplier</label>
+                                                        <input type="number" className="numeric-input" step="0.1" value={backtestForm.pj_atr_mult} onChange={(e) => setBacktestForm({ ...backtestForm, pj_atr_mult: parseFloat(e.target.value) || 1.5 })} style={{ height: '28px', fontSize: '11px', padding: '4px', width: '100%' }} />
+                                                    </div>
+                                                    <div className="input-group" style={{ margin: 0 }}>
+                                                        <label style={{ fontSize: '9px', marginBottom: '2px' }}>TP Target</label>
+                                                        <select value={backtestForm.pj_tp_target} onChange={(e) => setBacktestForm({ ...backtestForm, pj_tp_target: e.target.value })} style={{ height: '28px', fontSize: '11px', padding: '2px 4px', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '4px', color: '#fff', width: '100%' }}>
+                                                            <option value="manual">Manual Points</option>
+                                                            <option value="tp1">TP1 (1.0x)</option>
+                                                            <option value="tp1_5">TP1.5 (1.5x)</option>
+                                                            <option value="tp2">TP2 (2.0x)</option>
+                                                            <option value="tp2_5">TP2.5 (2.5x)</option>
+                                                            <option value="tp3">TP3 (3.0x)</option>
+                                                        </select>
+                                                    </div>
+                                                    <div className="input-group" style={{ margin: 0 }}>
+                                                        <label style={{ fontSize: '9px', marginBottom: '2px' }}>Min Cross</label>
+                                                        <input type="number" className="numeric-input" min="1" max="3" value={backtestForm.pj_min_cross_count} onChange={(e) => setBacktestForm({ ...backtestForm, pj_min_cross_count: parseInt(e.target.value) || 1 })} style={{ height: '28px', fontSize: '11px', padding: '4px', width: '100%' }} />
+                                                    </div>
+                                                </div>
+                                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginTop: '6px' }}>
+                                                    <div className="input-group" style={{ margin: 0 }}>
+                                                        <label style={{ fontSize: '9px', marginBottom: '2px' }}>Cooldown Bars</label>
+                                                        <input type="number" className="numeric-input" min="0" value={backtestForm.pj_cooldown_bars} onChange={(e) => setBacktestForm({ ...backtestForm, pj_cooldown_bars: parseInt(e.target.value) || 0 })} style={{ height: '28px', fontSize: '11px', padding: '4px', width: '100%' }} />
+                                                    </div>
+                                                    <div className="input-group" style={{ margin: 0 }}>
+                                                        <label style={{ fontSize: '9px', marginBottom: '2px' }}>Min Bars Between</label>
+                                                        <input type="number" className="numeric-input" min="1" value={backtestForm.pj_min_bars_between} onChange={(e) => setBacktestForm({ ...backtestForm, pj_min_bars_between: parseInt(e.target.value) || 1 })} style={{ height: '28px', fontSize: '11px', padding: '4px', width: '100%' }} />
+                                                    </div>
+                                                </div>
+                                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginTop: '6px' }}>
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }} onClick={() => setBacktestForm({ ...backtestForm, pj_use_volume: !backtestForm.pj_use_volume })}>
+                                                            <input type="checkbox" checked={backtestForm.pj_use_volume || false} onChange={(e) => setBacktestForm({ ...backtestForm, pj_use_volume: e.target.checked })} onClick={(e) => e.stopPropagation()} style={{ width: '12px', height: '12px', accentColor: 'var(--accent-gold)' }} />
+                                                            <span style={{ fontSize: '9.5px', color: '#ccc', userSelect: 'none' }}>Use Vol Filter</span>
+                                                        </div>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }} onClick={() => setBacktestForm({ ...backtestForm, pj_use_dyn_atr: !backtestForm.pj_use_dyn_atr })}>
+                                                            <input type="checkbox" checked={backtestForm.pj_use_dyn_atr || false} onChange={(e) => setBacktestForm({ ...backtestForm, pj_use_dyn_atr: e.target.checked })} onClick={(e) => e.stopPropagation()} style={{ width: '12px', height: '12px', accentColor: 'var(--accent-gold)' }} />
+                                                            <span style={{ fontSize: '9.5px', color: '#ccc', userSelect: 'none' }}>Use Dyn ATR</span>
+                                                        </div>
+                                                    </div>
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }} onClick={() => setBacktestForm({ ...backtestForm, pj_strict_mtf: !backtestForm.pj_strict_mtf })}>
+                                                            <input type="checkbox" checked={backtestForm.pj_strict_mtf || false} onChange={(e) => setBacktestForm({ ...backtestForm, pj_strict_mtf: e.target.checked })} onClick={(e) => e.stopPropagation()} style={{ width: '12px', height: '12px', accentColor: 'var(--accent-gold)' }} />
+                                                            <span style={{ fontSize: '9.5px', color: '#ccc', userSelect: 'none' }}>Strict MTF Filter</span>
+                                                        </div>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }} onClick={() => setBacktestForm({ ...backtestForm, pj_use_atr_block: !backtestForm.pj_use_atr_block })}>
+                                                            <input type="checkbox" checked={backtestForm.pj_use_atr_block || false} onChange={(e) => setBacktestForm({ ...backtestForm, pj_use_atr_block: e.target.checked })} onClick={(e) => e.stopPropagation()} style={{ width: '12px', height: '12px', accentColor: 'var(--accent-gold)' }} />
+                                                            <span style={{ fontSize: '9.5px', color: '#ccc', userSelect: 'none' }}>Use ATR Block</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Custom EMA */}
+                                        {backtestSelectedAlgos.includes('ema_cross') && (
+                                            <div style={{ borderBottom: '1px dashed rgba(255,255,255,0.05)', paddingBottom: '6px' }}>
+                                                <span style={{ fontSize: '10px', color: '#999', display: 'block', marginBottom: '4px' }}>Custom EMA Parameters:</span>
+                                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                                                    <div className="input-group" style={{ margin: 0 }}>
+                                                        <label style={{ fontSize: '9px', marginBottom: '2px' }}>Fast Period</label>
+                                                        <input type="number" className="numeric-input" value={backtestForm.ema_fast} onChange={(e) => setBacktestForm({ ...backtestForm, ema_fast: parseInt(e.target.value) || 50 })} style={{ height: '28px', fontSize: '11px', padding: '4px', width: '100%' }} />
+                                                    </div>
+                                                    <div className="input-group" style={{ margin: 0 }}>
+                                                        <label style={{ fontSize: '9px', marginBottom: '2px' }}>Slow Period</label>
+                                                        <input type="number" className="numeric-input" value={backtestForm.ema_slow} onChange={(e) => setBacktestForm({ ...backtestForm, ema_slow: parseInt(e.target.value) || 200 })} style={{ height: '28px', fontSize: '11px', padding: '4px', width: '100%' }} />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* ADX */}
+                                        {backtestSelectedAlgos.includes('adx') && (
+                                            <div>
+                                                <span style={{ fontSize: '10px', color: '#999', display: 'block', marginBottom: '4px' }}>ADX Parameters:</span>
+                                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                                                    <div className="input-group" style={{ margin: 0 }}>
+                                                        <label style={{ fontSize: '9px', marginBottom: '2px' }}>ADX Length</label>
+                                                        <input type="number" className="numeric-input" value={backtestForm.adx_len} onChange={(e) => setBacktestForm({ ...backtestForm, adx_len: parseInt(e.target.value) || 14 })} style={{ height: '28px', fontSize: '11px', padding: '4px', width: '100%' }} />
+                                                    </div>
+                                                    <div className="input-group" style={{ margin: 0 }}>
+                                                        <label style={{ fontSize: '9px', marginBottom: '2px' }}>ADX Threshold</label>
+                                                        <input type="number" className="numeric-input" value={backtestForm.adx_threshold} onChange={(e) => setBacktestForm({ ...backtestForm, adx_threshold: parseInt(e.target.value) || 20 })} style={{ height: '28px', fontSize: '11px', padding: '4px', width: '100%' }} />
+                                                    </div>
+                                                </div>
+                                                <div className="input-group" style={{ margin: '6px 0 0 0' }}>
+                                                    <label style={{ fontSize: '9px', marginBottom: '2px' }}>ADX Mode</label>
+                                                    <select value={backtestForm.adx_mode} onChange={(e) => setBacktestForm({ ...backtestForm, adx_mode: e.target.value })} style={{ height: '28px', fontSize: '11px', padding: '2px 4px', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '4px', color: '#fff', width: '100%' }}>
+                                                        <option value="cross_rising">DI Cross + ADX Rising</option>
+                                                        <option value="state_breakout">State-based + ADX Breakout</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
 
                                 <div className="input-group" style={{ margin: 0 }}>
                                     <label>การยืนยันสัญญาณ (Consensus mode)</label>
@@ -5810,6 +6108,246 @@ const TradingApp = () => {
                                                     })}
                                                 </div>
                                             </div>
+
+                                            {/* Dynamic Indicator Parameters */}
+                                            {(backtestSelectedAlgos.includes('stoch_rsi') ||
+                                              backtestSelectedAlgos.includes('macd') ||
+                                              backtestSelectedAlgos.includes('macd_4c') ||
+                                              backtestSelectedAlgos.includes('pj_indicator') ||
+                                              backtestSelectedAlgos.includes('pj_indicator_v2') ||
+                                              backtestSelectedAlgos.includes('ema_cross') ||
+                                              backtestSelectedAlgos.includes('adx')) && (
+                                                <div style={{
+                                                    display: 'flex',
+                                                    flexDirection: 'column',
+                                                    gap: '10px',
+                                                    background: 'rgba(255,255,255,0.01)',
+                                                    padding: '10px',
+                                                    borderRadius: '6px',
+                                                    border: '1px solid rgba(255,255,255,0.04)',
+                                                    marginTop: '6px',
+                                                    marginBottom: '10px'
+                                                }}>
+                                                    <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--accent-gold)' }}>พารามิเตอร์กลยุทธ์ (Indicator Settings)</div>
+
+                                                    {/* Stochastic RSI */}
+                                                    {backtestSelectedAlgos.includes('stoch_rsi') && (
+                                                        <div style={{ borderBottom: '1px dashed rgba(255,255,255,0.05)', paddingBottom: '6px' }}>
+                                                            <span style={{ fontSize: '10px', color: '#999', display: 'block', marginBottom: '4px' }}>Stochastic RSI Parameters:</span>
+                                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '6px' }}>
+                                                                <div className="input-group" style={{ margin: 0 }}>
+                                                                    <label style={{ fontSize: '9px', marginBottom: '2px' }}>RSI Len</label>
+                                                                    <input type="number" className="numeric-input" value={backtestForm.stoch_rsi_len} onChange={(e) => setBacktestForm({ ...backtestForm, stoch_rsi_len: parseInt(e.target.value) || 13 })} style={{ height: '28px', fontSize: '11px', padding: '4px', width: '100%' }} />
+                                                                </div>
+                                                                <div className="input-group" style={{ margin: 0 }}>
+                                                                    <label style={{ fontSize: '9px', marginBottom: '2px' }}>Stoch Len</label>
+                                                                    <input type="number" className="numeric-input" value={backtestForm.stoch_len} onChange={(e) => setBacktestForm({ ...backtestForm, stoch_len: parseInt(e.target.value) || 13 })} style={{ height: '28px', fontSize: '11px', padding: '4px', width: '100%' }} />
+                                                                </div>
+                                                                <div className="input-group" style={{ margin: 0 }}>
+                                                                    <label style={{ fontSize: '9px', marginBottom: '2px' }}>%K</label>
+                                                                    <input type="number" className="numeric-input" value={backtestForm.stoch_k} onChange={(e) => setBacktestForm({ ...backtestForm, stoch_k: parseInt(e.target.value) || 3 })} style={{ height: '28px', fontSize: '11px', padding: '4px', width: '100%' }} />
+                                                                </div>
+                                                                <div className="input-group" style={{ margin: 0 }}>
+                                                                    <label style={{ fontSize: '9px', marginBottom: '2px' }}>%D</label>
+                                                                    <input type="number" className="numeric-input" value={backtestForm.stoch_d} onChange={(e) => setBacktestForm({ ...backtestForm, stoch_d: parseInt(e.target.value) || 3 })} style={{ height: '28px', fontSize: '11px', padding: '4px', width: '100%' }} />
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    )}
+
+                                                    {/* MACD / MACD 4 Color */}
+                                                    {(backtestSelectedAlgos.includes('macd') || backtestSelectedAlgos.includes('macd_4c')) && (
+                                                        <div style={{ borderBottom: '1px dashed rgba(255,255,255,0.05)', paddingBottom: '6px' }}>
+                                                            <span style={{ fontSize: '10px', color: '#999', display: 'block', marginBottom: '4px' }}>MACD Parameters:</span>
+                                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px' }}>
+                                                                <div className="input-group" style={{ margin: 0 }}>
+                                                                    <label style={{ fontSize: '9px', marginBottom: '2px' }}>Fast Period</label>
+                                                                    <input type="number" className="numeric-input" value={backtestForm.macd_fast} onChange={(e) => setBacktestForm({ ...backtestForm, macd_fast: parseInt(e.target.value) || 12 })} style={{ height: '28px', fontSize: '11px', padding: '4px', width: '100%' }} />
+                                                                </div>
+                                                                <div className="input-group" style={{ margin: 0 }}>
+                                                                    <label style={{ fontSize: '9px', marginBottom: '2px' }}>Slow Period</label>
+                                                                    <input type="number" className="numeric-input" value={backtestForm.macd_slow} onChange={(e) => setBacktestForm({ ...backtestForm, macd_slow: parseInt(e.target.value) || 26 })} style={{ height: '28px', fontSize: '11px', padding: '4px', width: '100%' }} />
+                                                                </div>
+                                                                <div className="input-group" style={{ margin: 0 }}>
+                                                                    <label style={{ fontSize: '9px', marginBottom: '2px' }}>Signal Smooth</label>
+                                                                    <input type="number" className="numeric-input" value={backtestForm.macd_signal} onChange={(e) => setBacktestForm({ ...backtestForm, macd_signal: parseInt(e.target.value) || 9 })} style={{ height: '28px', fontSize: '11px', padding: '4px', width: '100%' }} />
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    )}
+
+                                                    {/* PJ Indicator V1 */}
+                                                    {backtestSelectedAlgos.includes('pj_indicator') && (
+                                                        <div style={{ borderBottom: '1px dashed rgba(255,255,255,0.05)', paddingBottom: '6px' }}>
+                                                            <span style={{ fontSize: '10px', color: '#999', display: 'block', marginBottom: '4px' }}>PJ V1 Parameters:</span>
+                                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px' }}>
+                                                                <div className="input-group" style={{ margin: 0 }}>
+                                                                    <label style={{ fontSize: '9px', marginBottom: '2px' }}>Min Score (1-10)</label>
+                                                                    <input type="number" className="numeric-input" min="1" max="10" value={backtestForm.pj_min_score} onChange={(e) => setBacktestForm({ ...backtestForm, pj_min_score: parseInt(e.target.value) || 6 })} style={{ height: '28px', fontSize: '11px', padding: '4px', width: '100%' }} />
+                                                                </div>
+                                                                <div className="input-group" style={{ margin: 0 }}>
+                                                                    <label style={{ fontSize: '9px', marginBottom: '2px' }}>Vol Multiplier</label>
+                                                                    <input type="number" className="numeric-input" step="0.1" value={backtestForm.pj_vol_multiplier} onChange={(e) => setBacktestForm({ ...backtestForm, pj_vol_multiplier: parseFloat(e.target.value) || 2.0 })} style={{ height: '28px', fontSize: '11px', padding: '4px', width: '100%' }} />
+                                                                </div>
+                                                                <div className="input-group" style={{ margin: 0 }}>
+                                                                    <label style={{ fontSize: '9px', marginBottom: '2px' }}>VWAP Anchor</label>
+                                                                    <select value={backtestForm.pj_vwap_anchor} onChange={(e) => setBacktestForm({ ...backtestForm, pj_vwap_anchor: e.target.value })} style={{ height: '28px', fontSize: '11px', padding: '2px 4px', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '4px', color: '#fff', width: '100%' }}>
+                                                                        <option value="Session">Session</option>
+                                                                        <option value="Week">Week</option>
+                                                                        <option value="Month">Month</option>
+                                                                    </select>
+                                                                </div>
+                                                            </div>
+                                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginTop: '6px' }}>
+                                                                <div className="input-group" style={{ margin: 0 }}>
+                                                                    <label style={{ fontSize: '9px', marginBottom: '2px' }}>ATR Multiplier</label>
+                                                                    <input type="number" className="numeric-input" step="0.1" value={backtestForm.pj_atr_mult} onChange={(e) => setBacktestForm({ ...backtestForm, pj_atr_mult: parseFloat(e.target.value) || 1.5 })} style={{ height: '28px', fontSize: '11px', padding: '4px', width: '100%' }} />
+                                                                </div>
+                                                                <div className="input-group" style={{ margin: 0 }}>
+                                                                    <label style={{ fontSize: '9px', marginBottom: '2px' }}>TP Target</label>
+                                                                    <select value={backtestForm.pj_tp_target} onChange={(e) => setBacktestForm({ ...backtestForm, pj_tp_target: e.target.value })} style={{ height: '28px', fontSize: '11px', padding: '2px 4px', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '4px', color: '#fff', width: '100%' }}>
+                                                                        <option value="manual">Manual Points</option>
+                                                                        <option value="tp1">TP1 (1.0x)</option>
+                                                                        <option value="tp1_5">TP1.5 (1.5x)</option>
+                                                                        <option value="tp2">TP2 (2.0x)</option>
+                                                                        <option value="tp2_5">TP2.5 (2.5x)</option>
+                                                                        <option value="tp3">TP3 (3.0x)</option>
+                                                                    </select>
+                                                                </div>
+                                                            </div>
+                                                            <div style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }} onClick={() => setBacktestForm({ ...backtestForm, pj_use_volume: !backtestForm.pj_use_volume })}>
+                                                                    <input type="checkbox" checked={backtestForm.pj_use_volume || false} onChange={(e) => setBacktestForm({ ...backtestForm, pj_use_volume: e.target.checked })} onClick={(e) => e.stopPropagation()} style={{ width: '12px', height: '12px', accentColor: 'var(--accent-gold)' }} />
+                                                                    <span style={{ fontSize: '9.5px', color: '#ccc', userSelect: 'none' }}>Use Vol Filter</span>
+                                                                </div>
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }} onClick={() => setBacktestForm({ ...backtestForm, pj_use_dyn_atr: !backtestForm.pj_use_dyn_atr })}>
+                                                                    <input type="checkbox" checked={backtestForm.pj_use_dyn_atr || false} onChange={(e) => setBacktestForm({ ...backtestForm, pj_use_dyn_atr: e.target.checked })} onClick={(e) => e.stopPropagation()} style={{ width: '12px', height: '12px', accentColor: 'var(--accent-gold)' }} />
+                                                                    <span style={{ fontSize: '9.5px', color: '#ccc', userSelect: 'none' }}>Use Dyn ATR</span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    )}
+
+                                                    {/* PJ Indicator V2 */}
+                                                    {backtestSelectedAlgos.includes('pj_indicator_v2') && (
+                                                        <div style={{ borderBottom: '1px dashed rgba(255,255,255,0.05)', paddingBottom: '6px' }}>
+                                                            <span style={{ fontSize: '10px', color: '#999', display: 'block', marginBottom: '4px' }}>PJ V2 Parameters:</span>
+                                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px' }}>
+                                                                <div className="input-group" style={{ margin: 0 }}>
+                                                                    <label style={{ fontSize: '9px', marginBottom: '2px' }}>Min Score (1-10)</label>
+                                                                    <input type="number" className="numeric-input" min="1" max="10" value={backtestForm.pj_min_score} onChange={(e) => setBacktestForm({ ...backtestForm, pj_min_score: parseInt(e.target.value) || 6 })} style={{ height: '28px', fontSize: '11px', padding: '4px', width: '100%' }} />
+                                                                </div>
+                                                                <div className="input-group" style={{ margin: 0 }}>
+                                                                    <label style={{ fontSize: '9px', marginBottom: '2px' }}>Vol Multiplier</label>
+                                                                    <input type="number" className="numeric-input" step="0.1" value={backtestForm.pj_vol_multiplier} onChange={(e) => setBacktestForm({ ...backtestForm, pj_vol_multiplier: parseFloat(e.target.value) || 2.0 })} style={{ height: '28px', fontSize: '11px', padding: '4px', width: '100%' }} />
+                                                                </div>
+                                                                <div className="input-group" style={{ margin: 0 }}>
+                                                                    <label style={{ fontSize: '9px', marginBottom: '2px' }}>VWAP Anchor</label>
+                                                                    <select value={backtestForm.pj_vwap_anchor} onChange={(e) => setBacktestForm({ ...backtestForm, pj_vwap_anchor: e.target.value })} style={{ height: '28px', fontSize: '11px', padding: '2px 4px', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '4px', color: '#fff', width: '100%' }}>
+                                                                        <option value="Session">Session</option>
+                                                                        <option value="Week">Week</option>
+                                                                        <option value="Month">Month</option>
+                                                                    </select>
+                                                                </div>
+                                                            </div>
+                                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px', marginTop: '6px' }}>
+                                                                <div className="input-group" style={{ margin: 0 }}>
+                                                                    <label style={{ fontSize: '9px', marginBottom: '2px' }}>ATR Multiplier</label>
+                                                                    <input type="number" className="numeric-input" step="0.1" value={backtestForm.pj_atr_mult} onChange={(e) => setBacktestForm({ ...backtestForm, pj_atr_mult: parseFloat(e.target.value) || 1.5 })} style={{ height: '28px', fontSize: '11px', padding: '4px', width: '100%' }} />
+                                                                </div>
+                                                                <div className="input-group" style={{ margin: 0 }}>
+                                                                    <label style={{ fontSize: '9px', marginBottom: '2px' }}>TP Target</label>
+                                                                    <select value={backtestForm.pj_tp_target} onChange={(e) => setBacktestForm({ ...backtestForm, pj_tp_target: e.target.value })} style={{ height: '28px', fontSize: '11px', padding: '2px 4px', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '4px', color: '#fff', width: '100%' }}>
+                                                                        <option value="manual">Manual Points</option>
+                                                                        <option value="tp1">TP1 (1.0x)</option>
+                                                                        <option value="tp1_5">TP1.5 (1.5x)</option>
+                                                                        <option value="tp2">TP2 (2.0x)</option>
+                                                                        <option value="tp2_5">TP2.5 (2.5x)</option>
+                                                                        <option value="tp3">TP3 (3.0x)</option>
+                                                                    </select>
+                                                                </div>
+                                                                <div className="input-group" style={{ margin: 0 }}>
+                                                                    <label style={{ fontSize: '9px', marginBottom: '2px' }}>Min Cross</label>
+                                                                    <input type="number" className="numeric-input" min="1" max="3" value={backtestForm.pj_min_cross_count} onChange={(e) => setBacktestForm({ ...backtestForm, pj_min_cross_count: parseInt(e.target.value) || 1 })} style={{ height: '28px', fontSize: '11px', padding: '4px', width: '100%' }} />
+                                                                </div>
+                                                            </div>
+                                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginTop: '6px' }}>
+                                                                <div className="input-group" style={{ margin: 0 }}>
+                                                                    <label style={{ fontSize: '9px', marginBottom: '2px' }}>Cooldown Bars</label>
+                                                                    <input type="number" className="numeric-input" min="0" value={backtestForm.pj_cooldown_bars} onChange={(e) => setBacktestForm({ ...backtestForm, pj_cooldown_bars: parseInt(e.target.value) || 0 })} style={{ height: '28px', fontSize: '11px', padding: '4px', width: '100%' }} />
+                                                                </div>
+                                                                <div className="input-group" style={{ margin: 0 }}>
+                                                                    <label style={{ fontSize: '9px', marginBottom: '2px' }}>Min Bars Between</label>
+                                                                    <input type="number" className="numeric-input" min="1" value={backtestForm.pj_min_bars_between} onChange={(e) => setBacktestForm({ ...backtestForm, pj_min_bars_between: parseInt(e.target.value) || 1 })} style={{ height: '28px', fontSize: '11px', padding: '4px', width: '100%' }} />
+                                                                </div>
+                                                            </div>
+                                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginTop: '6px' }}>
+                                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }} onClick={() => setBacktestForm({ ...backtestForm, pj_use_volume: !backtestForm.pj_use_volume })}>
+                                                                        <input type="checkbox" checked={backtestForm.pj_use_volume || false} onChange={(e) => setBacktestForm({ ...backtestForm, pj_use_volume: e.target.checked })} onClick={(e) => e.stopPropagation()} style={{ width: '12px', height: '12px', accentColor: 'var(--accent-gold)' }} />
+                                                                        <span style={{ fontSize: '9.5px', color: '#ccc', userSelect: 'none' }}>Use Vol Filter</span>
+                                                                    </div>
+                                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }} onClick={() => setBacktestForm({ ...backtestForm, pj_use_dyn_atr: !backtestForm.pj_use_dyn_atr })}>
+                                                                        <input type="checkbox" checked={backtestForm.pj_use_dyn_atr || false} onChange={(e) => setBacktestForm({ ...backtestForm, pj_use_dyn_atr: e.target.checked })} onClick={(e) => e.stopPropagation()} style={{ width: '12px', height: '12px', accentColor: 'var(--accent-gold)' }} />
+                                                                        <span style={{ fontSize: '9.5px', color: '#ccc', userSelect: 'none' }}>Use Dyn ATR</span>
+                                                                    </div>
+                                                                </div>
+                                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }} onClick={() => setBacktestForm({ ...backtestForm, pj_strict_mtf: !backtestForm.pj_strict_mtf })}>
+                                                                        <input type="checkbox" checked={backtestForm.pj_strict_mtf || false} onChange={(e) => setBacktestForm({ ...backtestForm, pj_strict_mtf: e.target.checked })} onClick={(e) => e.stopPropagation()} style={{ width: '12px', height: '12px', accentColor: 'var(--accent-gold)' }} />
+                                                                        <span style={{ fontSize: '9.5px', color: '#ccc', userSelect: 'none' }}>Strict MTF Filter</span>
+                                                                    </div>
+                                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }} onClick={() => setBacktestForm({ ...backtestForm, pj_use_atr_block: !backtestForm.pj_use_atr_block })}>
+                                                                        <input type="checkbox" checked={backtestForm.pj_use_atr_block || false} onChange={(e) => setBacktestForm({ ...backtestForm, pj_use_atr_block: e.target.checked })} onClick={(e) => e.stopPropagation()} style={{ width: '12px', height: '12px', accentColor: 'var(--accent-gold)' }} />
+                                                                        <span style={{ fontSize: '9.5px', color: '#ccc', userSelect: 'none' }}>Use ATR Block</span>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    )}
+
+                                                    {/* Custom EMA */}
+                                                    {backtestSelectedAlgos.includes('ema_cross') && (
+                                                        <div style={{ borderBottom: '1px dashed rgba(255,255,255,0.05)', paddingBottom: '6px' }}>
+                                                            <span style={{ fontSize: '10px', color: '#999', display: 'block', marginBottom: '4px' }}>Custom EMA Parameters:</span>
+                                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                                                                <div className="input-group" style={{ margin: 0 }}>
+                                                                    <label style={{ fontSize: '9px', marginBottom: '2px' }}>Fast Period</label>
+                                                                    <input type="number" className="numeric-input" value={backtestForm.ema_fast} onChange={(e) => setBacktestForm({ ...backtestForm, ema_fast: parseInt(e.target.value) || 50 })} style={{ height: '28px', fontSize: '11px', padding: '4px', width: '100%' }} />
+                                                                </div>
+                                                                <div className="input-group" style={{ margin: 0 }}>
+                                                                    <label style={{ fontSize: '9px', marginBottom: '2px' }}>Slow Period</label>
+                                                                    <input type="number" className="numeric-input" value={backtestForm.ema_slow} onChange={(e) => setBacktestForm({ ...backtestForm, ema_slow: parseInt(e.target.value) || 200 })} style={{ height: '28px', fontSize: '11px', padding: '4px', width: '100%' }} />
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    )}
+
+                                                    {/* ADX */}
+                                                    {backtestSelectedAlgos.includes('adx') && (
+                                                        <div>
+                                                            <span style={{ fontSize: '10px', color: '#999', display: 'block', marginBottom: '4px' }}>ADX Parameters:</span>
+                                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                                                                <div className="input-group" style={{ margin: 0 }}>
+                                                                    <label style={{ fontSize: '9px', marginBottom: '2px' }}>ADX Length</label>
+                                                                    <input type="number" className="numeric-input" value={backtestForm.adx_len} onChange={(e) => setBacktestForm({ ...backtestForm, adx_len: parseInt(e.target.value) || 14 })} style={{ height: '28px', fontSize: '11px', padding: '4px', width: '100%' }} />
+                                                                </div>
+                                                                <div className="input-group" style={{ margin: 0 }}>
+                                                                    <label style={{ fontSize: '9px', marginBottom: '2px' }}>ADX Threshold</label>
+                                                                    <input type="number" className="numeric-input" value={backtestForm.adx_threshold} onChange={(e) => setBacktestForm({ ...backtestForm, adx_threshold: parseInt(e.target.value) || 20 })} style={{ height: '28px', fontSize: '11px', padding: '4px', width: '100%' }} />
+                                                                </div>
+                                                            </div>
+                                                            <div className="input-group" style={{ margin: '6px 0 0 0' }}>
+                                                                <label style={{ fontSize: '9px', marginBottom: '2px' }}>ADX Mode</label>
+                                                                <select value={backtestForm.adx_mode} onChange={(e) => setBacktestForm({ ...backtestForm, adx_mode: e.target.value })} style={{ height: '28px', fontSize: '11px', padding: '2px 4px', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '4px', color: '#fff', width: '100%' }}>
+                                                                    <option value="cross_rising">DI Cross + ADX Rising</option>
+                                                                    <option value="state_breakout">State-based + ADX Breakout</option>
+                                                                </select>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
 
                                             <div className="input-group" style={{ margin: 0 }}>
                                                 <label>การยืนยันสัญญาณ (Consensus mode)</label>
