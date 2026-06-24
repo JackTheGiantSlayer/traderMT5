@@ -7647,7 +7647,7 @@ const TradingApp = () => {
                             </div>
 
                             {/* --- Indicators Custom Settings --- */}
-                            {(selectedAlgos.includes('stoch_rsi') || selectedAlgos.includes('macd_4c')) && (
+                            {(selectedAlgos.includes('stoch_rsi') || selectedAlgos.includes('macd_4c') || selectedAlgos.includes('pj_indicator') || selectedAlgos.includes('pj_indicator_v2') || selectedAlgos.includes('ema_cross') || selectedAlgos.includes('adx')) && (
                                 <div style={{
                                     marginTop: '16px',
                                     padding: '14px',
