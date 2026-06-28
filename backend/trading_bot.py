@@ -462,19 +462,22 @@ def evaluate_signals(prices, algorithm, candles=None, symbol="XAUUSD", timeframe
     elif algorithm == "smc_confluence_pro":
         if candles is None or len(candles) < 35:
             return "none"
-        from backend.pattern_detector import detect_liquidity_sweep, detect_order_blocks, detect_fvg
+        from backend.pattern_detector import detect_liquidity_sweep, detect_order_blocks, detect_fvg, detect_market_structure
         sweep = detect_liquidity_sweep(candles)
         ob = detect_order_blocks(candles)
         fvg = detect_fvg(candles)
+        ms = detect_market_structure(candles)
         
-        if sweep == "buy" and (ob == "buy" or fvg == "buy"):
+        # Strict Confluence: Liquidity Sweep + (Order Block Mitigation OR FVG Imbalance Test OR BOS/CHoCH Shift)
+        is_buy_confluence = sweep == "buy" and (ob == "buy" or fvg == "buy" or (ms["type"] in ["bos", "choch"] and ms["direction"] == "bullish"))
+        is_sell_confluence = sweep == "sell" and (ob == "sell" or fvg == "sell" or (ms["type"] in ["bos", "choch"] and ms["direction"] == "bearish"))
+        
+        if is_buy_confluence:
             return "buy"
-        if sweep == "sell" and (ob == "sell" or fvg == "sell"):
+        if is_sell_confluence:
             return "sell"
             
-        if ob != "none":
-            return ob
-        return fvg
+        return "none"
             
     return "none"
 
@@ -532,6 +535,7 @@ class BotManager:
         self.is_running = False
         self.runner_thread = None
         self.mt5 = MT5Manager()
+        self.market_closed_until = {} # tracks market closure cooldowns per symbol
         self._initialized = True
 
     def start(self):
@@ -584,6 +588,13 @@ class BotManager:
 
     def _process_bot(self, db, bot):
         """Processes signals and executes trades for an individual bot."""
+        # Check if market is closed for this symbol (cooldown check)
+        import time
+        now = time.time()
+        if bot.symbol in getattr(self, "market_closed_until", {}):
+            if now < self.market_closed_until[bot.symbol]:
+                return
+                
         # 1. Fetch candles for indicator computations
         candles = self.mt5.get_historical_candles(bot.symbol, bot.timeframe, count=300)
         if not candles or len(candles) < 35:
@@ -698,7 +709,9 @@ class BotManager:
                                         current_sl = new_sl
                                     except Exception as modify_err:
                                         self._log_to_db(db, bot.id, f"ข้อผิดพลาดเลื่อน SL บังทุน: {modify_err}", "error")
-                                        
+                                        if "market closed" in str(modify_err).lower():
+                                            self.market_closed_until[bot.symbol] = time.time() + 300
+                                            
                         # B. Trailing Stop
                         if getattr(bot, "use_trailing_stop", False):
                             trail_dist = getattr(bot, "trailing_stop_points", 0.0)
@@ -723,7 +736,9 @@ class BotManager:
                                         current_sl = new_sl
                                     except Exception as modify_err:
                                         self._log_to_db(db, bot.id, f"ข้อผิดพลาด Trailing Stop: {modify_err}", "error")
-                                        
+                                        if "market closed" in str(modify_err).lower():
+                                            self.market_closed_until[bot.symbol] = time.time() + 300
+                                            
                         # C. Partial Take Profit
                         if getattr(bot, "use_partial_tp", False) and not getattr(bot, "is_partial_closed", False):
                             ptp_trigger = getattr(bot, "partial_tp_points", 0.0)
@@ -743,8 +758,12 @@ class BotManager:
                                             db.commit()
                                         else:
                                             self._log_to_db(db, bot.id, f"ไม่สามารถปิดทำกำไรบางส่วนได้: {res.get('comment')}", "error")
+                                            if "market closed" in str(res.get('comment', '')).lower():
+                                                self.market_closed_until[bot.symbol] = time.time() + 300
                                     except Exception as ptp_err:
                                         self._log_to_db(db, bot.id, f"ข้อผิดพลาดในการทำ Partial Close: {ptp_err}", "error")
+                                        if "market closed" in str(ptp_err).lower():
+                                            self.market_closed_until[bot.symbol] = time.time() + 300
                     except Exception as risk_err:
                         logger.error(f"Error in post-trade risk management for bot #{bot.id}: {risk_err}")
             else:
@@ -1018,8 +1037,12 @@ class BotManager:
                         has_active_position = False
                     else:
                         self._log_to_db(db, bot.id, f"ไม่สามารถปิดออเดอร์ได้: {res.get('comment')}", "error")
+                        if "market closed" in str(res.get('comment', '')).lower():
+                            self.market_closed_until[bot.symbol] = time.time() + 300
                 except Exception as close_err:
                     self._log_to_db(db, bot.id, f"ข้อผิดพลาดขณะพยายามปิดออเดอร์: {str(close_err)}", "error")
+                    if "market closed" in str(close_err).lower():
+                        self.market_closed_until[bot.symbol] = time.time() + 300
                     
         # 5. Open new position if no position is active and signal is valid
         if not has_active_position:
@@ -1146,8 +1169,12 @@ class BotManager:
                         self._log_to_db(db, bot.id, log_msg, signal)
                     else:
                         self._log_to_db(db, bot.id, f"เปิดออเดอร์ล้มเหลว: {res.get('detail')}", "error")
+                        if "market closed" in str(res.get('detail', '')).lower():
+                            self.market_closed_until[bot.symbol] = time.time() + 300
                 except Exception as open_err:
                     self._log_to_db(db, bot.id, f"ข้อผิดพลาดในการเปิดออเดอร์: {str(open_err)}", "error")
+                    if "market closed" in str(open_err).lower():
+                        self.market_closed_until[bot.symbol] = time.time() + 300
             else:
                 # Log a heartbeat periodically
                 if int(time.time()) % 90 < 10:

@@ -622,7 +622,7 @@ CANDLES_CACHE = {}
 @app.get("/api/mt5/candles")
 def get_candles(
     symbol: str = Query(..., description="Asset symbol like XAUUSD"),
-    timeframe: str = Query("H1", description="Timeframe M1, M5, M15, M30, H1, D1"),
+    timeframe: str = Query("H1", description="Timeframe M1, M5, M15, M30, H1, H4, D1"),
     count: int = Query(150, description="Number of candles")
 ):
     """Retrieve historical candle rates for charts with a short TTL cache."""
@@ -720,7 +720,7 @@ async def websocket_live_data(
 @app.get("/api/mt5/pj-levels")
 def get_pj_levels(
     symbol: str = Query(..., description="Asset symbol like XAUUSD"),
-    timeframe: str = Query("H1", description="Timeframe M1, M5, M15, M30, H1, D1")
+    timeframe: str = Query("H1", description="Timeframe M1, M5, M15, M30, H1, H4, D1")
 ):
     """Retrieve the current calculated PJ Indicator dynamic SL and TP distances (TP1, TP1.5, TP2, TP2.5, TP3)."""
     try:
@@ -787,7 +787,7 @@ def get_pj_levels(
 @app.get("/api/mt5/patterns")
 def get_patterns(
     symbol: str = Query(..., description="Asset symbol like XAUUSD"),
-    timeframe: str = Query("H1", description="Timeframe M1, M5, M15, M30, H1, D1"),
+    timeframe: str = Query("H1", description="Timeframe M1, M5, M15, M30, H1, H4, D1"),
     count: int = Query(150, description="Number of candles"),
     # Stoch RSI inputs
     stoch_k: int = Query(3, description="Stochastic RSI %K smoothing period"),
@@ -2447,6 +2447,11 @@ class CacheControlledStaticFiles(StaticFiles):
 
 # Mount StaticFiles for CSS/JS with custom cache headers
 app.mount("/static", CacheControlledStaticFiles(directory=STATIC_DIR), name="static")
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    from fastapi import Response
+    return Response(status_code=204)
 
 @app.get("/")
 def serve_index():

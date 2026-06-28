@@ -433,7 +433,7 @@ const TradingApp = () => {
     const [activeBot, setActiveBot] = useState(null);
     const [botLogs, setBotLogs] = useState([]);
     const [botFormOpen, setBotFormOpen] = useState(false);
-    const [botForm, setBotForm] = useState({ name: "บอทเทรดทองคำ RSI", symbol: "XAUUSD", timeframe: "M1", algorithm: "rsi_overbought_oversold", lot_size: 0.01, sl_points: 5.0, tp_points: 10.0, use_trend_filter: false, use_mtf_filter: false, use_atr_sizing: false, risk_percent: 1.0, allowed_sessions: "all", use_news_filter: false, stoch_rsi_len: 13, stoch_len: 13, stoch_k: 3, stoch_d: 3, macd_fast: 12, macd_slow: 26, macd_signal: 9, pj_min_score: 6, pj_use_volume: false, pj_vol_multiplier: 2.0, pj_vwap_anchor: "Session", pj_atr_mult: 1.5, pj_use_dyn_atr: true, pj_tp_target: "manual", pj_cooldown_bars: 5, pj_min_bars_between: 5, pj_strict_mtf: false, pj_use_atr_block: true, pj_min_cross_count: 1, ema_fast: 50, ema_slow: 200, adx_len: 25, adx_threshold: 30, adx_mode: "cross_rising", use_trailing_stop: false, trailing_stop_points: 0.0, use_break_even: false, break_even_trigger_points: 0.0, break_even_lock_points: 0.0, use_partial_tp: false, partial_tp_points: 0.0, partial_tp_ratio: 0.5, use_regime_filter: false, regime_mode: "trend" });
+    const [botForm, setBotForm] = useState({ name: "บอทเทรดทองคำ RSI", symbol: "XAUUSD", timeframe: "M1", algorithm: "rsi_overbought_oversold", lot_size: 0.01, sl_points: 5.0, tp_points: 10.0, exempt_tp_sl: false, use_trend_filter: false, use_mtf_filter: false, use_atr_sizing: false, risk_percent: 1.0, allowed_sessions: "all", use_news_filter: false, stoch_rsi_len: 13, stoch_len: 13, stoch_k: 3, stoch_d: 3, macd_fast: 12, macd_slow: 26, macd_signal: 9, pj_min_score: 6, pj_use_volume: false, pj_vol_multiplier: 2.0, pj_vwap_anchor: "Session", pj_atr_mult: 1.5, pj_use_dyn_atr: true, pj_tp_target: "manual", pj_cooldown_bars: 5, pj_min_bars_between: 5, pj_strict_mtf: false, pj_use_atr_block: true, pj_min_cross_count: 1, ema_fast: 50, ema_slow: 200, adx_len: 25, adx_threshold: 30, adx_mode: "cross_rising", use_trailing_stop: false, trailing_stop_points: 0.0, use_break_even: false, break_even_trigger_points: 0.0, break_even_lock_points: 0.0, use_partial_tp: false, partial_tp_points: 0.0, partial_tp_ratio: 0.5, use_regime_filter: false, regime_mode: "trend" });
     const [selectedAlgos, setSelectedAlgos] = useState(["rsi_overbought_oversold"]);
     const [signalMode, setSignalMode] = useState("or");
     const [activeRunningBotsCount, setActiveRunningBotsCount] = useState(0);
@@ -2109,6 +2109,7 @@ const TradingApp = () => {
             lot_size: bot.lot_size,
             sl_points: bot.sl_points,
             tp_points: bot.tp_points,
+            exempt_tp_sl: (bot.sl_points === 0 && bot.tp_points === 0),
             use_trend_filter: bot.use_trend_filter || false,
             use_mtf_filter: bot.use_mtf_filter || false,
             use_atr_sizing: bot.use_atr_sizing || false,
@@ -2157,6 +2158,19 @@ const TradingApp = () => {
 
     const handleSubmitBotForm = async (e) => {
         e.preventDefault();
+        
+        // Check if TP/SL configuration is set, unless bypassed by checkbox
+        const exempt = botForm.exempt_tp_sl || false;
+        const slVal = parseFloat(botForm.sl_points) || 0.0;
+        const tpVal = parseFloat(botForm.tp_points) || 0.0;
+        
+        if (!exempt) {
+            if (slVal <= 0.0 || tpVal <= 0.0) {
+                alert("กรุณาระบุค่า Stop Loss (SL) และ Take Profit (TP) ให้มากกว่า 0 หรือติ๊กเลือก 'ยกเว้นการตั้ง TP/SL' หากไม่ต้องการจำกัดความเสี่ยง");
+                return;
+            }
+        }
+        
         try {
             const url = editingBotId ? `/api/bots/${editingBotId}` : "/api/bots";
             const method = editingBotId ? "PUT" : "POST";
@@ -4945,7 +4959,7 @@ const TradingApp = () => {
                             </div>
 
                             <div className="timeframe-selector">
-                                {["M1", "M5", "M15", "M30", "H1", "D1"].map((tf) => (
+                                {["M1", "M5", "M15", "M30", "H1", "H4", "D1"].map((tf) => (
                                     <button 
                                         key={tf} 
                                         className={`timeframe-btn ${paneTimeframes[activePaneId] === tf ? 'active' : ''}`}
@@ -5040,7 +5054,7 @@ const TradingApp = () => {
                                             
                                             {/* Timeframe quick switches */}
                                             <div style={{ display: 'flex', gap: '2px' }}>
-                                                {["M1", "M5", "M15", "M30", "H1", "D1"].map((tf) => (
+                                                {["M1", "M5", "M15", "M30", "H1", "H4", "D1"].map((tf) => (
                                                     <button
                                                         key={tf}
                                                         onClick={(e) => {
@@ -5813,7 +5827,7 @@ const TradingApp = () => {
                                             <h4 style={{ fontSize: '13px', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
                                                 จัดการระบบอัลกอริทึม ({activeRunningBotsCount} ทำงานอยู่)
                                             </h4>
-                                            <button className="btn-create-bot" onClick={() => { setSelectedAlgos(["rsi_overbought_oversold"]); setSignalMode("or"); setBotForm({ name: "บอทเทรดทองคำ RSI", symbol: "XAUUSD", timeframe: "M1", algorithm: "rsi_overbought_oversold", lot_size: 0.01, sl_points: 5.0, tp_points: 10.0, use_trend_filter: false, use_mtf_filter: false, use_atr_sizing: false, risk_percent: 1.0, allowed_sessions: "all", use_news_filter: false, stoch_rsi_len: 13, stoch_len: 13, stoch_k: 3, stoch_d: 3, macd_fast: 12, macd_slow: 26, macd_signal: 9, pj_min_score: 6, pj_use_volume: false, pj_vol_multiplier: 2.0, pj_vwap_anchor: "Session", pj_atr_mult: 1.5, pj_use_dyn_atr: true, pj_tp_target: "manual", pj_cooldown_bars: 5, pj_min_bars_between: 5, pj_strict_mtf: false, pj_use_atr_block: true, pj_min_cross_count: 1, ema_fast: 50, ema_slow: 200, adx_len: 25, adx_threshold: 30, use_trailing_stop: false, trailing_stop_points: 0.0, use_break_even: false, break_even_trigger_points: 0.0, break_even_lock_points: 0.0, use_partial_tp: false, partial_tp_points: 0.0, partial_tp_ratio: 0.5, use_regime_filter: false, regime_mode: "trend" }); setEditingBotId(null); setBotFormOpen(true); }}>
+                                            <button className="btn-create-bot" onClick={() => { setSelectedAlgos(["rsi_overbought_oversold"]); setSignalMode("or"); setBotForm({ name: "บอทเทรดทองคำ RSI", symbol: "XAUUSD", timeframe: "M1", algorithm: "rsi_overbought_oversold", lot_size: 0.01, sl_points: 5.0, tp_points: 10.0, exempt_tp_sl: false, use_trend_filter: false, use_mtf_filter: false, use_atr_sizing: false, risk_percent: 1.0, allowed_sessions: "all", use_news_filter: false, stoch_rsi_len: 13, stoch_len: 13, stoch_k: 3, stoch_d: 3, macd_fast: 12, macd_slow: 26, macd_signal: 9, pj_min_score: 6, pj_use_volume: false, pj_vol_multiplier: 2.0, pj_vwap_anchor: "Session", pj_atr_mult: 1.5, pj_use_dyn_atr: true, pj_tp_target: "manual", pj_cooldown_bars: 5, pj_min_bars_between: 5, pj_strict_mtf: false, pj_use_atr_block: true, pj_min_cross_count: 1, ema_fast: 50, ema_slow: 200, adx_len: 25, adx_threshold: 30, use_trailing_stop: false, trailing_stop_points: 0.0, use_break_even: false, break_even_trigger_points: 0.0, break_even_lock_points: 0.0, use_partial_tp: false, partial_tp_points: 0.0, partial_tp_ratio: 0.5, use_regime_filter: false, regime_mode: "trend" }); setEditingBotId(null); setBotFormOpen(true); }}>
                                                 <Icon name="plus" size={12} />
                                                 <span>สร้างบอทใหม่</span>
                                             </button>
@@ -8000,6 +8014,7 @@ const TradingApp = () => {
                                         <option value="M15">M15 (15 Minutes)</option>
                                         <option value="M30">M30 (30 Minutes)</option>
                                         <option value="H1">H1 (1 Hour)</option>
+                                        <option value="H4">H4 (4 Hours)</option>
                                         <option value="D1">D1 (1 Day)</option>
                                     </select>
                                 </div>
@@ -8162,11 +8177,11 @@ const TradingApp = () => {
                                     <input 
                                         type="number" 
                                         className="numeric-input" 
-                                        required 
                                         step="0.0001" 
-                                        placeholder="เช่น 5.0 สำหรับทอง, 0.0020 สำหรับคู่เงิน"
-                                        value={botForm.sl_points}
+                                        placeholder={botForm.exempt_tp_sl ? "ไม่ระบุ SL (ยกเว้น)" : "เช่น 5.0 สำหรับทอง, 0.0020 สำหรับคู่เงิน"}
+                                        value={botForm.exempt_tp_sl ? 0.0 : botForm.sl_points}
                                         onChange={(e) => setBotForm({ ...botForm, sl_points: e.target.value })}
+                                        disabled={botForm.exempt_tp_sl || false}
                                     />
                                 </div>
 
@@ -8175,13 +8190,31 @@ const TradingApp = () => {
                                     <input 
                                         type="number" 
                                         className="numeric-input" 
-                                        required 
                                         step="0.0001" 
-                                        placeholder="เช่น 10.0 สำหรับทอง, 0.0040 สำหรับคู่เงิน"
-                                        value={botForm.tp_points}
+                                        placeholder={botForm.exempt_tp_sl ? "ไม่ระบุ TP (ยกเว้น)" : "เช่น 10.0 สำหรับทอง, 0.0040 สำหรับคู่เงิน"}
+                                        value={botForm.exempt_tp_sl ? 0.0 : botForm.tp_points}
                                         onChange={(e) => setBotForm({ ...botForm, tp_points: e.target.value })}
+                                        disabled={botForm.exempt_tp_sl || false}
                                     />
                                 </div>
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '-8px', marginBottom: '16px', paddingLeft: '4px' }}>
+                                <input 
+                                    type="checkbox" 
+                                    id="exempt_tp_sl"
+                                    style={{ width: '14px', height: '14px', cursor: 'pointer' }}
+                                    checked={botForm.exempt_tp_sl || false}
+                                    onChange={(e) => setBotForm({ 
+                                        ...botForm, 
+                                        exempt_tp_sl: e.target.checked,
+                                        sl_points: e.target.checked ? 0.0 : (parseFloat(botForm.sl_points) || 5.0),
+                                        tp_points: e.target.checked ? 0.0 : (parseFloat(botForm.tp_points) || 10.0)
+                                    })}
+                                />
+                                <label htmlFor="exempt_tp_sl" style={{ fontSize: '11px', color: 'var(--text-muted)', cursor: 'pointer', margin: 0, userSelect: 'none' }}>
+                                    ยกเว้นการตั้ง TP/SL สำหรับบอทตัวนี้ (ไม่กำหนดขีดจำกัด)
+                                </label>
                             </div>
 
                             {/* --- Indicators Custom Settings --- */}
@@ -9168,7 +9201,7 @@ const TradingApp = () => {
                                         onChange={(e) => setStochRsiForm({ ...stochRsiForm, timeframe: e.target.value })}
                                         style={{ width: '100px', padding: '6px 8px', background: '#131722', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#f8f9fa', fontSize: '13px', outline: 'none', appearance: 'auto' }}
                                     >
-                                        {['Chart', 'M1', 'M5', 'M15', 'M30', 'H1', 'D1'].map(tf => (
+                                        {['Chart', 'M1', 'M5', 'M15', 'M30', 'H1', 'H4', 'D1'].map(tf => (
                                             <option key={tf} value={tf}>{tf === 'Chart' ? 'Chart' : tf}</option>
                                         ))}
                                     </select>
